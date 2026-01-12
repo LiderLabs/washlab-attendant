@@ -22,128 +22,132 @@ export default function LoginPage() {
   
   // Check if already logged in on mount
   useEffect(() => {
-    const stationToken = localStorage.getItem('station_token');
-    const branchId = localStorage.getItem('station_branch_id');
-    
+    if (typeof window === "undefined") return
+    const stationToken = localStorage.getItem("station_token")
+    const branchId = localStorage.getItem("station_branch_id")
+
     if (stationToken && branchId) {
       // Already logged in, redirect to dashboard
-      router.push('/washstation/dashboard');
+      router.push("/washstation/dashboard")
     }
-  }, [router]);
-  const [step, setStep] = useState<LoginStep>('branch-code');
-  const [branchCode, setBranchCode] = useState('');
-  const [branchId, setBranchId] = useState<Id<'branches'> | null>(null);
-  const [stationPin, setStationPin] = useState('');
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  }, [router])
+  const [step, setStep] = useState<LoginStep>("branch-code")
+  const [branchCode, setBranchCode] = useState("")
+  const [branchId, setBranchId] = useState<Id<"branches"> | null>(null)
+  const [stationPin, setStationPin] = useState("")
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
   const deviceId = useState<string>(() => {
     // Generate or retrieve device ID from localStorage
-    let deviceId = localStorage.getItem('washstation_device_id');
-    if (!deviceId) {
-      deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem('washstation_device_id', deviceId);
+    if (typeof window === "undefined") {
+      return `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     }
-    return deviceId;
-  })[0];
+    let deviceId = localStorage.getItem("washstation_device_id")
+    if (!deviceId) {
+      deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      localStorage.setItem("washstation_device_id", deviceId)
+    }
+    return deviceId
+  })[0]
 
   // Query branch by code (using admin query)
   // Keep query active on branch-info and station-login steps to maintain branch data
   const branchInfo = useQuery(
     api.admin.getBranchByCode,
-    (step === 'branch-code' && branchCode.length >= 2) || 
-    (step === 'branch-info' && branchCode.length >= 2) ||
-    (step === 'station-login' && branchCode.length >= 2)
+    (step === "branch-code" && branchCode.length >= 2) ||
+      (step === "branch-info" && branchCode.length >= 2) ||
+      (step === "station-login" && branchCode.length >= 2)
       ? { code: branchCode.toUpperCase() }
-      : 'skip'
-  );
+      : "skip"
+  )
 
   // Query all active branches for display (public query - no auth required)
   // Type assertion needed until types regenerate after adding getActiveBranchesList to admin.ts
   const activeBranches = useQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api.admin as any).getActiveBranchesList ?? null,
-    step === 'branch-code' ? {} : 'skip'
-  ) as { code: string; name: string }[] | undefined | null;
+    step === "branch-code" ? {} : "skip"
+  ) as { code: string; name: string }[] | undefined | null
 
   // Station login mutation (type assertion needed until types regenerate)
   const loginStation = useMutation(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ((api as any).stations?.loginStation) as any
-  );
+    (api as any).stations?.loginStation as any
+  )
 
   const handleBranchCodeSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault()
 
     if (!branchCode.trim()) {
       toast({
-        title: 'Branch code required',
-        description: 'Please enter a branch code',
-        variant: 'destructive',
-      });
-      return;
+        title: "Branch code required",
+        description: "Please enter a branch code",
+        variant: "destructive",
+      })
+      return
     }
 
     // Wait for query result
     if (branchInfo === undefined) {
-      return; // Still loading
+      return // Still loading
     }
 
     if (!branchInfo) {
       toast({
-        title: 'Invalid branch code',
-        description: 'The branch code you entered is not valid or inactive.',
-        variant: 'destructive',
-      });
-      return;
+        title: "Invalid branch code",
+        description: "The branch code you entered is not valid or inactive.",
+        variant: "destructive",
+      })
+      return
     }
 
     // Move to branch info step
-    setBranchId(branchInfo._id);
-    setStep('branch-info');
-  };
+    setBranchId(branchInfo._id)
+    setStep("branch-info")
+  }
 
   const handleContinueToSignIn = async () => {
     if (!branchId || !branchInfo) {
       toast({
-        title: 'Error',
-        description: 'Branch information is missing',
-        variant: 'destructive',
-      });
-      return;
+        title: "Error",
+        description: "Branch information is missing",
+        variant: "destructive",
+      })
+      return
     }
 
     // Station login is always required - move to station login step
-    setStep('station-login');
-  };
+    setStep("station-login")
+  }
 
   const handleStationLogin = async (pin: string | null) => {
     if (!branchId || !branchInfo) {
       toast({
-        title: 'Error',
-        description: 'Branch information is missing',
-        variant: 'destructive',
-      });
-      return;
+        title: "Error",
+        description: "Branch information is missing",
+        variant: "destructive",
+      })
+      return
     }
 
     // Station PIN is always required
     if (!pin || !pin.trim()) {
       toast({
-        title: 'Station PIN required',
-        description: 'Please enter the station PIN to continue',
-        variant: 'destructive',
-      });
-      return;
+        title: "Station PIN required",
+        description: "Please enter the station PIN to continue",
+        variant: "destructive",
+      })
+      return
     }
 
     try {
-      setIsLoggingIn(true);
+      setIsLoggingIn(true)
 
       // Get device info
       const deviceInfo = JSON.stringify({
         userAgent: navigator.userAgent,
         platform: navigator.platform,
         language: navigator.language,
-      });
+      })
 
       // Login to station
       const result = await loginStation({
@@ -151,37 +155,38 @@ export default function LoginPage() {
         deviceId,
         stationPin: pin || undefined,
         deviceInfo,
-      });
+      })
 
-        // Store station session info
-        if (result?.stationToken) {
-          localStorage.setItem('station_token', result.stationToken);
-          localStorage.setItem('station_branch_id', branchId);
-          localStorage.setItem('station_device_id', deviceId);
-          localStorage.setItem('station_session_id', result.sessionId);
-          localStorage.setItem('station_branch_name', branchInfo.name);
+      // Store station session info
+      if (result?.stationToken && typeof window !== "undefined") {
+        localStorage.setItem("station_token", result.stationToken)
+        localStorage.setItem("station_branch_id", branchId)
+        localStorage.setItem("station_device_id", deviceId)
+        localStorage.setItem("station_session_id", result.sessionId)
+        localStorage.setItem("station_branch_name", branchInfo.name)
 
-          toast({
-            title: 'Station login successful',
-            description: `Welcome to ${branchInfo.name}`,
-          });
+        toast({
+          title: "Station login successful",
+          description: `Welcome to ${branchInfo.name}`,
+        })
 
-          // After station login, go directly to dashboard (skip attendant auth)
-          router.push('/washstation/dashboard');
-        } else {
-          throw new Error('Station login failed');
-        }
+        // After station login, go directly to dashboard (skip attendant auth)
+        router.push("/washstation/dashboard")
+      } else {
+        throw new Error("Station login failed")
+      }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to login to station';
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to login to station"
       toast({
-        title: 'Station login failed',
+        title: "Station login failed",
         description: errorMessage,
-        variant: 'destructive',
-      });
+        variant: "destructive",
+      })
     } finally {
-      setIsLoggingIn(false);
+      setIsLoggingIn(false)
     }
-  };
+  }
 
   const handleStationPinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

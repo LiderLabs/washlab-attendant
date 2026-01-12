@@ -139,7 +139,6 @@ function PaymentContent() {
   return (
     <div className="flex min-h-screen bg-background">
       <WashStationSidebar 
-        activeStaff={activeStaff} 
         branchName={branchName}
       />
       
@@ -147,7 +146,6 @@ function PaymentContent() {
         <WashStationHeader 
           title="Payment"
           branchName={branchName}
-          activeStaff={activeStaff}
         />
         
         <div className="flex h-[calc(100vh-73px)]">

@@ -104,7 +104,6 @@ function OrderCompleteContent() {
   return (
     <div className="flex min-h-screen bg-background">
       <WashStationSidebar 
-        activeStaff={activeStaff} 
         branchName={branchName}
       />
       

@@ -56,8 +56,9 @@ export default function OrderDetailsPage() {
     stationToken ? { stationToken } : 'skip'
   ) as Array<{
     _id: Id<'attendanceLogs'>;
-    attendantId: Id<'attendants'>;
-    attendant?: {
+    clockInAt: number;
+    deviceId: string;
+    attendant: {
       _id: Id<'attendants'>;
       name: string;
       email: string;
@@ -91,7 +92,7 @@ export default function OrderDetailsPage() {
 
     // Find the attendance record for this attendant
     const attendance = activeAttendances?.find(
-      (a) => a.attendantId === attendantId
+      (a) => a.attendant?._id === attendantId
     );
     const attendanceId = attendance?._id;
 
@@ -220,7 +221,7 @@ export default function OrderDetailsPage() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Weight</p>
-                      <p className="font-medium">{order.weight?.toFixed(2) || '0.00'} kg</p>
+                      <p className="font-medium">{(order.actualWeight || order.estimatedWeight || 0).toFixed(2)} kg</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Payment Status</p>
