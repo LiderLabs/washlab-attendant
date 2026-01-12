@@ -55,19 +55,19 @@ export default function NotificationsPage() {
 
   const allNotifications =
     useQuery(
-      api.stations.getStationNotifications,
+      (api.stations as any).getStationNotifications,
       stationToken ? { stationToken, limit: 100 } : "skip"
     ) ?? []
 
   const unreadCount =
     useQuery(
-      api.stations.getStationUnreadCount,
+      (api.stations as any).getStationUnreadCount,
       stationToken ? { stationToken } : "skip"
     ) ?? 0
 
-  const markAsRead = useMutation(api.stations.markStationNotificationAsRead)
+  const markAsRead = useMutation((api.stations as any).markStationNotificationAsRead)
   const markAllAsRead = useMutation(
-    api.stations.markAllStationNotificationsAsRead
+    (api.stations as any).markAllStationNotificationsAsRead
   )
 
   // Filter notifications
