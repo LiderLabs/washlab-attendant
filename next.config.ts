@@ -1,7 +1,11 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
-  /* config options here */
-};
+  transpilePackages: [
+    "@mediapipe/face_mesh",
+    "@mediapipe/camera_utils",
+    "@mediapipe/drawing_utils",
+  ],
+}
 
-export default nextConfig;
+export default nextConfig
