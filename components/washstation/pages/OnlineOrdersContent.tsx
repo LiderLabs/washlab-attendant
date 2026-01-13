@@ -1,9 +1,9 @@
-'use client';
+"use client"
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useStationSession } from "@/hooks/useStationSession"
 import { usePaginatedQuery, useMutation, useQuery } from "convex/react"
@@ -99,12 +99,12 @@ export function OnlineOrdersContent() {
   const isLoadingOrders = allOnlineOrdersResult.status === "LoadingFirstPage"
 
   const checkInOrder = useMutation(api.stations.checkInOnlineOrder)
-  // @ts-expect-error - cancelOnlineOrder exists but types not regenerated yet
+  // @ts-expect-error - cancelOnlineOrder exists but may not be in generated types yet
   const cancelOrder = useMutation(api.stations.cancelOnlineOrder)
 
   // Get branch info for pricing
   const branchInfo = useQuery(
-    // @ts-expect-error - getStationInfo exists but types not regenerated yet
+    // @ts-ignore - getStationInfo exists but may not be in generated types yet
     api.stations.getStationInfo,
     stationToken ? { stationToken } : "skip"
   ) as { pricingPerKg: number; deliveryFee: number } | undefined
@@ -314,9 +314,9 @@ export function OnlineOrdersContent() {
   }
 
   return (
-    <div className='flex h-[calc(100vh-73px)] overflow-hidden'>
+    <div className='flex flex-col lg:flex-row h-[calc(100vh-73px)] overflow-hidden'>
       {/* Left - Queue */}
-      <div className='w-72 border-r border-border bg-card overflow-y-auto flex-shrink-0'>
+      <div className='w-full lg:w-72 border-r border-border bg-card overflow-y-auto flex-shrink-0 h-auto lg:h-auto'>
         <div className='p-4 border-b border-border flex-shrink-0'>
           <div className='flex items-center justify-between mb-4'>
             <h2 className='font-semibold text-foreground'>Intake Queue</h2>
@@ -411,33 +411,33 @@ export function OnlineOrdersContent() {
 
       {/* Center - Order Details */}
       {selectedOrder ? (
-        <div className='flex-1 overflow-y-auto'>
-          <div className='p-6'>
+        <div className='flex-1 overflow-y-auto min-w-0 flex flex-col relative'>
+          <div className='flex-1 overflow-y-auto p-4 sm:p-6 pb-24 lg:pb-6'>
             {/* Customer Header */}
-            <div className='flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6'>
+            <div className='flex flex-col gap-4 mb-4 sm:mb-6'>
               <div className='flex items-center gap-3 sm:gap-4'>
                 <div className='w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-muted flex items-center justify-center flex-shrink-0'>
                   <User className='w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground' />
                 </div>
                 <div className='min-w-0 flex-1'>
                   <div className='flex items-center gap-2 flex-wrap'>
-                    <h2 className='text-lg sm:text-xl font-bold text-foreground truncate'>
+                    <h2 className='text-base sm:text-lg md:text-xl font-bold text-foreground truncate'>
                       {selectedOrder.customer?.name || "Unknown"}
                     </h2>
                     <span className='px-2 py-0.5 bg-primary/10 text-primary text-xs font-medium rounded-full whitespace-nowrap'>
                       NEW CUSTOMER
                     </span>
                   </div>
-                  <div className='flex items-center gap-3 sm:gap-4 text-xs sm:text-sm text-muted-foreground mt-1 flex-wrap'>
+                  <div className='flex items-center gap-2 sm:gap-3 md:gap-4 text-xs sm:text-sm text-muted-foreground mt-1 flex-wrap'>
                     <span className='flex items-center gap-1'>
-                      <Phone className='w-3 h-3 sm:w-4 sm:h-4' />
+                      <Phone className='w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0' />
                       <span className='truncate'>
                         {selectedOrder.customer?.phoneNumber || "N/A"}
                       </span>
                     </span>
                     {selectedOrder.customer?.email && (
                       <span className='flex items-center gap-1'>
-                        <Mail className='w-3 h-3 sm:w-4 sm:h-4' />
+                        <Mail className='w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0' />
                         <span className='truncate'>
                           {selectedOrder.customer.email}
                         </span>
@@ -446,15 +446,25 @@ export function OnlineOrdersContent() {
                   </div>
                 </div>
               </div>
-              <div className='text-left sm:text-right'>
-                <p className='text-xs text-muted-foreground'>Order ID</p>
-                <p className='font-bold text-foreground'>
-                  #{selectedOrder.orderNumber}
-                </p>
+              <div className='flex items-center justify-between sm:justify-start sm:gap-4'>
+                <div>
+                  <p className='text-xs text-muted-foreground'>Order ID</p>
+                  <p className='font-bold text-foreground text-sm sm:text-base'>
+                    #{selectedOrder.orderNumber}
+                  </p>
+                </div>
+                {bagCardNumber && (
+                  <div className='text-right sm:text-left'>
+                    <p className='text-xs text-muted-foreground'>Bag Card</p>
+                    <p className='font-bold text-primary text-sm sm:text-base'>
+                      #{bagCardNumber}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className='grid grid-cols-2 gap-6'>
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6'>
               {/* Weight Intake */}
               <div>
                 <div className='flex items-center justify-between mb-4'>
@@ -470,22 +480,23 @@ export function OnlineOrdersContent() {
                   </span>
                 </div>
 
-                <div className='bg-card border border-border rounded-xl p-6 mb-4'>
+                <div className='bg-card border border-border rounded-xl p-4 sm:p-6 mb-4'>
                   <div className='text-center'>
-                    <span className='text-5xl font-bold text-foreground'>
+                    <span className='text-3xl sm:text-4xl md:text-5xl font-bold text-foreground'>
                       {weight.toFixed(2)}
                     </span>
-                    <span className='text-xl text-muted-foreground ml-2'>
+                    <span className='text-lg sm:text-xl text-muted-foreground ml-2'>
                       kg
                     </span>
                   </div>
                 </div>
 
-                <div className='flex gap-2 justify-center'>
+                <div className='flex flex-col sm:flex-row gap-2 justify-center'>
                   <Button
                     variant='outline'
                     size='sm'
                     onClick={() => setWeight((prev) => Math.max(0, prev + 0.5))}
+                    className='w-full sm:w-auto'
                   >
                     +0.5 kg Bag Weight
                   </Button>
@@ -493,6 +504,7 @@ export function OnlineOrdersContent() {
                     variant='outline'
                     size='sm'
                     onClick={() => setWeight(0)}
+                    className='w-full sm:w-auto'
                   >
                     Reset Scale
                   </Button>
@@ -525,7 +537,7 @@ export function OnlineOrdersContent() {
                   <button
                     key={card}
                     onClick={() => setBagCardNumber(card)}
-                    className={`h-12 rounded-xl font-bold text-sm transition-all ${
+                    className={`h-10 sm:h-12 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all ${
                       bagCardNumber === card
                         ? "bg-primary text-primary-foreground ring-2 ring-primary/50"
                         : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -552,8 +564,8 @@ export function OnlineOrdersContent() {
                 Items Verification
               </h3>
 
-              <div className='grid grid-cols-2 gap-4'>
-                <div className='flex items-center justify-between p-4 bg-card border border-border rounded-xl'>
+              <div className='grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4'>
+                <div className='flex items-center justify-between p-3 sm:p-4 bg-card border border-border rounded-xl'>
                   <div className='flex items-center gap-3 min-w-0 flex-1'>
                     <div className='w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0'>
                       <Package className='w-5 h-5 text-muted-foreground' />
@@ -588,14 +600,16 @@ export function OnlineOrdersContent() {
                   </div>
                 </div>
 
-                <div className='flex items-center justify-between p-4 bg-card border border-border rounded-xl'>
-                  <div className='flex items-center gap-3'>
-                    <div className='w-10 h-10 rounded-lg bg-muted flex items-center justify-center'>
+                <div className='flex items-center justify-between p-3 sm:p-4 bg-card border border-border rounded-xl'>
+                  <div className='flex items-center gap-3 min-w-0 flex-1'>
+                    <div className='w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0'>
                       <Tag className='w-5 h-5 text-muted-foreground' />
                     </div>
-                    <div>
-                      <p className='font-medium text-foreground'>Hangers</p>
-                      <p className='text-xs text-muted-foreground'>
+                    <div className='min-w-0'>
+                      <p className='font-medium text-foreground text-sm'>
+                        Hangers
+                      </p>
+                      <p className='text-xs text-muted-foreground truncate'>
                         Customer Provided
                       </p>
                     </div>
@@ -623,30 +637,40 @@ export function OnlineOrdersContent() {
           </div>
 
           {/* Footer Actions */}
-          <div className='sticky bottom-0 bg-card border-t border-border p-4 flex items-center justify-between'>
-            <div className='flex gap-3'>
+          <div className='fixed lg:sticky bottom-0 left-0 right-0 lg:left-auto lg:right-auto bg-card border-t border-border p-3 sm:p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 z-50 shadow-lg lg:shadow-none'>
+            <div className='flex gap-2 sm:gap-3'>
               <Button
                 variant='outline'
-                className='text-destructive border-destructive/30'
+                className='text-destructive border-destructive/30 flex-1 sm:flex-initial'
                 onClick={handleRejectClick}
+                size='sm'
               >
-                <Trash2 className='w-4 h-4 mr-2' />
-                Reject
+                <Trash2 className='w-4 h-4 sm:mr-2' />
+                <span className='text-xs sm:text-sm'>Reject</span>
               </Button>
-              <Button variant='outline' onClick={handleContact}>
-                <Phone className='w-4 h-4 mr-2' />
-                Contact
-              </Button>
-            </div>
-            <div className='flex items-center gap-4'>
               <Button
-                onClick={handleConvertToActive}
-                className='bg-primary text-primary-foreground'
-                disabled={weight === 0 || !bagCardNumber}
+                variant='outline'
+                onClick={handleContact}
+                size='sm'
+                className='flex-1 sm:flex-initial'
               >
-                Convert to Active Order <ArrowRight className='w-4 h-4 ml-2' />
+                <Phone className='w-4 h-4 sm:mr-2' />
+                <span className='text-xs sm:text-sm'>Contact</span>
+                <span className='sm:hidden'>Call</span>
               </Button>
             </div>
+            <Button
+              onClick={handleConvertToActive}
+              className='bg-primary text-primary-foreground w-full sm:w-auto'
+              disabled={weight === 0 || !bagCardNumber}
+              size='sm'
+            >
+              <span className='text-xs sm:text-sm'>
+                Convert to Active Order
+              </span>
+              <span className='lg:hidden'>Convert Order</span>
+              <ArrowRight className='w-4 h-4 ml-2' />
+            </Button>
           </div>
         </div>
       ) : (
@@ -661,7 +685,7 @@ export function OnlineOrdersContent() {
 
       {/* Right - Service Details */}
       {selectedOrder && (
-        <div className='w-72 border-l border-border bg-card p-4 overflow-y-auto flex-shrink-0'>
+        <div className='w-full lg:w-72 border-t lg:border-t-0 lg:border-l border-border bg-card p-4 overflow-y-auto flex-shrink-0'>
           <h3 className='font-semibold text-foreground mb-4'>
             Service Details
           </h3>

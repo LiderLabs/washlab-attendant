@@ -188,17 +188,7 @@ export function ActivityContent() {
                           </p>
                           {log.entityType && log.entityId && (
                             <p className="text-xs text-muted-foreground mb-1">
-                              {log.entityType}: {log.entityId.slice(0, 100)}
-                              {log.entityId.length > 100 && '...'}
-                            </p>
-                          )}
-                          {log.details && (
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {typeof log.details === 'string' 
-                                ? log.details.length > 100 
-                                  ? `${log.details.slice(0, 100)}...`
-                                  : log.details
-                                : JSON.stringify(log.details)}
+                              {log.entityType}: {log.entityId.slice(0, 30)}...
                             </p>
                           )}
                           {log.attendanceId && (

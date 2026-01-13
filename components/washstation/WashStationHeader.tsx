@@ -128,10 +128,10 @@ const WashStationHeader = ({
         {activeAttendances.length > 0 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="hidden md:flex items-center gap-2 px-3 py-2 bg-green-500/10 hover:bg-green-500/20 rounded-lg border border-green-200 dark:border-green-900 transition-colors">
+              <button className="flex flex-rowmd:flex items-center gap-2 px-3 py-2 bg-green-500/10 hover:bg-green-500/20 rounded-lg border border-green-200 dark:border-green-900 transition-colors">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                  <span className="text-sm font-medium text-green-600 dark:text-green-400">
+                  <span className="hidden md:block text-sm font-medium text-green-600 dark:text-green-400">
                     {activeAttendances.length} Active
                   </span>
                 </div>
