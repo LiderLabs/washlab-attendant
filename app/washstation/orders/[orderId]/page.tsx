@@ -5,42 +5,60 @@ import { WashStationLayout } from '@/components/washstation/WashStationLayout';
 import { useStationSession } from '@/hooks/useStationSession';
 import { useStationOrder } from '@/hooks/useStationOrders';
 import { useStationOrderStatus } from '@/hooks/useStationOrderStatus';
-import { useStationAttendance } from '@/hooks/useStationAttendance';
 import { useQuery } from 'convex/react';
 import { api } from "@devlider001/washlab-backend/api";
 import { LoadingSpinner } from '@/components/washstation/LoadingSpinner';
 import { EmptyState } from '@/components/washstation/EmptyState';
-import { OrderStatusBadge } from '@/components/washstation/OrderStatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
   ArrowLeft,
   User,
   Phone,
   Mail,
   Package,
-  Calendar,
-  DollarSign,
   CheckCircle,
   Clock,
-  X,
+  Droplets,
+  Wind,
+  Shirt,
+  Truck,
+  MapPin,
+  Scale,
+  Tag,
+  CreditCard,
+  AlertCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
 import { useState } from 'react';
 import { type OrderStatus } from '@/hooks/useStationOrders';
 import { ActionVerification } from '@/components/washstation/ActionVerification';
 import { Id } from "@devlider001/washlab-backend/dataModel";
+import { toast } from 'sonner';
+
+// Washing stages in order (including pending_dropoff for online orders)
+const WASH_STAGES = [
+  { id: 'pending_dropoff', label: 'Pending Dropoff', icon: Package, requiresVerification: false },
+  { id: 'checked_in', label: 'Received', icon: Package, requiresVerification: false },
+  { id: 'sorting', label: 'Sorting', icon: Package, requiresVerification: false },
+  { id: 'washing', label: 'Washing', icon: Droplets, requiresVerification: false },
+  { id: 'drying', label: 'Drying', icon: Wind, requiresVerification: false },
+  { id: 'folding', label: 'Folding', icon: Shirt, requiresVerification: false },
+  { id: 'ready', label: 'Ready', icon: CheckCircle, requiresVerification: false },
+  { id: 'completed', label: 'Delivered', icon: Truck, requiresVerification: true }, // Only handover needs verification
+];
+
+// Map legacy statuses to new statuses
+const mapLegacyStatus = (status: string): string => {
+  const mapping: Record<string, string> = {
+    'pending': 'pending_dropoff',
+    'in_progress': 'washing',
+    'ready_for_pickup': 'ready',
+    'delivered': 'completed',
+  };
+  return mapping[status] || status;
+};
 
 export default function OrderDetailsPage() {
   const params = useParams();
@@ -65,54 +83,9 @@ export default function OrderDetailsPage() {
     } | null;
   }> | undefined;
 
-  const [newStatus, setNewStatus] = useState<OrderStatus | ''>('');
-  const [notes, setNotes] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
-  const [pendingStatusUpdate, setPendingStatusUpdate] = useState<{
-    status: OrderStatus;
-    notes?: string;
-  } | null>(null);
-
-  const handleStatusUpdateClick = () => {
-    if (!newStatus || !order) return;
-    // Store the update and show verification
-    setPendingStatusUpdate({ status: newStatus, notes: notes || undefined });
-    setShowVerification(true);
-  };
-
-  const handleVerificationComplete = async (
-    attendantId: Id<'attendants'>,
-    verificationId: Id<'biometricVerifications'>
-  ) => {
-    if (!pendingStatusUpdate || !order) return;
-
-    setShowVerification(false);
-    setIsUpdating(true);
-
-    // Find the attendance record for this attendant
-    const attendance = activeAttendances?.find(
-      (a) => a.attendant?._id === attendantId
-    );
-    const attendanceId = attendance?._id;
-
-    // Now perform the status update with verification context
-    const success = await changeStatus(
-      order._id,
-      pendingStatusUpdate.status,
-      pendingStatusUpdate.notes,
-      attendantId,
-      attendanceId
-    );
-    
-    if (success) {
-      setNewStatus('');
-      setNotes('');
-      setPendingStatusUpdate(null);
-    }
-
-    setIsUpdating(false);
-  };
+  const [pendingStage, setPendingStage] = useState<string | null>(null);
 
   if (!isSessionValid) {
     return (
@@ -146,17 +119,112 @@ export default function OrderDetailsPage() {
     );
   }
 
+  // Map order status to current stage
+  const currentStatus = mapLegacyStatus(order.status);
+  const currentStageIndex = WASH_STAGES.findIndex(s => s.id === currentStatus);
+  
+  // If status not found in stages, try to find it or default to first stage
+  // This handles cases where status might not be in WASH_STAGES
+  const effectiveStageIndex = currentStageIndex >= 0 
+    ? currentStageIndex 
+    : (order.status === 'pending' || order.status === 'pending_dropoff' ? 0 : -1);
+  
+  const nextStage = effectiveStageIndex >= 0 && effectiveStageIndex < WASH_STAGES.length - 1 
+    ? WASH_STAGES[effectiveStageIndex + 1] 
+    : null;
+
+  const handleAdvanceStage = (stageId: string) => {
+    const stage = WASH_STAGES.find(s => s.id === stageId);
+    
+    // Only require verification for final handover
+    if (stage?.requiresVerification) {
+      setPendingStage(stageId);
+      setShowVerification(true);
+    } else {
+      // Direct stage transition - NO verification needed
+      handleStatusUpdate(stageId as OrderStatus);
+    }
+  };
+
+  const handleStatusUpdate = async (newStatus: OrderStatus) => {
+    if (!order) return;
+
+    setIsUpdating(true);
+    try {
+      const success = await changeStatus(
+        order._id,
+        newStatus,
+        undefined,
+        undefined,
+        undefined
+      );
+      
+      if (success) {
+        const stage = WASH_STAGES.find(s => s.id === newStatus);
+        toast.success(`Order advanced to ${stage?.label || newStatus}`);
+      }
+    } catch (error) {
+      toast.error('Failed to update order status');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleVerifySuccess = async (
+    attendantId: Id<'attendants'>,
+    verificationId: Id<'biometricVerifications'>
+  ) => {
+    if (!pendingStage || !order) return;
+
+    setShowVerification(false);
+    setIsUpdating(true);
+
+    // Find the attendance record for this attendant
+    const attendance = activeAttendances?.find(
+      (a) => a.attendant?._id === attendantId
+    );
+    const attendanceId = attendance?._id;
+
+    try {
+      const success = await changeStatus(
+        order._id,
+        pendingStage as OrderStatus,
+        undefined,
+        attendantId,
+        attendanceId
+      );
+      
+      if (success) {
+        const stage = WASH_STAGES.find(s => s.id === pendingStage);
+        toast.success(`Order advanced to ${stage?.label}`);
+      }
+    } catch (error) {
+      toast.error('Failed to update order status');
+    } finally {
+      setIsUpdating(false);
+      setPendingStage(null);
+    }
+  };
+
+  const getStatusColor = (stageId: string) => {
+    const stageIndex = WASH_STAGES.findIndex(s => s.id === stageId);
+    const effectiveCurrentIndex = currentStageIndex >= 0 ? currentStageIndex : effectiveStageIndex;
+    if (stageIndex < effectiveCurrentIndex) return 'bg-success text-success-foreground';
+    if (stageIndex === effectiveCurrentIndex) return 'bg-primary text-primary-foreground';
+    return 'bg-muted text-muted-foreground';
+  };
+
   return (
     <WashStationLayout title={`Order #${order.orderNumber}`}>
       <div className="space-y-6">
         {/* Back Button */}
-        <Button
-          variant="ghost"
+        <button 
           onClick={() => router.push('/washstation/orders')}
+          className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors"
         >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Orders
-        </Button>
+          <ArrowLeft className="w-5 h-5" />
+          <span>Back to Orders</span>
+        </button>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Order Info */}
@@ -164,270 +232,233 @@ export default function OrderDetailsPage() {
             {/* Order Header */}
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mb-6">
                   <div>
-                    <CardTitle className="text-2xl">
-                      Order #{order.orderNumber}
-                    </CardTitle>
+                    <CardTitle className="text-2xl">{order.orderNumber}</CardTitle>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Created {format(new Date(order.createdAt), 'PPp')}
+                      {format(new Date(order.createdAt), 'PPp')}
                     </p>
-                    {order.statusHistory && order.statusHistory.length > 0 && (() => {
-                      const lastStatusChange = order.statusHistory[order.statusHistory.length - 1];
-                      const assignedByName = lastStatusChange?.changedBy?.name;
-                      return assignedByName ? (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Assigned To: <span className="font-medium text-foreground text-green-500">{assignedByName}</span>
-                        </p>
-                      ) : null;
-                    })()}
                   </div>
-                  <OrderStatusBadge status={order.status} />
+                  <div className="flex items-center gap-3">
+                    <Badge
+                      variant={order.paymentStatus === 'paid' ? 'default' : 'outline'}
+                      className={order.paymentStatus === 'paid' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}
+                    >
+                      {order.paymentStatus === 'paid' ? 'Paid' : 'Unpaid'}
+                    </Badge>
+                    <Badge className={getStatusColor(currentStatus)}>
+                      {WASH_STAGES.find(s => s.id === currentStatus)?.label || currentStatus}
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* Progress Steps */}
+                <div className="flex items-center justify-between overflow-x-auto pb-2">
+                  {WASH_STAGES.slice(0, -1).map((stage, index) => {
+                    const StageIcon = stage.icon;
+                    const effectiveCurrentIndex = currentStageIndex >= 0 ? currentStageIndex : effectiveStageIndex;
+                    const isCompleted = index < effectiveCurrentIndex;
+                    const isCurrent = index === effectiveCurrentIndex;
+                    
+                    return (
+                      <div key={stage.id} className="flex items-center">
+                        <div className={`flex flex-col items-center ${index < WASH_STAGES.length - 2 ? 'flex-1' : ''}`}>
+                          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                            isCompleted ? 'bg-success text-success-foreground' :
+                            isCurrent ? 'bg-primary text-primary-foreground' :
+                            'bg-muted text-muted-foreground'
+                          }`}>
+                            <StageIcon className="w-5 h-5" />
+                          </div>
+                          <span className={`text-xs mt-2 ${
+                            isCompleted || isCurrent ? 'text-foreground font-medium' : 'text-muted-foreground'
+                          }`}>
+                            {stage.label}
+                          </span>
+                        </div>
+                        {index < WASH_STAGES.length - 2 && (
+                          <div className={`h-1 w-16 mx-2 rounded ${
+                            isCompleted ? 'bg-success' : 'bg-muted'
+                          }`} />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Customer Info */}
-                {order.customer && (
-                  <div className="space-y-3">
-                    <h3 className="font-semibold">Customer Information</h3>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <User className="w-4 h-4 text-muted-foreground" />
-                        <span>{order.customer.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Phone className="w-4 h-4 text-muted-foreground" />
-                        <span>{order.customer.phoneNumber}</span>
-                      </div>
-                      {order.customer.email && (
-                        <div className="flex items-center gap-2">
-                          <Mail className="w-4 h-4 text-muted-foreground" />
-                          <span>{order.customer.email}</span>
-                        </div>
-                      )}
+            </Card>
+
+            {/* Bag Card Number */}
+            {order.bagCardNumber && (
+              <Card>
+                <CardContent className="pt-6">
+                  <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+                    <Tag className="w-5 h-5 text-primary" />
+                    Bag Card
+                  </h3>
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center">
+                      <span className="text-2xl font-bold text-primary">#{order.bagCardNumber}</span>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Card Number</p>
+                      <p className="text-lg font-semibold text-foreground">#{order.bagCardNumber}</p>
                     </div>
                   </div>
-                )}
+                </CardContent>
+              </Card>
+            )}
 
-                <Separator />
-
-                {/* Order Details */}
+            {/* Order Items */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Order Items</CardTitle>
+              </CardHeader>
+              <CardContent>
                 <div className="space-y-3">
-                  <h3 className="font-semibold">Order Details</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Service Type</p>
-                      <p className="font-medium">{order.serviceType || 'Wash & Fold'}</p>
+                  <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <Scale className="w-5 h-5 text-primary" />
+                      <div>
+                        <p className="font-medium text-foreground">Wash & Fold</p>
+                        <p className="text-sm text-muted-foreground">
+                          {(order.actualWeight || order.estimatedWeight || 0).toFixed(2)}kg
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Weight</p>
-                      <p className="font-medium">{(order.actualWeight || order.estimatedWeight || 0).toFixed(2)} kg</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Payment Status</p>
-                      <Badge
-                        variant={
-                          order.paymentStatus === 'paid' ? 'default' : 'outline'
-                        }
-                      >
-                        {order.paymentStatus}
-                      </Badge>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Delivery</p>
-                      <p className="font-medium">
-                        {order.isDelivery ? 'Yes' : 'No'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Pricing */}
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total Price</span>
-                    <span>₵{order.totalPrice?.toFixed(2) || order.finalPrice.toFixed(2)}</span>
-                  </div>
-                  {order.deliveryFee && order.deliveryFee > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Delivery Fee</span>
-                      <span>₵{order.deliveryFee.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {order.totalPrice !== order.finalPrice && (
-                    <div className="flex justify-between text-sm text-muted-foreground">
-                      <span>Discount Applied</span>
-                      <span>-₵{(order.totalPrice - order.finalPrice).toFixed(2)}</span>
-                    </div>
-                  )}
-                  <Separator />
-                  <div className="flex justify-between text-lg font-bold">
-                    <span>Final Total</span>
-                    <span className="text-primary">
+                    <span className="font-semibold text-foreground">
                       ₵{order.finalPrice.toFixed(2)}
                     </span>
                   </div>
                 </div>
+                
+                <div className="border-t border-border mt-4 pt-4 flex justify-between">
+                  <span className="font-semibold text-foreground">Total</span>
+                  <span className="font-bold text-xl text-primary">
+                    ₵{order.finalPrice.toFixed(2)}
+                  </span>
+                </div>
               </CardContent>
             </Card>
 
-            {/* Status History */}
-            {order.statusHistory && order.statusHistory.length > 0 && (
+            {/* Action Buttons */}
+            {nextStage && order.status !== 'completed' && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Status History</CardTitle>
+                  <CardTitle>Actions</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    {order.statusHistory
-                      .slice()
-                      .reverse()
-                      .map((entry, index) => (
-                        <div key={index} className="flex gap-4">
-                          <div className="flex flex-col items-center">
-                            <div className="w-2 h-2 rounded-full bg-primary" />
-                            {index < order.statusHistory!.length - 1 && (
-                              <div className="w-0.5 h-full bg-border mt-1" />
-                            )}
-                          </div>
-                          <div className="flex-1 pb-4">
-                            <div className="flex items-center justify-between">
-                              <OrderStatusBadge
-                                status={entry.status as OrderStatus}
-                              />
-                              <span className="text-xs text-muted-foreground">
-                                {format(
-                                  new Date(entry.changedAt),
-                                  'MMM d, h:mm a'
-                                )}
-                              </span>
-                            </div>
-                            {entry.changedBy?.name && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                Updated by: <span className="font-medium text-foreground">{entry.changedBy.name}</span>
-                              </p>
-                            )}
-                            {entry.notes && (
-                              <p className="text-sm text-muted-foreground mt-1">
-                                {entry.notes}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
+                  {/* Payment gate - cannot process until paid */}
+                  {order.paymentStatus !== 'paid' && currentStatus === 'checked_in' && (
+                    <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 mb-4">
+                      <p className="text-warning font-medium flex items-center gap-2">
+                        <CreditCard className="w-5 h-5" />
+                        Payment Required
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Staff cannot proceed to processing until order is paid.
+                      </p>
+                    </div>
+                  )}
+                  
+                  <Button 
+                    size="lg"
+                    className="w-full"
+                    onClick={() => handleAdvanceStage(nextStage.id)}
+                    disabled={isUpdating}
+                  >
+                    <nextStage.icon className="w-5 h-5 mr-2" />
+                    Move to {nextStage.label}
+                    {nextStage.requiresVerification && (
+                      <span className="ml-2 text-xs opacity-75">(Requires Verification)</span>
+                    )}
+                  </Button>
                 </CardContent>
               </Card>
             )}
           </div>
 
-          {/* Sidebar - Update Status */}
+          {/* Customer Info Sidebar */}
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Update Status</CardTitle>
+                <CardTitle>Customer Info</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>New Status</Label>
-                  <Select
-                    value={newStatus}
-                    onValueChange={(v) => setNewStatus(v as OrderStatus)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="in_progress">In Progress</SelectItem>
-                      <SelectItem value="ready_for_pickup">
-                        Ready for Pickup
-                      </SelectItem>
-                      <SelectItem value="delivered">Delivered</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <User className="w-6 h-6 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">{order.customer?.name || 'Unknown'}</p>
+                    <p className="text-sm text-muted-foreground">Customer</p>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Notes (Optional)</Label>
-                  <Textarea
-                    placeholder="Add notes about this status change..."
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={3}
-                  />
-                </div>
-                <Button
-                  onClick={handleStatusUpdateClick}
-                  disabled={!newStatus || isUpdating}
-                  className="w-full"
-                >
-                  {isUpdating ? (
-                    <>
-                      <Clock className="w-4 h-4 mr-2 animate-spin" />
-                      Updating...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Update Status
-                    </>
-                  )}
-                </Button>
+                
+                {order.customer?.phoneNumber && (
+                  <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl">
+                    <Phone className="w-5 h-5 text-muted-foreground" />
+                    <span className="text-foreground">{order.customer.phoneNumber}</span>
+                  </div>
+                )}
+                
+                {order.customer?.email && (
+                  <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl">
+                    <Mail className="w-5 h-5 text-muted-foreground" />
+                    <span className="text-foreground">{order.customer.email}</span>
+                  </div>
+                )}
+
+                {order.deliveryHall && (
+                  <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-xl">
+                    <MapPin className="w-5 h-5 text-muted-foreground mt-0.5" />
+                    <span className="text-foreground">
+                      {order.deliveryHall} - Room {order.deliveryRoom || 'N/A'}
+                    </span>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            {/* Quick Actions */}
+            {/* Order Timeline */}
             <Card>
               <CardHeader>
-                <CardTitle>Quick Actions</CardTitle>
+                <CardTitle>Timeline</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
-                {order.status === 'pending' && (
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => {
-                      setNewStatus('in_progress');
-                      setPendingStatusUpdate({ status: 'in_progress' });
-                      setShowVerification(true);
-                    }}
-                  >
-                    <Clock className="w-4 h-4 mr-2" />
-                    Start Processing
-                  </Button>
-                )}
-                {order.status === 'in_progress' && (
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => {
-                      setNewStatus('ready_for_pickup');
-                      setPendingStatusUpdate({ status: 'ready_for_pickup' });
-                      setShowVerification(true);
-                    }}
-                  >
-                    <Package className="w-4 h-4 mr-2" />
-                    Mark Ready for Pickup
-                  </Button>
-                )}
-                {order.status === 'ready_for_pickup' && (
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => {
-                      setNewStatus('completed');
-                      setPendingStatusUpdate({ status: 'completed' });
-                      setShowVerification(true);
-                    }}
-                  >
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    Mark as Completed
-                  </Button>
-                )}
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-2 h-2 rounded-full bg-primary mt-2" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Order Created</p>
+                      <p className="text-xs text-muted-foreground">
+                        {format(new Date(order.createdAt), 'PPp')}
+                      </p>
+                    </div>
+                  </div>
+                  {order.paymentStatus === 'paid' && (
+                    <div className="flex items-start gap-3">
+                      <div className="w-2 h-2 rounded-full bg-success mt-2" />
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Payment Confirmed</p>
+                        <p className="text-xs text-muted-foreground">
+                          {order.statusHistory?.find(e => e.status === 'checked_in') 
+                            ? format(new Date(order.statusHistory.find(e => e.status === 'checked_in')!.changedAt), 'PPp')
+                            : 'Confirmed'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {currentStatus !== 'pending_dropoff' && currentStatus !== 'checked_in' && (
+                    <div className="flex items-start gap-3">
+                      <div className="w-2 h-2 rounded-full bg-primary mt-2" />
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Processing</p>
+                        <p className="text-xs text-muted-foreground">In progress</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -439,10 +470,10 @@ export default function OrderDetailsPage() {
         open={showVerification}
         onCancel={() => {
           setShowVerification(false);
-          setPendingStatusUpdate(null);
+          setPendingStage(null);
         }}
-        onVerified={handleVerificationComplete}
-        actionType={`update_order_status:${pendingStatusUpdate?.status}`}
+        onVerified={handleVerifySuccess}
+        actionType={`update_order_status:${pendingStage || 'completed'}`}
         orderId={order?._id}
       />
     </WashStationLayout>

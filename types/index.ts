@@ -19,6 +19,12 @@ export type OrderStatus =
   | "ready"
   | "out_for_delivery"
   | "completed"
+  | "cancelled"
+  // Legacy statuses for backward compatibility
+  | "pending"
+  | "in_progress"
+  | "ready_for_pickup"
+  | "delivered"
 
 // Service Type
 export type ServiceType = "wash_and_dry" | "wash_only" | "dry_only"

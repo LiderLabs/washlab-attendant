@@ -5,15 +5,24 @@ import { api } from "@devlider001/washlab-backend/api";
 import { Id } from "@devlider001/washlab-backend/dataModel";
 
 export type OrderStatus = 
+  | "pending_dropoff"
+  | "checked_in"
+  | "sorting"
+  | "washing"
+  | "drying"
+  | "folding"
+  | "ready"
+  | "completed"
+  | "cancelled"
+  // Legacy statuses for backward compatibility
   | "pending"
   | "in_progress"
   | "ready_for_pickup"
-  | "delivered"
-  | "completed"
-  | "cancelled";
+  | "delivered";
 
 export interface StationOrderFilters {
   status?: OrderStatus;
+  orderType?: "walk_in" | "online";
 }
 
 /**
@@ -29,6 +38,7 @@ export function useStationOrders(
     stationToken ? {
       stationToken,
       status: filters?.status,
+      orderType: filters?.orderType,
     } : 'skip',
     { initialNumItems: 20 }
   );
