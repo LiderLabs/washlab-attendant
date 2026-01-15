@@ -40,7 +40,6 @@ export function ActionVerification({
   open,
 }: ActionVerificationProps) {
   const { stationToken } = useStationSession()
-  // @ts-expect-error - verifyAttendantPIN exists but may not be in generated types yet
   const verifyPIN = useMutation(api.attendants.verifyAttendantPIN)
 
   // Get active attendances to select from

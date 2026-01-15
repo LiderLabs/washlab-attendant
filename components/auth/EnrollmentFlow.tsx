@@ -57,7 +57,6 @@ export function EnrollmentFlow({
   const completeEnrollment = useMutation(
     api.attendants.completeBiometricEnrollment
   )
-  // @ts-expect-error - completePINSetup exists but may not be in generated types yet
   const completePINSetup = useMutation(api.attendants.completePINSetup)
 
   const handleStartEnrollment = async () => {
@@ -111,7 +110,6 @@ export function EnrollmentFlow({
 
       if (result.success) {
         // Check if PIN setup is required
-        // @ts-expect-error - requiresPIN exists but may not be in generated types yet
         if (result.requiresPIN) {
           setStep("pin-setup")
           toast({

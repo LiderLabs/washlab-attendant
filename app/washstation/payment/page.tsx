@@ -33,7 +33,6 @@ function PaymentContent() {
   const [amountTendered, setAmountTendered] = useState("")
   const [showVerification, setShowVerification] = useState(false)
 
-  // @ts-expect-error - completeWalkInPayment exists but types not regenerated yet
   const completePayment = useMutation(api.stations.completeWalkInPayment)
 
   // Get order from search params and fetch from backend

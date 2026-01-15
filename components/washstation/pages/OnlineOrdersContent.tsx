@@ -99,7 +99,6 @@ export function OnlineOrdersContent() {
   const isLoadingOrders = allOnlineOrdersResult.status === "LoadingFirstPage"
 
   const checkInOrder = useMutation(api.stations.checkInOnlineOrder)
-  // @ts-expect-error - cancelOnlineOrder exists but may not be in generated types yet
   const cancelOrder = useMutation(api.stations.cancelOnlineOrder)
 
   // Get branch info for pricing
