@@ -1,47 +1,83 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { 
   Search,
   Banknote,
   CreditCard,
   Smartphone,
-  Download
+  Filter,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useQuery } from 'convex/react';
+import { api } from '@devlider001/washlab-backend/api';
+import { useStationSession } from '@/hooks/useStationSession';
+import { LoadingSpinner } from '@/components/washstation/LoadingSpinner';
 
 interface Transaction {
   orderId: string;
   orderCode: string;
   amount: number;
   paymentMethod: string;
-  staffId: string;
+  orderType: 'walk_in' | 'online';
+  status: string;
+  staffId?: string;
   staffName: string;
-  verifiedAt: string;
+  verifiedAt: number;
   customerPhone: string;
   customerName: string;
-  createdAt: string;
+  createdAt: number;
 }
 
 export function TransactionsContent() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const { stationToken, isSessionValid } = useStationSession();
   const [filter, setFilter] = useState<'all' | 'cash' | 'card' | 'mobile_money'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'walk_in' | 'online'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    // Load transactions from localStorage
-    try {
-      const storedTxns = localStorage.getItem('washlab_transactions');
-      if (storedTxns) {
-        setTransactions(JSON.parse(storedTxns));
-      }
-    } catch (error) {
-      console.error('Error loading transactions:', error);
-    }
-  }, []);
+  const clearDateRange = () => {
+    setStartDate('');
+    setEndDate('');
+  };
+
+  const handleClearFilters = () => {
+    setFilter('all');
+    setTypeFilter('all');
+    setSearchQuery('');
+    clearDateRange();
+  };
+
+  const startTimestamp = startDate ? new Date(startDate).getTime() : undefined;
+  const endTimestamp = endDate
+    ? new Date(endDate).getTime() + 24 * 60 * 60 * 1000 - 1
+    : undefined;
+
+  const stationTransactions = useQuery(
+    api.stations.getStationTransactions,
+    stationToken
+      ? { stationToken, startDate: startTimestamp, endDate: endTimestamp }
+      : "skip"
+  ) as Transaction[] | undefined;
+
+  const transactionsToDisplay = stationTransactions || [];
+  const isLoadingTransactions =
+    stationToken !== null && stationTransactions === undefined;
+
+  if (!isSessionValid) {
+    return <LoadingSpinner text="Verifying session..." />;
+  }
 
   const getPaymentIcon = (method: string) => {
     switch(method) {
@@ -63,11 +99,15 @@ export function TransactionsContent() {
     }
   };
 
-  const filteredTransactions = transactions.filter(txn => {
+  const filteredTransactions = transactionsToDisplay.filter(txn => {
     if (filter !== 'all') {
       if (filter === 'cash' && txn.paymentMethod !== 'cash') return false;
       if (filter === 'card' && !['card', 'hubtel'].includes(txn.paymentMethod)) return false;
       if (filter === 'mobile_money' && !['mobile_money', 'momo'].includes(txn.paymentMethod)) return false;
+    }
+
+    if (typeFilter !== 'all' && txn.orderType !== typeFilter) {
+      return false;
     }
     
     if (searchQuery) {
@@ -109,38 +149,81 @@ export function TransactionsContent() {
       </div>
 
       {/* Search & Filters */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 mb-6">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Search by order code, customer name, or phone..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 pr-4 py-3 rounded-xl"
-          />
-        </div>
-        <div className="flex items-center gap-2 bg-muted rounded-xl p-1 overflow-x-auto">
-          {[
-            { id: 'all', label: 'All' },
-            { id: 'cash', label: 'Cash' },
-            { id: 'card', label: 'Card' },
-            { id: 'mobile_money', label: 'Mobile Money' },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setFilter(tab.id as any)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-                filter === tab.id 
-                  ? 'bg-card text-foreground shadow-sm' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <Card className="mb-6">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Filters</CardTitle>
+            <Button variant="outline" size="sm" onClick={handleClearFilters}>
+              <Filter className="h-4 w-4 mr-2" />
+              Clear Filters
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            <div className="space-y-2 lg:col-span-2">
+              <label className="text-sm font-medium">Search</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Order code, customer, phone..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Payment Method</label>
+              <Select value={filter} onValueChange={(value) => setFilter(value as typeof filter)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Methods" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Methods</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="mobile_money">Mobile Money</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Order Type</label>
+              <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as typeof typeFilter)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="walk_in">Walk-in</SelectItem>
+                  <SelectItem value="online">Online</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Start Date</label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">End Date</label>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Transactions Table */}
       <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
@@ -157,7 +240,13 @@ export function TransactionsContent() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filteredTransactions.length > 0 ? (
+              {isLoadingTransactions ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
+                    Loading transactions...
+                  </td>
+                </tr>
+              ) : filteredTransactions.length > 0 ? (
                 filteredTransactions.map((txn) => (
                   <tr key={txn.orderId} className="hover:bg-muted/30 transition-colors">
                     <td className="px-4 md:px-6 py-4 font-medium text-foreground">{txn.orderCode}</td>
