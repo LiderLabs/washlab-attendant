@@ -64,19 +64,22 @@ export function CustomersContent() {
     }
   };
 
-  // FIXED: Store customer data in sessionStorage and navigate with skipPhone flag
+  // UPDATED: Pass customer data via URL parameters
   const handleNewOrder = (customerId: string) => {
-    // Store complete customer data in sessionStorage
-    sessionStorage.setItem('washlab_prefilledCustomer', JSON.stringify({
-      id: selectedCustomer.id || selectedCustomer._id,
-      name: selectedCustomer.name,
-      phone: selectedCustomer.phone || selectedCustomer.phoneNumber,
-      email: selectedCustomer.email,
-      skipPhone: true // Flag to skip phone entry step
-    }));
+    // Create URL with customer data as query parameters
+    const params = new URLSearchParams({
+      customerId: selectedCustomer.id || selectedCustomer._id,
+      customerName: selectedCustomer.name,
+      customerPhone: selectedCustomer.phone || selectedCustomer.phoneNumber,
+    });
     
-    // Navigate to new order page - it will read from sessionStorage
-    router.push('/washstation/new-order');
+    // Add optional fields if they exist
+    if (selectedCustomer.email) {
+      params.append('customerEmail', selectedCustomer.email);
+    }
+    
+    // Navigate to new order page with customer data
+    router.push(`/washstation/new-order?${params.toString()}`);
   };
 
   // Mock customer orders
