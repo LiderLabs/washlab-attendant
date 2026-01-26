@@ -13,7 +13,6 @@ import {
   Plus,
   ShoppingBag,
   Users,
-  Smartphone,
   Package,
   CheckCircle,
   DollarSign,
@@ -24,28 +23,51 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useState } from 'react';
 
 export function DashboardContent() {
   const router = useRouter();
   const { stationToken, sessionData, isLoading: sessionLoading } = useStationSession();
   const isSessionValid = sessionData?.valid ?? false;
-  
+
   // Get dashboard stats
   const { stats, isLoading: statsLoading } = useStationStats(stationToken);
-  
+
   // Get recent orders (pending and in_progress)
   const { orders: pendingOrders, isLoading: ordersLoading } = useStationOrders(
     stationToken,
     { status: 'pending' }
   );
-  
+
   const { orders: inProgressOrders } = useStationOrders(
     stationToken,
     { status: 'in_progress' }
   );
-  
+
   // Get all recent orders for activity feed
   const { orders: recentOrders } = useStationOrders(stationToken);
+
+  // --- 24-Hour Reset Logic ---
+  const [resetDashboard, setResetDashboard] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const LAST_RESET_KEY = 'dashboardLastReset';
+    const now = new Date().getTime();
+    const lastReset = parseInt(localStorage.getItem(LAST_RESET_KEY) || '0');
+
+    if (!lastReset || now - lastReset > 24 * 60 * 60 * 1000) {
+      // It's been 24h or more
+      localStorage.setItem(LAST_RESET_KEY, now.toString());
+      setResetDashboard(true);
+
+      // Auto-refresh page after 1 second to show cleared dashboard
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    }
+  }, []);
 
   if (sessionLoading || !isSessionValid) {
     return (
@@ -56,7 +78,29 @@ export function DashboardContent() {
   }
 
   const isLoading = statsLoading || ordersLoading;
-  const totalPending = (pendingOrders?.length || 0) + (inProgressOrders?.length || 0);
+
+  // If dashboard reset, show empty/0 values
+  const displayedStats = resetDashboard
+    ? {
+        totalOrders: 0,
+        totalRevenue: 0,
+        averageOrderValue: 0,
+        ordersByStatus: {
+          completed: 0,
+          in_progress: 0,
+          ready_for_pickup: 0,
+          delivered: 0,
+          cancelled: 0,
+        },
+      }
+    : stats || {};
+
+  const displayedPendingOrders = resetDashboard ? [] : pendingOrders;
+  const displayedInProgressOrders = resetDashboard ? [] : inProgressOrders;
+  const displayedRecentOrders = resetDashboard ? [] : recentOrders;
+
+  const totalPending =
+    (displayedPendingOrders?.length || 0) + (displayedInProgressOrders?.length || 0);
 
   return (
     <div className="space-y-6">
@@ -64,7 +108,7 @@ export function DashboardContent() {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard
           title="Total Orders"
-          value={stats?.totalOrders ?? 0}
+          value={displayedStats.totalOrders ?? 0}
           icon={ShoppingBag}
           iconClassName="text-primary"
         />
@@ -73,23 +117,23 @@ export function DashboardContent() {
           value={totalPending}
           icon={Clock}
           iconClassName="text-orange-500"
-          subtitle={pendingOrders?.length ? `${pendingOrders.length} new` : undefined}
+          subtitle={displayedPendingOrders?.length ? `${displayedPendingOrders.length} new` : undefined}
         />
         <StatCard
           title="Revenue"
-          value={`₵${stats?.totalRevenue.toFixed(2) ?? '0.00'}`}
+          value={`₵${displayedStats.totalRevenue?.toFixed(2) ?? '0.00'}`}
           icon={DollarSign}
           iconClassName="text-green-500"
         />
         <StatCard
           title="Completed"
-          value={stats?.ordersByStatus?.completed ?? 0}
+          value={displayedStats.ordersByStatus?.completed ?? 0}
           icon={CheckCircle}
           iconClassName="text-blue-500"
         />
         <StatCard
           title="Avg Order"
-          value={`₵${stats?.averageOrderValue.toFixed(2) ?? '0.00'}`}
+          value={`₵${displayedStats.averageOrderValue?.toFixed(2) ?? '0.00'}`}
           icon={TrendingUp}
           iconClassName="text-purple-500"
         />
@@ -97,7 +141,6 @@ export function DashboardContent() {
 
       {/* Action Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Start New Walk-in Order */}
         <Card
           className="bg-primary text-primary-foreground cursor-pointer hover:shadow-lg transition-all"
           onClick={() => router.push('/washstation/new-order')}
@@ -115,7 +158,6 @@ export function DashboardContent() {
           </CardContent>
         </Card>
 
-        {/* Find Customer */}
         <Card
           className="cursor-pointer hover:shadow-lg transition-all"
           onClick={() => router.push('/washstation/customers')}
@@ -133,7 +175,6 @@ export function DashboardContent() {
           </CardContent>
         </Card>
 
-        {/* Online Orders */}
         <Card
           className="cursor-pointer hover:shadow-lg transition-all relative"
           onClick={() => router.push('/washstation/online-orders')}
@@ -173,9 +214,9 @@ export function DashboardContent() {
         <CardContent>
           {isLoading ? (
             <LoadingSpinner text="Loading orders..." />
-          ) : recentOrders && recentOrders.length > 0 ? (
+          ) : displayedRecentOrders && displayedRecentOrders.length > 0 ? (
             <OrderList
-              orders={recentOrders.slice(0, 6)}
+              orders={displayedRecentOrders.slice(0, 6)}
               onOrderClick={(orderId) =>
                 router.push(`/washstation/orders/${orderId}`)
               }
@@ -195,7 +236,7 @@ export function DashboardContent() {
       </Card>
 
       {/* Quick Stats by Status */}
-      {stats && (
+      {displayedStats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-4">
@@ -203,7 +244,7 @@ export function DashboardContent() {
                 In Progress
               </div>
               <div className="text-2xl font-bold">
-                {stats.ordersByStatus.in_progress}
+                {displayedStats.ordersByStatus?.in_progress ?? 0}
               </div>
             </CardContent>
           </Card>
@@ -213,7 +254,7 @@ export function DashboardContent() {
                 Ready for Pickup
               </div>
               <div className="text-2xl font-bold">
-                {stats.ordersByStatus.ready_for_pickup}
+                {displayedStats.ordersByStatus?.ready_for_pickup ?? 0}
               </div>
             </CardContent>
           </Card>
@@ -221,7 +262,7 @@ export function DashboardContent() {
             <CardContent className="p-4">
               <div className="text-sm text-muted-foreground mb-1">Delivered</div>
               <div className="text-2xl font-bold">
-                {stats.ordersByStatus.delivered}
+                {displayedStats.ordersByStatus?.delivered ?? 0}
               </div>
             </CardContent>
           </Card>
@@ -229,7 +270,7 @@ export function DashboardContent() {
             <CardContent className="p-4">
               <div className="text-sm text-muted-foreground mb-1">Cancelled</div>
               <div className="text-2xl font-bold">
-                {stats.ordersByStatus.cancelled}
+                {displayedStats.ordersByStatus?.cancelled ?? 0}
               </div>
             </CardContent>
           </Card>
