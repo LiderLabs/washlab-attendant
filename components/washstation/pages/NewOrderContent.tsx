@@ -82,6 +82,63 @@ export function NewOrderContent() {
     () => `ORD-${Math.floor(Math.random() * 9000) + 1000}`
   )
 
+  // NEW: Check for prefilled customer data from customer pages
+  useEffect(() => {
+    // Check for prefilled customer (from customer pages with skipPhone flag)
+    const prefilledData = sessionStorage.getItem('washlab_prefilledCustomer');
+    
+    if (prefilledData) {
+      try {
+        const customerData = JSON.parse(prefilledData);
+        
+        // If skipPhone flag is set, go directly to order step
+        if (customerData.skipPhone) {
+          // Set customer data
+          setFoundCustomer({
+            _id: customerData.id,
+            name: customerData.name,
+            phoneNumber: customerData.phone,
+            email: customerData.email,
+          });
+          
+          // Set phone for display (remove +233 prefix for display)
+          const displayPhone = customerData.phone.replace('+233', '').replace(/^0/, '');
+          setPhone(displayPhone);
+          
+          // Skip directly to order step
+          setStep('order');
+          
+          // Clear the sessionStorage so it doesn't interfere with future orders
+          sessionStorage.removeItem('washlab_prefilledCustomer');
+          
+          toast.success(`Customer ${customerData.name} loaded`);
+        }
+      } catch (error) {
+        console.error('Error parsing prefilled customer data:', error);
+      }
+    } else {
+      // Fallback: Check for active customer (legacy support)
+      const activeCustomer = sessionStorage.getItem('washlab_activeCustomer');
+      
+      if (activeCustomer) {
+        try {
+          const customerData = JSON.parse(activeCustomer);
+          
+          setFoundCustomer(customerData);
+          const displayPhone = (customerData.phoneNumber || customerData.phone)
+            .replace('+233', '')
+            .replace(/^0/, '');
+          setPhone(displayPhone);
+          
+          // Don't skip to order step - let them go through normal flow
+          // They can proceed manually
+        } catch (error) {
+          console.error('Error parsing active customer data:', error);
+        }
+      }
+    }
+  }, []); // Empty dependency array - run only once on mount
+
   // Set default service when services load
   useEffect(() => {
     if (dbServices.length > 0 && !serviceType) {
@@ -426,7 +483,7 @@ export function NewOrderContent() {
               {foundCustomer.name}
             </h3>
             <p className='text-primary flex items-center justify-center gap-1.5 mb-4 text-sm sm:text-base'>
-              <Phone className='w-4 h-4' /> {foundCustomer.phone}
+              <Phone className='w-4 h-4' /> {foundCustomer.phoneNumber || foundCustomer.phone}
             </p>
 
            <div className='grid grid-cols-2 gap-3 sm:gap-4 mb-4'>
@@ -595,7 +652,7 @@ export function NewOrderContent() {
                   </div>
                   <p className='text-sm sm:text-base text-muted-foreground mt-1 truncate'>
                     <User className='w-3 h-3 sm:w-4 sm:h-4 inline mr-1' />
-                    Customer: {foundCustomer?.name || newName} (Guest)
+                    Customer: {foundCustomer?.name || newName}
                   </p>
                 </div>
                 <div className='text-left sm:text-right text-xs sm:text-sm text-muted-foreground flex-shrink-0'>

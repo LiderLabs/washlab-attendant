@@ -20,6 +20,21 @@ export default function CustomersPage() {
   const { customers, searchQuery, setSearchQuery, isLoading } = useStationCustomers(stationToken);
   const router = useRouter();
 
+  // FIXED: Handle create order button click
+  const handleCreateOrder = (customer: any) => {
+    // Store complete customer data in sessionStorage with skipPhone flag
+    sessionStorage.setItem('washlab_prefilledCustomer', JSON.stringify({
+      id: customer._id,
+      name: customer.name,
+      phone: customer.phoneNumber,
+      email: customer.email,
+      skipPhone: true // Flag to skip phone entry step
+    }));
+
+    // Navigate to new order page - it will read from sessionStorage
+    router.push('/washstation/new-order');
+  };
+
   if (!isSessionValid) {
     return (
       <WashStationLayout title="Customers">
@@ -100,21 +115,13 @@ export default function CustomersPage() {
                       </p>
                     </div>
                   </div>
-                 <Button
-  variant="outline"
-  className="w-full mt-2"
-  onClick={() => {
-    sessionStorage.setItem(
-      'washlab_activeCustomer',
-      JSON.stringify(customer)
-    );
-
-    router.push('/washstation/new-order');
-  }}
->
-  Create Order
-</Button>
-
+                  <Button
+                    variant="outline"
+                    className="w-full mt-2"
+                    onClick={() => handleCreateOrder(customer)}
+                  >
+                    Create Order
+                  </Button>
                 </CardContent>
               </Card>
             ))}
