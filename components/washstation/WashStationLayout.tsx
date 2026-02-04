@@ -93,7 +93,6 @@ export function WashStationLayout({
         <WashStationHeader
           title={title}
           branchName={currentBranchName}
-          terminalId={terminalId || sessionData?.terminalId || undefined}
           activeAttendances={attendances}
           pendingCount={actualPendingCount}
           onNotificationClick={onNotificationClick}
