@@ -34,7 +34,6 @@ interface AttendanceInfo {
 interface HeaderProps {
   title: string;
   branchName?: string;
-  terminalId?: string;
   activeAttendances?: AttendanceInfo[];
   pendingCount?: number;
   onNotificationClick?: () => void;
@@ -44,7 +43,6 @@ interface HeaderProps {
 const WashStationHeader = ({ 
   title, 
   branchName = 'Central Branch',
-  terminalId='---',
   activeAttendances = [],
   pendingCount = 0,
   onNotificationClick,
@@ -116,11 +114,6 @@ const WashStationHeader = ({
           </Button>
         )}
         <h1 className="text-base md:text-lg font-semibold text-foreground truncate">{title}</h1>
-        {terminalId && (
-          <span className="hidden sm:inline text-xs md:text-sm text-muted-foreground whitespace-nowrap">
-            Terminal: #{terminalId}
-          </span>
-        )}
       </div>
       
       <div className="flex items-center gap-2 md:gap-3">
@@ -234,7 +227,6 @@ const WashStationHeader = ({
               <div className="flex flex-col space-y-1">
                 <p className="text-sm font-medium leading-none">Station</p>
                 <p className="text-xs leading-none text-muted-foreground">{branchName}</p>
-                <p className="text-xs leading-none text-muted-foreground">Terminal: {terminalId}</p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
