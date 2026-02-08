@@ -23,10 +23,10 @@ export function OrdersContent() {
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { label: string; className: string; icon: any }> = {
       pending_dropoff: { label: 'New Order', className: 'bg-primary/10 text-primary', icon: Clock },
-      checked_in: { label: 'Processing', className: 'bg-warning/10 text-warning', icon: Package },
-      washing: { label: 'Processing', className: 'bg-warning/10 text-warning', icon: Package },
-      drying: { label: 'Processing', className: 'bg-warning/10 text-warning', icon: Package },
-      folding: { label: 'Processing', className: 'bg-warning/10 text-warning', icon: Package },
+      checked_in: { label: 'Checked in', className: 'bg-warning/10 text-warning', icon: Package },
+      washing: { label: 'washing', className: 'bg-warning/10 text-warning', icon: Package },
+      drying: { label: 'drying', className: 'bg-warning/10 text-warning', icon: Package },
+      folding: { label: 'folding', className: 'bg-warning/10 text-warning', icon: Package },
       ready: { label: 'Ready for Pickup', className: 'bg-success/10 text-success', icon: CheckCircle },
       completed: { label: 'Delivered', className: 'bg-muted text-muted-foreground', icon: Truck }
     };

@@ -133,7 +133,7 @@ export default function BranchEntryPage() {
       {/* Footer */}
       <footer className="p-6 text-center">
         <p className="text-white/60 text-sm">
-          © 2025 WashLab • 
+          © 2026 WashLab · Powered by Lider Technologies LTD
         </p>
       </footer>
     </div>

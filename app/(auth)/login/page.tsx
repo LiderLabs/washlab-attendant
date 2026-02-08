@@ -280,7 +280,7 @@ export default function LoginPage() {
           </CardContent>
         </Card>
         <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-sm">
-          © 2026 WashLab 
+          © 2026 WashLab · Powered by Lider Technologies LTD
         </div>
       </div>
     );

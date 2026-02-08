@@ -73,7 +73,7 @@ const WashStationSidebar = ({
             <Image
               src="/washlab-logo.png"
               alt="WashLab"
-              width={120}   // rectangular logo
+              width={140}   // rectangular logo
               height={40}
               className="transition-transform duration-300 scale-100"
               priority
@@ -83,10 +83,10 @@ const WashStationSidebar = ({
           {/* Favicon */}
           {collapsed && (
             <Image
-              src="/washlab-favicon.png"
+              src="/washlab-favicon1.png"
               alt="WashLab"
-              width={40}    // square favicon
-              height={40}
+              width={500}    // square favicon
+              height={500}
               className="transition-transform duration-300 scale-100"
               priority
             />
