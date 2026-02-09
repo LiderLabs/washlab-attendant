@@ -12,16 +12,15 @@ import { Id } from "@devlider001/washlab-backend/dataModel"
 import { ActionVerification } from "@/components/washstation/ActionVerification"
 import {
   Banknote,
-  CreditCard,
   Smartphone,
-  X,
   ArrowRight,
   Clock,
   Delete,
 } from "lucide-react"
 import { toast } from "sonner"
 
-type PaymentMethodType = "cash" | "card" | "mobile_money"
+// Walk-in payment: backend supports only cash and mobile_money
+type PaymentMethodType = "cash" | "mobile_money"
 
 function PaymentContent() {
   const router = useRouter()
@@ -177,6 +176,42 @@ function PaymentContent() {
     )
   }
 
+  // Payment page is for walk-in orders only
+  if (order.orderType !== "walk_in") {
+    return (
+      <WashStationLayout title='Payment' branchName={branchName}>
+        <div className='flex items-center justify-center h-[calc(100vh-200px)]'>
+          <div className='text-center'>
+            <p className='text-destructive mb-2'>This page is for walk-in orders only</p>
+            <p className='text-muted-foreground text-sm mb-4'>
+              Order #{order.orderNumber} is an online order. Use the customer app or admin for online payments.
+            </p>
+            <Button onClick={() => router.push("/washstation/orders")}>
+              Back to Orders
+            </Button>
+          </div>
+        </div>
+      </WashStationLayout>
+    )
+  }
+
+  // Already paid - redirect or show message
+  if (order.paymentStatus === "paid") {
+    return (
+      <WashStationLayout title='Payment' branchName={branchName}>
+        <div className='flex items-center justify-center h-[calc(100vh-200px)]'>
+          <div className='text-center'>
+            <p className='text-success font-medium mb-2'>This order is already paid</p>
+            <p className='text-muted-foreground text-sm mb-4'>Order #{order.orderNumber}</p>
+            <Button onClick={() => router.push(`/washstation/orders/${order._id}`)}>
+              View Order
+            </Button>
+          </div>
+        </div>
+      </WashStationLayout>
+    )
+  }
+
   return (
     <WashStationLayout title='Payment' branchName={branchName}>
       <div className='flex h-[calc(100vh-200px)]'>
@@ -275,8 +310,8 @@ function PaymentContent() {
             Choose how the customer would like to pay.
           </p>
 
-          {/* Payment Method Tabs */}
-          <div className='grid grid-cols-3 gap-4 mb-8'>
+          {/* Payment Method Tabs (walk-in: cash and mobile_money only) */}
+          <div className='grid grid-cols-2 gap-4 mb-8 max-w-md'>
             <button
               onClick={() => setPaymentMethod("cash")}
               className={`p-6 rounded-xl border-2 transition-all flex flex-col items-center gap-3 relative ${
@@ -307,30 +342,6 @@ function PaymentContent() {
             </button>
 
             <button
-              onClick={() => setPaymentMethod("card")}
-              className={`p-6 rounded-xl border-2 transition-all flex flex-col items-center gap-3 ${
-                paymentMethod === "card"
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:border-muted-foreground/30"
-              }`}
-            >
-              <div
-                className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                  paymentMethod === "card"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted"
-                }`}
-              >
-                <CreditCard className='w-6 h-6' />
-              </div>
-              <span
-                className={`font-medium ${paymentMethod === "card" ? "text-primary" : "text-foreground"}`}
-              >
-                Card
-              </span>
-            </button>
-
-            <button
               onClick={() => setPaymentMethod("mobile_money")}
               className={`p-6 rounded-xl border-2 transition-all flex flex-col items-center gap-3 ${
                 paymentMethod === "mobile_money"
@@ -352,6 +363,11 @@ function PaymentContent() {
               >
                 Mobile Money
               </span>
+              {paymentMethod === "mobile_money" && (
+                <div className='absolute top-2 right-2 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs'>
+                  ✓
+                </div>
+              )}
             </button>
           </div>
 
@@ -445,25 +461,17 @@ function PaymentContent() {
             </div>
           )}
 
-          {/* Card/Mobile Money - Simple confirmation */}
-          {paymentMethod !== "cash" && (
+          {/* Mobile Money - Simple confirmation */}
+          {paymentMethod === "mobile_money" && (
             <div className='bg-muted/30 rounded-xl p-8 text-center'>
               <div className='w-16 h-16 rounded-full bg-primary/10 mx-auto mb-4 flex items-center justify-center'>
-                {paymentMethod === "card" ? (
-                  <CreditCard className='w-8 h-8 text-primary' />
-                ) : (
-                  <Smartphone className='w-8 h-8 text-primary' />
-                )}
+                <Smartphone className='w-8 h-8 text-primary' />
               </div>
               <h3 className='text-lg font-semibold text-foreground mb-2'>
-                {paymentMethod === "card"
-                  ? "Card Payment"
-                  : "Mobile Money Payment"}
+                Mobile Money Payment
               </h3>
               <p className='text-muted-foreground mb-4'>
-                {paymentMethod === "card"
-                  ? "Insert or tap card on the terminal to process payment."
-                  : "A payment prompt will be sent to the customer's mobile number."}
+                A payment prompt will be sent to the customer&apos;s mobile number.
               </p>
               <p className='text-2xl font-bold text-primary'>
                 ₵{totalDue.toFixed(2)}
