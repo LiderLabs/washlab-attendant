@@ -92,20 +92,20 @@ export function NewOrderContent() {
         const customerData = JSON.parse(prefilledData);
         
         // If skipPhone flag is set, go directly to order step
-        if (customerData.skipPhone) {
-          // Set customer data
+        if (customerData.skipPhone && customerData.id && customerData.name) {
+          // Set customer data (existing customer from Find Customer / customer search)
           setFoundCustomer({
             _id: customerData.id,
             name: customerData.name,
-            phoneNumber: customerData.phone,
+            phoneNumber: customerData.phone || customerData.phoneNumber || '',
             email: customerData.email,
           });
-          
-          // Set phone for display (remove +233 prefix for display)
-          const displayPhone = customerData.phone.replace('+233', '').replace(/^0/, '');
-          setPhone(displayPhone);
-          
-          // Skip directly to order step
+          const rawPhone = customerData.phone ?? customerData.phoneNumber ?? '';
+          const displayPhone = typeof rawPhone === 'string'
+            ? rawPhone.replace('+233', '').replace(/^0/, '').trim()
+            : '';
+          if (displayPhone) setPhone(displayPhone);
+          // Skip directly to order step (weight, service, bag, etc.)
           setStep('order');
           
           // Clear the sessionStorage so it doesn't interfere with future orders
@@ -157,8 +157,9 @@ export function NewOrderContent() {
     // The useEffect below will handle the step transition
   }
 
-  // Handle customer lookup result
+  // Handle customer lookup result (only when user is on phone step – not when we skipped from Find Customer)
   useEffect(() => {
+    if (step !== "phone") return
     if (phone.length >= 9 && getCustomerByPhone !== undefined) {
       if (getCustomerByPhone) {
         setFoundCustomer(getCustomerByPhone)
@@ -167,7 +168,7 @@ export function NewOrderContent() {
         setStep("register")
       }
     }
-  }, [phone, getCustomerByPhone])
+  }, [step, phone, getCustomerByPhone])
 
   const handleConfirmCustomer = () => {
     setStep("order")
@@ -992,7 +993,10 @@ export function NewOrderContent() {
 
                 <Button
                   onClick={handleProceedToPayment}
-                  className='w-full h-11 sm:h-12 bg-primary text-primary-foreground rounded-xl font-semibold mb-3 text-sm sm:text-base'
+                  disabled={
+                    weight < 0.1 || itemCount < 1 || !bagCardNumber.trim()
+                  }
+                  className='w-full h-11 sm:h-12 bg-primary text-primary-foreground rounded-xl font-semibold mb-3 text-sm sm:text-base disabled:opacity-50 disabled:pointer-events-none'
                 >
                   Proceed to Payment <ArrowRight className='w-4 h-4 ml-2' />
                 </Button>
