@@ -171,6 +171,9 @@ export default function OrdersPage() {
                 onOrderClick={(orderId) =>
                   router.push(`/washstation/orders/${orderId}`)
                 }
+                onCollectPayment={(orderId) =>
+                  router.push(`/washstation/payment?orderId=${orderId}`)
+                }
               />
               {hasMore && (
                 <div className='mt-6 text-center'>

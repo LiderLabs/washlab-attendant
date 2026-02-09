@@ -735,14 +735,26 @@ export default function OrderDetailsPage() {
                   <CardTitle>Actions</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {order.paymentStatus !== 'paid' && currentStatus === 'checked_in' && (
-                    <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 mb-4">
+                  {order.paymentStatus !== 'paid' && (
+                    <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 mb-4 space-y-3">
                       <p className="text-warning font-medium flex items-center gap-2">
                         <CreditCard className="w-5 h-5" /> Payment Required
                       </p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Staff cannot proceed to processing until order is paid.
+                      <p className="text-sm text-muted-foreground">
+                        {order.orderType === 'walk_in'
+                          ? 'Collect payment from the customer to proceed.'
+                          : 'Staff cannot proceed to processing until order is paid.'}
                       </p>
+                      {order.orderType === 'walk_in' && (
+                        <Button
+                          size="default"
+                          className="w-full sm:w-auto"
+                          onClick={() => router.push(`/washstation/payment?orderId=${order._id}`)}
+                        >
+                          <CreditCard className="w-4 h-4 mr-2" />
+                          Collect Payment
+                        </Button>
+                      )}
                     </div>
                   )}
                   <Button size="lg" className="w-full" onClick={() => handleAdvanceStage(nextStage.id)} disabled={isUpdating}>
