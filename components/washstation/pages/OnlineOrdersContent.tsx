@@ -170,7 +170,7 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
     }
   }
 
-  const handleConvertToActive = async () => {
+  const handleProceedToPayment = async () => {
     if (!selectedOrder || !stationToken) {
       toast.error("Please select an order")
       return
@@ -186,7 +186,6 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
       return
     }
 
-    // Check if bag number is already taken
     const takenNumbers = new Set(activeBagNumbers)
     if (takenNumbers.has(bagCardNumber)) {
       toast.error(
@@ -196,6 +195,7 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
     }
 
     try {
+      const amountToCharge = Math.round(calculateEstimatedTotal() * 100) / 100
       await checkInOrder({
         stationToken,
         orderId: selectedOrder._id,
@@ -203,15 +203,19 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
         itemCount: laundryBags || 1,
         bagCardNumber: bagCardNumber,
         notes: undefined,
-      })
+        calculatedTotal: amountToCharge,
+      } as Parameters<typeof checkInOrder>[0])
 
-      toast.success("Order checked in successfully")
+      toast.success("Order checked in. Proceeding to payment.")
+      const orderId = selectedOrder._id
       // Reset state
       setSelectedOrder(null)
       setWeight(0)
       setLaundryBags(1)
       setHangers(0)
       setBagCardNumber("")
+      // Navigate to same payment interface as walk-in (Card or Mobile Money)
+      router.push(`/washstation/payment?orderId=${orderId}`)
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to check in order"
@@ -684,15 +688,15 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
               </Button>
             </div>
             <Button
-              onClick={handleConvertToActive}
+              onClick={handleProceedToPayment}
               className='bg-primary text-primary-foreground w-full sm:w-auto'
               disabled={weight === 0 || !bagCardNumber}
               size='sm'
             >
               <span className='text-xs sm:text-sm'>
-                Convert to Active Order
+                Proceed to Payment
               </span>
-              <span className='lg:hidden'>Convert Order</span>
+              <span className='lg:hidden'>Payment</span>
               <ArrowRight className='w-4 h-4 ml-2' />
             </Button>
           </div>
