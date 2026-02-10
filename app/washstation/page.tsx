@@ -125,9 +125,6 @@ export default function BranchEntryPage() {
               <p className="text-xs text-center text-muted-foreground">
                 Available codes: {activeBranches.map(b => `${b.code} (${b.name})`).join(', ')}
               </p>
-              <p className="text-xs text-center text-amber-600 dark:text-amber-400 mt-2">
-                ⚠️ Preview Mode – Data stored locally
-              </p>
             </div>
           </div>
         </div>
@@ -136,7 +133,7 @@ export default function BranchEntryPage() {
       {/* Footer */}
       <footer className="p-6 text-center">
         <p className="text-white/60 text-sm">
-          © 2025 WashLab • Tablet POS
+          © 2026 WashLab · Powered by Lider Technologies LTD
         </p>
       </footer>
     </div>

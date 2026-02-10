@@ -202,9 +202,6 @@ export default function ShiftManagementPage() {
             priority
           />
         </div>
-        <span className="text-xs bg-muted text-muted-foreground px-3 py-1 rounded-full">
-          ⚠️ Preview Mode – Data stored locally
-        </span>
       </header>
 
       {/* Main Content */}

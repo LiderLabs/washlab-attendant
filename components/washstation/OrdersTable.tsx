@@ -2,14 +2,15 @@
 
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Id } from '@devlider001/washlab-backend/dataModel';
-import { 
+import {
   Clock,
   Package,
   CheckCircle,
   Truck,
-  Eye
+  Eye,
+  CreditCard,
+  type LucideIcon,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -33,6 +34,9 @@ interface Order {
   _id: Id<'orders'>;
   orderNumber: string;
   status: OrderStatus;
+  orderType?: 'walk_in' | 'online';
+  paymentStatus?: string;
+  paymentMethod?: string;
   serviceType?: string;
   actualWeight?: number;
   estimatedWeight?: number;
@@ -45,21 +49,33 @@ interface Order {
   } | null;
 }
 
+function getPaymentMethodLabel(method: string | undefined): string {
+  if (!method) return '—';
+  const labels: Record<string, string> = {
+    cash: 'Cash',
+    mobile_money: 'Mobile Money',
+    card: 'Card',
+  };
+  return labels[method] || method;
+}
+
 interface OrdersTableProps {
   orders: Order[];
   onOrderClick?: (orderId: Id<'orders'>) => void;
+  onCollectPayment?: (orderId: Id<'orders'>) => void;
 }
 
+
 const getStatusBadge = (status: OrderStatus) => {
-  const statusConfig: Record<string, { label: string; className: string; icon: any }> = {
+  const statusConfig: Record<string, { label: string; className: string; icon: LucideIcon }> = {
     pending_dropoff: { label: 'New Order', className: 'bg-primary/10 text-primary', icon: Clock },
     pending: { label: 'New Order', className: 'bg-primary/10 text-primary', icon: Clock },
-    checked_in: { label: 'Processing', className: 'bg-warning/10 text-warning', icon: Package },
-    sorting: { label: 'Processing', className: 'bg-warning/10 text-warning', icon: Package },
-    washing: { label: 'Processing', className: 'bg-warning/10 text-warning', icon: Package },
-    drying: { label: 'Processing', className: 'bg-warning/10 text-warning', icon: Package },
-    folding: { label: 'Processing', className: 'bg-warning/10 text-warning', icon: Package },
-    in_progress: { label: 'Processing', className: 'bg-warning/10 text-warning', icon: Package },
+    checked_in: { label: 'Checked in', className: 'bg-warning/10 text-warning', icon: Package },
+    sorting: { label: 'sorting', className: 'bg-warning/10 text-warning', icon: Package },
+    washing: { label: 'washing', className: 'bg-warning/10 text-warning', icon: Package },
+    drying: { label: 'drying', className: 'bg-warning/10 text-warning', icon: Package },
+    folding: { label: 'folding', className: 'bg-warning/10 text-warning', icon: Package },
+    in_progress: { label: 'in progress', className: 'bg-warning/10 text-warning', icon: Package },
     ready: { label: 'Ready for Pickup', className: 'bg-success/10 text-success', icon: CheckCircle },
     ready_for_pickup: { label: 'Ready for Pickup', className: 'bg-success/10 text-success', icon: CheckCircle },
     completed: { label: 'Delivered', className: 'bg-muted text-muted-foreground', icon: Truck },
@@ -69,7 +85,7 @@ const getStatusBadge = (status: OrderStatus) => {
   return statusConfig[status] || statusConfig.pending_dropoff;
 };
 
-export function OrdersTable({ orders, onOrderClick }: OrdersTableProps) {
+export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTableProps) {
   if (orders.length === 0) {
     return (
       <div className="text-center py-12">
@@ -87,6 +103,9 @@ export function OrdersTable({ orders, onOrderClick }: OrdersTableProps) {
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Customer</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Service Type</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</TableHead>
+            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment</TableHead>
+            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment Method</TableHead>
+            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount Paid</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Time</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Action</TableHead>
           </TableRow>
@@ -120,19 +139,52 @@ export function OrdersTable({ orders, onOrderClick }: OrdersTableProps) {
                     {status.label}
                   </span>
                 </TableCell>
+                <TableCell>
+                  {order.paymentStatus === 'paid' ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-success/10 text-success">
+                      Paid
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-warning/10 text-warning">
+                      Pending
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
+                  {getPaymentMethodLabel(order.paymentMethod)}
+                </TableCell>
+                <TableCell className="text-sm font-medium whitespace-nowrap">
+                  {order.paymentStatus === 'paid' ? `₵${order.finalPrice.toFixed(2)}` : '—'}
+                </TableCell>
                 <TableCell className="text-muted-foreground text-sm">
                   {formatDistanceToNow(new Date(order.createdAt), { addSuffix: true })}
                 </TableCell>
                 <TableCell>
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    className="text-primary hover:text-primary/80"
-                    onClick={() => onOrderClick?.(order._id)}
-                  >
-                    <Eye className="w-4 h-4 mr-1" />
-                    View
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {order.orderType === 'walk_in' && order.paymentStatus !== 'paid' && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="bg-success hover:bg-success/90"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCollectPayment?.(order._id);
+                        }}
+                      >
+                        <CreditCard className="w-4 h-4 mr-1" />
+                        Pay
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-primary hover:text-primary/80"
+                      onClick={() => onOrderClick?.(order._id)}
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      View
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             );

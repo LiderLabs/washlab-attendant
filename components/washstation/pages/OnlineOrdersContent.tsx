@@ -68,6 +68,7 @@ export function OnlineOrdersContent() {
   const [laundryBags, setLaundryBags] = useState(1)
   const [hangers, setHangers] = useState(0)
   const [bagCardNumber, setBagCardNumber] = useState("")
+const [notes, setNotes] = useState(selectedOrder?.notes || "")
 
   // Service details
   const [detergent, setDetergent] = useState("standard")
@@ -169,7 +170,7 @@ export function OnlineOrdersContent() {
     }
   }
 
-  const handleConvertToActive = async () => {
+  const handleProceedToPayment = async () => {
     if (!selectedOrder || !stationToken) {
       toast.error("Please select an order")
       return
@@ -185,7 +186,6 @@ export function OnlineOrdersContent() {
       return
     }
 
-    // Check if bag number is already taken
     const takenNumbers = new Set(activeBagNumbers)
     if (takenNumbers.has(bagCardNumber)) {
       toast.error(
@@ -195,6 +195,7 @@ export function OnlineOrdersContent() {
     }
 
     try {
+      const amountToCharge = Math.round(calculateEstimatedTotal() * 100) / 100
       await checkInOrder({
         stationToken,
         orderId: selectedOrder._id,
@@ -202,15 +203,19 @@ export function OnlineOrdersContent() {
         itemCount: laundryBags || 1,
         bagCardNumber: bagCardNumber,
         notes: undefined,
-      })
+        calculatedTotal: amountToCharge,
+      } as Parameters<typeof checkInOrder>[0])
 
-      toast.success("Order checked in successfully")
+      toast.success("Order checked in. Proceeding to payment.")
+      const orderId = selectedOrder._id
       // Reset state
       setSelectedOrder(null)
       setWeight(0)
       setLaundryBags(1)
       setHangers(0)
       setBagCardNumber("")
+      // Navigate to same payment interface as walk-in (Card or Mobile Money)
+      router.push(`/washstation/payment?orderId=${orderId}`)
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to check in order"
@@ -480,14 +485,19 @@ export function OnlineOrdersContent() {
                 </div>
 
                 <div className='bg-card border border-border rounded-xl p-4 sm:p-6 mb-4'>
-                  <div className='text-center'>
-                    <span className='text-3xl sm:text-4xl md:text-5xl font-bold text-foreground'>
-                      {weight.toFixed(2)}
-                    </span>
-                    <span className='text-lg sm:text-xl text-muted-foreground ml-2'>
-                      kg
-                    </span>
-                  </div>
+                 <div className='text-center'>
+                <Input
+                type="number"
+               step={0.1}
+               min={0}
+               value={weight}
+               onChange={(e) => setWeight(parseFloat(e.target.value) || 0)}
+              className='text-3xl sm:text-4xl md:text-5xl font-bold text-foreground text-center border-0 bg-transparent focus:ring-0'
+              />
+              <span className='text-lg sm:text-xl text-muted-foreground ml-2'>
+              kg
+              </span>
+              </div>
                 </div>
 
                 <div className='flex flex-col sm:flex-row gap-2 justify-center'>
@@ -512,14 +522,18 @@ export function OnlineOrdersContent() {
 
               {/* Customer Instructions */}
               <div className='bg-warning/5 border border-warning/20 rounded-xl p-4'>
-                <h3 className='font-semibold text-foreground flex items-center gap-2 mb-3'>
-                  <MessageSquare className='w-5 h-5 text-warning' />
-                  CUSTOMER INSTRUCTIONS
-                </h3>
-                <p className='text-xs sm:text-sm text-muted-foreground italic'>
-                  {selectedOrder.notes || "No special instructions"}
-                </p>
-              </div>
+  <h3 className='font-semibold text-foreground flex items-center gap-2 mb-3'>
+    <MessageSquare className='w-5 h-5 text-warning' />
+    CUSTOMER INSTRUCTIONS
+  </h3>
+  <textarea
+    value={notes}
+    onChange={(e) => setNotes(e.target.value)}
+    placeholder="Add or edit customer instructions..."
+    className='w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted border-0 rounded-xl text-foreground placeholder:text-muted-foreground resize-none h-20 sm:h-24 text-sm sm:text-base'
+  />
+</div>
+
             </div>
 
             {/* Bag Card Number */}
@@ -564,71 +578,86 @@ export function OnlineOrdersContent() {
               </h3>
 
               <div className='grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4'>
-                <div className='flex items-center justify-between p-3 sm:p-4 bg-card border border-border rounded-xl'>
-                  <div className='flex items-center gap-3 min-w-0 flex-1'>
-                    <div className='w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0'>
-                      <Package className='w-5 h-5 text-muted-foreground' />
-                    </div>
-                    <div className='min-w-0'>
-                      <p className='font-medium text-foreground text-sm'>
-                        Laundry Bags
-                      </p>
-                      <p className='text-xs text-muted-foreground truncate'>
-                        Standard WashLab Bag
-                      </p>
-                    </div>
-                  </div>
-                  <div className='flex items-center gap-3'>
-                    <button
-                      onClick={() =>
-                        setLaundryBags(Math.max(0, laundryBags - 1))
-                      }
-                      className='w-8 h-8 rounded-lg bg-muted flex items-center justify-center'
-                    >
-                      <Minus className='w-4 h-4' />
-                    </button>
-                    <span className='w-8 text-center font-semibold text-foreground'>
-                      {laundryBags}
-                    </span>
-                    <button
-                      onClick={() => setLaundryBags(laundryBags + 1)}
-                      className='w-8 h-8 rounded-lg bg-muted flex items-center justify-center'
-                    >
-                      <Plus className='w-4 h-4' />
-                    </button>
-                  </div>
-                </div>
+              <div className="flex flex-col p-3 sm:p-4 bg-card border border-border rounded-xl">
+  {/* Top: Label */}
+  <div className="flex items-center gap-3 mb-2">
+    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+      <Package className="w-5 h-5 text-muted-foreground" />
+    </div>
+    <div className="min-w-0">
+      <p className="font-medium text-foreground text-sm">Laundry Bags</p>
+      <p className="text-xs text-muted-foreground truncate">Standard WashLab Bag</p>
+    </div>
+  </div>
 
-                <div className='flex items-center justify-between p-3 sm:p-4 bg-card border border-border rounded-xl'>
-                  <div className='flex items-center gap-3 min-w-0 flex-1'>
-                    <div className='w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0'>
-                      <Tag className='w-5 h-5 text-muted-foreground' />
-                    </div>
-                    <div className='min-w-0'>
-                      <p className='font-medium text-foreground text-sm'>
-                        Hangers
-                      </p>
-                      <p className='text-xs text-muted-foreground truncate'>
-                        Customer Provided
-                      </p>
-                    </div>
-                  </div>
-                  <div className='flex items-center gap-3'>
-                    <button
-                      onClick={() => setHangers(Math.max(0, hangers - 1))}
-                      className='w-8 h-8 rounded-lg bg-muted flex items-center justify-center'
-                    >
-                      <Minus className='w-4 h-4' />
-                    </button>
-                    <span className='w-8 text-center font-semibold text-foreground'>
-                      {hangers}
-                    </span>
-                    <button
-                      onClick={() => setHangers(hangers + 1)}
-                      className='w-8 h-8 rounded-lg bg-muted flex items-center justify-center'
-                    >
-                      <Plus className='w-4 h-4' />
-                    </button>
+  {/* Bottom: - [input] + */}
+  <div className="flex items-center gap-2">
+    <button
+      type="button"
+      onClick={() => setLaundryBags(Math.max(0, laundryBags - 1))}
+      className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center"
+    >
+      <Minus className="w-4 h-4" />
+    </button>
+
+    <Input
+      type="number"
+      min={0}
+      step={1}
+      value={laundryBags}
+      onChange={(e) => setLaundryBags(parseInt(e.target.value) || 0)}
+      className="w-16 text-center font-semibold text-foreground border-0 bg-transparent focus:ring-0"
+    />
+
+    <button
+      type="button"
+      onClick={() => setLaundryBags(laundryBags + 1)}
+      className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center"
+    >
+      <Plus className="w-4 h-4" />
+    </button>
+  </div>
+</div>
+
+
+             <div className="flex flex-col p-3 sm:p-4 bg-card border border-border rounded-xl">
+  {/* Top: Label */}
+  <div className="flex items-center gap-3 mb-2">
+    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+      <Tag className="w-5 h-5 text-muted-foreground" />
+    </div>
+    <div className="min-w-0">
+      <p className="font-medium text-foreground text-sm">Hangers</p>
+      <p className="text-xs text-muted-foreground truncate">Customer Provided</p>
+    </div>
+  </div>
+
+  {/* Bottom: - [input] + */}
+  <div className="flex items-center gap-2">
+    <button
+      type="button"
+      onClick={() => setHangers(Math.max(0, hangers - 1))}
+      className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center"
+    >
+      <Minus className="w-4 h-4" />
+    </button>
+
+    <Input
+      type="number"
+      min={0}
+      step={1}
+      value={hangers}
+      onChange={(e) => setHangers(parseInt(e.target.value) || 0)}
+      className="w-16 text-center font-semibold text-foreground border-0 bg-transparent focus:ring-0"
+    />
+
+    <button
+      type="button"
+      onClick={() => setHangers(hangers + 1)}
+      className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center"
+    >
+      <Plus className="w-4 h-4" />
+    </button>
                   </div>
                 </div>
               </div>
@@ -659,15 +688,15 @@ export function OnlineOrdersContent() {
               </Button>
             </div>
             <Button
-              onClick={handleConvertToActive}
+              onClick={handleProceedToPayment}
               className='bg-primary text-primary-foreground w-full sm:w-auto'
               disabled={weight === 0 || !bagCardNumber}
               size='sm'
             >
               <span className='text-xs sm:text-sm'>
-                Convert to Active Order
+                Proceed to Payment
               </span>
-              <span className='lg:hidden'>Convert Order</span>
+              <span className='lg:hidden'>Payment</span>
               <ArrowRight className='w-4 h-4 ml-2' />
             </Button>
           </div>

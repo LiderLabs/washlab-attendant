@@ -64,7 +64,18 @@ export function CustomersContent() {
     }
   };
 
+  // FIXED: Store customer data in sessionStorage and navigate with skipPhone flag
   const handleNewOrder = (customerId: string) => {
+    // Store complete customer data in sessionStorage
+    sessionStorage.setItem('washlab_prefilledCustomer', JSON.stringify({
+      id: selectedCustomer.id || selectedCustomer._id,
+      name: selectedCustomer.name,
+      phone: selectedCustomer.phone || selectedCustomer.phoneNumber,
+      email: selectedCustomer.email,
+      skipPhone: true // Flag to skip phone entry step
+    }));
+    
+    // Navigate to new order page - it will read from sessionStorage
     router.push('/washstation/new-order');
   };
 
@@ -199,7 +210,7 @@ export function CustomersContent() {
             </div>
             <div className="p-5">
               <p className="text-sm text-muted-foreground">Notes</p>
-              <p className="text-sm text-foreground mt-1 italic text-warning line-clamp-2">
+              <p className="text-sm text-foreground mt-1 italic line-clamp-2">
                 {selectedCustomer.notes || '"Allergic to lavender detergent. Prefer..."'}
               </p>
             </div>

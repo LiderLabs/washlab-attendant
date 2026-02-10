@@ -82,6 +82,63 @@ export function NewOrderContent() {
     () => `ORD-${Math.floor(Math.random() * 9000) + 1000}`
   )
 
+  // NEW: Check for prefilled customer data from customer pages
+  useEffect(() => {
+    // Check for prefilled customer (from customer pages with skipPhone flag)
+    const prefilledData = sessionStorage.getItem('washlab_prefilledCustomer');
+    
+    if (prefilledData) {
+      try {
+        const customerData = JSON.parse(prefilledData);
+        
+        // If skipPhone flag is set, go directly to order step
+        if (customerData.skipPhone && customerData.id && customerData.name) {
+          // Set customer data (existing customer from Find Customer / customer search)
+          setFoundCustomer({
+            _id: customerData.id,
+            name: customerData.name,
+            phoneNumber: customerData.phone || customerData.phoneNumber || '',
+            email: customerData.email,
+          });
+          const rawPhone = customerData.phone ?? customerData.phoneNumber ?? '';
+          const displayPhone = typeof rawPhone === 'string'
+            ? rawPhone.replace('+233', '').replace(/^0/, '').trim()
+            : '';
+          if (displayPhone) setPhone(displayPhone);
+          // Skip directly to order step (weight, service, bag, etc.)
+          setStep('order');
+          
+          // Clear the sessionStorage so it doesn't interfere with future orders
+          sessionStorage.removeItem('washlab_prefilledCustomer');
+          
+          toast.success(`Customer ${customerData.name} loaded`);
+        }
+      } catch (error) {
+        console.error('Error parsing prefilled customer data:', error);
+      }
+    } else {
+      // Fallback: Check for active customer (legacy support)
+      const activeCustomer = sessionStorage.getItem('washlab_activeCustomer');
+      
+      if (activeCustomer) {
+        try {
+          const customerData = JSON.parse(activeCustomer);
+          
+          setFoundCustomer(customerData);
+          const displayPhone = (customerData.phoneNumber || customerData.phone)
+            .replace('+233', '')
+            .replace(/^0/, '');
+          setPhone(displayPhone);
+          
+          // Don't skip to order step - let them go through normal flow
+          // They can proceed manually
+        } catch (error) {
+          console.error('Error parsing active customer data:', error);
+        }
+      }
+    }
+  }, []); // Empty dependency array - run only once on mount
+
   // Set default service when services load
   useEffect(() => {
     if (dbServices.length > 0 && !serviceType) {
@@ -100,8 +157,9 @@ export function NewOrderContent() {
     // The useEffect below will handle the step transition
   }
 
-  // Handle customer lookup result
+  // Handle customer lookup result (only when user is on phone step – not when we skipped from Find Customer)
   useEffect(() => {
+    if (step !== "phone") return
     if (phone.length >= 9 && getCustomerByPhone !== undefined) {
       if (getCustomerByPhone) {
         setFoundCustomer(getCustomerByPhone)
@@ -110,7 +168,7 @@ export function NewOrderContent() {
         setStep("register")
       }
     }
-  }, [phone, getCustomerByPhone])
+  }, [step, phone, getCustomerByPhone])
 
   const handleConfirmCustomer = () => {
     setStep("order")
@@ -226,14 +284,12 @@ export function NewOrderContent() {
   // Get selected service from database
   const selectedService = dbServices.find((s) => s.code === serviceType)
 
-  // Calculate pricing based on service type
+  // Calculate pricing based on service type - FIXED VERSION
   const calculatePrice = () => {
     if (!selectedService) {
       return {
         basePrice: 0,
         subtotal: 0,
-        tax: 0,
-        serviceFee: 0,
         total: 0,
         totalPrice: 0,
       }
@@ -248,16 +304,12 @@ export function NewOrderContent() {
       basePrice = loads * selectedService.basePrice
     }
 
-    const subtotal = Math.round(basePrice * 100) / 100
-    const tax = Math.round(subtotal * 0.08 * 100) / 100 // 8% tax
-    const serviceFee = 1.5 // Fixed service fee
-    const total = subtotal + tax + serviceFee
+    // Round to 2 decimal places
+    const total = Math.round(basePrice * 100) / 100
 
     return {
-      basePrice: subtotal,
-      subtotal,
-      tax,
-      serviceFee,
+      basePrice: total,
+      subtotal: total,
       total,
       totalPrice: total,
     }
@@ -265,6 +317,7 @@ export function NewOrderContent() {
 
   const pricing = calculatePrice()
   const rushFee = orderNotes.includes("Rush Service") ? 5 : 0
+  const finalTotal = pricing.total + rushFee
 
   // Map service codes to fallback images from public folder
   const getFallbackImage = (code: string): string => {
@@ -431,26 +484,33 @@ export function NewOrderContent() {
               {foundCustomer.name}
             </h3>
             <p className='text-primary flex items-center justify-center gap-1.5 mb-4 text-sm sm:text-base'>
-              <Phone className='w-4 h-4' /> {foundCustomer.phone}
+              <Phone className='w-4 h-4' /> {foundCustomer.phoneNumber || foundCustomer.phone}
             </p>
 
-            <div className='grid grid-cols-2 gap-3 sm:gap-4 mb-4'>
-              <div className='bg-muted/50 rounded-xl p-3 sm:p-4'>
-                <p className='text-xs text-muted-foreground'>LAST VISIT</p>
-                <p className='font-semibold text-foreground text-sm sm:text-base'>
-                  {foundCustomer.lastVisit || "Oct 12, 2023"}
-                </p>
-              </div>
-              <div className='bg-muted/50 rounded-xl p-3 sm:p-4'>
-                <p className='text-xs text-muted-foreground'>LIFETIME VALUE</p>
-                <p className='font-semibold text-success text-sm sm:text-base'>
-                  ₵{(foundCustomer.totalSpent || 450).toFixed(2)}
-                </p>
-                <p className='text-xs text-muted-foreground'>
-                  {foundCustomer.orderCount || 12} Orders
-                </p>
-              </div>
-            </div>
+           <div className='grid grid-cols-2 gap-3 sm:gap-4 mb-4'>
+  <div className='bg-muted/50 rounded-xl p-3 sm:p-4'>
+    <p className='text-xs text-muted-foreground'>LAST VISIT</p>
+    <p className='font-semibold text-foreground text-sm sm:text-base'>
+      {foundCustomer.lastVisit
+        ? new Date(foundCustomer.lastVisit).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })
+        : "No previous visit"}
+    </p>
+  </div>
+  <div className='bg-muted/50 rounded-xl p-3 sm:p-4'>
+    <p className='text-xs text-muted-foreground'>LIFETIME VALUE</p>
+    <p className='font-semibold text-success text-sm sm:text-base'>
+      ₵{(foundCustomer.totalSpent ?? 0).toFixed(2)}
+    </p>
+    <p className='text-xs text-muted-foreground'>
+      {foundCustomer.orderCount ?? 0} Orders
+    </p>
+  </div>
+</div>
+
 
             <Button
               onClick={handleConfirmCustomer}
@@ -504,7 +564,7 @@ export function NewOrderContent() {
               <div className='flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-muted rounded-xl'>
                 <Phone className='w-4 h-4 text-muted-foreground flex-shrink-0' />
                 <span className='text-foreground font-medium text-sm sm:text-base truncate'>
-                  (555) {formatPhone(phone)}
+                  (+233) {formatPhone(phone)}
                 </span>
                 <span className='ml-auto text-muted-foreground flex-shrink-0'>
                   🔒
@@ -578,7 +638,8 @@ export function NewOrderContent() {
         <div className='max-w-7xl mx-auto'>
           <div className='flex flex-col lg:flex-row gap-4 sm:gap-6'>
             {/* Left - Order Form */}
-            <div className='flex-1 space-y-4 sm:space-y-6 min-w-0'>
+           <div className='flex-1 space-y-4 sm:space-y-6 min-w-0 pr-[22rem]'>
+
               {/* Order Header */}
               <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0'>
                 <div className='min-w-0 flex-1'>
@@ -592,7 +653,7 @@ export function NewOrderContent() {
                   </div>
                   <p className='text-sm sm:text-base text-muted-foreground mt-1 truncate'>
                     <User className='w-3 h-3 sm:w-4 sm:h-4 inline mr-1' />
-                    Customer: {foundCustomer?.name || newName} (Guest)
+                    Customer: {foundCustomer?.name || newName}
                   </p>
                 </div>
                 <div className='text-left sm:text-right text-xs sm:text-sm text-muted-foreground flex-shrink-0'>
@@ -693,14 +754,20 @@ export function NewOrderContent() {
                   >
                     <Minus className='w-5 h-5 sm:w-6 sm:h-6' />
                   </button>
-                  <div className='flex-1 text-center min-w-0'>
-                    <p className='text-4xl sm:text-5xl font-bold text-foreground'>
-                      {weight.toFixed(1)}
-                    </p>
-                    <p className='text-xs sm:text-sm text-muted-foreground'>
-                      KILOGRAMS
-                    </p>
-                  </div>
+                 <div className='flex-1 text-center min-w-0'>
+                 <Input
+                type="number"
+                step={0.1}
+                 min={0.5}
+                 value={weight}
+                 onChange={(e) => setWeight(parseFloat(e.target.value) || 0)}
+                  className='text-4xl sm:text-5xl font-bold text-foreground text-center border-0 bg-transparent focus:ring-0'
+                   />
+  <p className='text-xs sm:text-sm text-muted-foreground'>
+    KILOGRAMS
+  </p>
+</div>
+
                   <button
                     onClick={() => setWeight(weight + 0.5)}
                     className='w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 flex-shrink-0'
@@ -745,12 +812,18 @@ export function NewOrderContent() {
                   >
                     <Minus className='w-4 h-4 sm:w-5 sm:h-5' />
                   </button>
-                  <div className='flex-1 text-center min-w-0'>
-                    <p className='text-2xl sm:text-3xl font-bold text-foreground'>
-                      {itemCount || "--"}
-                    </p>
-                    <p className='text-xs text-muted-foreground'>PIECES</p>
-                  </div>
+                 <div className='flex-1 text-center min-w-0'>
+                 <Input
+                 type="number"
+                  min={0}
+                 step={1}
+                 value={itemCount}
+                 onChange={(e) => setItemCount(parseInt(e.target.value) || 0)}
+                 className='text-2xl sm:text-3xl font-bold text-foreground text-center border-0 bg-transparent focus:ring-0'
+                  />
+                 <p className='text-xs text-muted-foreground'>PIECES</p>
+                </div>
+
                   <button
                     onClick={() => setItemCount(itemCount + 1)}
                     className='w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-muted flex items-center justify-center hover:bg-muted/80 flex-shrink-0'
@@ -856,9 +929,9 @@ export function NewOrderContent() {
             </div>
 
             {/* Right - Order Summary */}
-            <div className='w-full lg:w-80 flex-shrink-0'>
-              <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 sticky top-6'>
-                <h3 className='font-semibold text-foreground mb-4 text-sm sm:text-base'>
+           <div className='flex flex-col lg:flex-row gap-4 sm:gap-6 items-start'>
+            <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 fixed top-24 right-6 w-[20rem]'>
+             <h3 className='font-semibold text-foreground mb-4 text-sm sm:text-base'>
                   Order Summary
                 </h3>
 
@@ -892,33 +965,38 @@ export function NewOrderContent() {
                   )}
                 </div>
 
-                <div className='py-4 border-b border-border'>
-                  <div className='flex justify-between text-xs sm:text-sm'>
-                    <span className='text-muted-foreground'>Subtotal</span>
-                    <span className='text-foreground'>
-                      ₵{((pricing?.subtotal || 0) + rushFee).toFixed(2)}
-                    </span>
+                {rushFee > 0 && (
+                  <div className='py-4 border-b border-border'>
+                    <div className='flex justify-between text-xs sm:text-sm'>
+                      <span className='text-muted-foreground'>Service Subtotal</span>
+                      <span className='text-foreground'>
+                        ₵{(pricing?.subtotal || 0).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className='flex justify-between text-xs sm:text-sm mt-1'>
+                      <span className='text-muted-foreground'>Rush Fee</span>
+                      <span className='text-foreground'>
+                        ₵{rushFee.toFixed(2)}
+                      </span>
+                    </div>
                   </div>
-                  <div className='flex justify-between text-xs sm:text-sm mt-1'>
-                    <span className='text-muted-foreground'>Tax (8%)</span>
-                    <span className='text-foreground'>
-                      ₵{(pricing?.tax || 0).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
+                )}
 
                 <div className='flex justify-between items-center py-4'>
                   <span className='font-medium text-foreground text-sm sm:text-base'>
                     Total
                   </span>
                   <span className='text-2xl sm:text-3xl font-bold text-primary'>
-                    ₵{((pricing?.total || 0) + rushFee).toFixed(2)}
+                    ₵{finalTotal.toFixed(2)}
                   </span>
                 </div>
 
                 <Button
                   onClick={handleProceedToPayment}
-                  className='w-full h-11 sm:h-12 bg-primary text-primary-foreground rounded-xl font-semibold mb-3 text-sm sm:text-base'
+                  disabled={
+                    weight < 0.1 || itemCount < 1 || !bagCardNumber.trim()
+                  }
+                  className='w-full h-11 sm:h-12 bg-primary text-primary-foreground rounded-xl font-semibold mb-3 text-sm sm:text-base disabled:opacity-50 disabled:pointer-events-none'
                 >
                   Proceed to Payment <ArrowRight className='w-4 h-4 ml-2' />
                 </Button>

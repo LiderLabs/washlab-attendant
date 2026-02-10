@@ -276,18 +276,11 @@ export default function LoginPage() {
               )}
             </div>
 
-            <div className="pt-2">
-              <Alert className="bg-orange-50 border-orange-200">
-                <AlertCircle className="h-4 w-4 text-orange-600" />
-                <AlertDescription className="text-orange-800 text-sm">
-                  ▲ Preview Mode - Data stored locally
-                </AlertDescription>
-              </Alert>
-            </div>
+
           </CardContent>
         </Card>
         <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-sm">
-          © 2025 WashLab • Tablet POS
+          © 2026 WashLab · Powered by Lider Technologies LTD
         </div>
       </div>
     );

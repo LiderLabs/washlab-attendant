@@ -12,10 +12,28 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Search, User, Phone, Mail, Package, DollarSign, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
+import { useRouter } from 'next/navigation';
+
 
 export default function CustomersPage() {
   const { stationToken, isSessionValid } = useStationSession();
   const { customers, searchQuery, setSearchQuery, isLoading } = useStationCustomers(stationToken);
+  const router = useRouter();
+
+  // FIXED: Handle create order button click
+  const handleCreateOrder = (customer: any) => {
+    // Store complete customer data in sessionStorage with skipPhone flag
+    sessionStorage.setItem('washlab_prefilledCustomer', JSON.stringify({
+      id: customer._id,
+      name: customer.name,
+      phone: customer.phoneNumber,
+      email: customer.email,
+      skipPhone: true // Flag to skip phone entry step
+    }));
+
+    // Navigate to new order page - it will read from sessionStorage
+    router.push('/washstation/new-order');
+  };
 
   if (!isSessionValid) {
     return (
@@ -100,9 +118,7 @@ export default function CustomersPage() {
                   <Button
                     variant="outline"
                     className="w-full mt-2"
-                    onClick={() =>
-                      (window.location.href = `/washstation/new-order?customerId=${customer._id}`)
-                    }
+                    onClick={() => handleCreateOrder(customer)}
                   >
                     Create Order
                   </Button>
