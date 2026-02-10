@@ -136,7 +136,7 @@ export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTa
                   {order.orderType === 'walk_in' ? 'Walk-in': 'Online'}
                 </TableCell>
                 <TableCell className="text-muted-foreground whitespace-nowrap">
-                  {order.serviceType?.replace("_"," & ")} ({weight.toFixed(1)}kg)
+                  {serviceType} ({weight.toFixed(1)}kg)
                 </TableCell>
                 <TableCell className='whitespace-nowrap'>
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${status.className}`}>
