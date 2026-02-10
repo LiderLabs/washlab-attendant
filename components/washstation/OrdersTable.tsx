@@ -86,6 +86,7 @@ const getStatusBadge = (status: OrderStatus) => {
 };
 
 export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTableProps) {
+  console.log(orders)
   if (orders.length === 0) {
     return (
       <div className="text-center py-12">
@@ -101,6 +102,7 @@ export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTa
           <TableRow className="bg-muted/50">
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Order ID</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Customer</TableHead>
+            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Order Type</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Service Type</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment</TableHead>
@@ -119,10 +121,10 @@ export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTa
             
             return (
               <TableRow key={order._id} className="hover:bg-muted/30 transition-colors">
-                <TableCell>
+                <TableCell className='whitespace-nowrap'>
                   <span className="font-semibold text-foreground">{order.orderNumber}</span>
                 </TableCell>
-                <TableCell>
+                <TableCell className='whitespace-nowrap'>
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
                       {order.customer?.name?.split(' ').map(n => n[0]).join('').slice(0, 2) || 'CU'}
@@ -130,10 +132,13 @@ export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTa
                     <span className="font-medium text-foreground">{order.customer?.name || 'Unknown'}</span>
                   </div>
                 </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {serviceType} ({weight.toFixed(1)}kg)
+                <TableCell className='text-muted-foreground whitespace-nowrap'>
+                  {order.orderType === 'walk_in' ? 'Walk-in': 'Online'}
                 </TableCell>
-                <TableCell>
+                <TableCell className="text-muted-foreground whitespace-nowrap">
+                  {order.serviceType?.replace("_"," & ")} ({weight.toFixed(1)}kg)
+                </TableCell>
+                <TableCell className='whitespace-nowrap'>
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${status.className}`}>
                     <StatusIcon className="w-3.5 h-3.5" />
                     {status.label}
@@ -156,7 +161,7 @@ export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTa
                 <TableCell className="text-sm font-medium whitespace-nowrap">
                   {order.paymentStatus === 'paid' ? `₵${order.finalPrice.toFixed(2)}` : '—'}
                 </TableCell>
-                <TableCell className="text-muted-foreground text-sm">
+                <TableCell className="text-muted-foreground text-sm whitespace-normal">
                   {formatDistanceToNow(new Date(order.createdAt), { addSuffix: true })}
                 </TableCell>
                 <TableCell>
