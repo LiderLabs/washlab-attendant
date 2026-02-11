@@ -14,7 +14,7 @@ import { Banknote, Smartphone, CreditCard, ArrowRight, ArrowLeft, Clock } from "
 import { toast } from "sonner";
 
 type PaymentMethodWalkIn = "cash" | "mobile_money";
-type PaymentMethodOnline = "card" | "mobile_money";
+type PaymentMethodOnline = "card" | "mobile_money" | "cash";
 type PaymentMethodType = PaymentMethodWalkIn | PaymentMethodOnline;
 
 function PaymentContent() {
@@ -48,10 +48,7 @@ function PaymentContent() {
   const subtotal = order ? (order.basePrice || 0) + (order.deliveryFee || 0) : 0;
   const totalDue = order?.finalPrice || order?.totalPrice || subtotal || 0;
 
-  const effectivePaymentMethod: PaymentMethodType =
-    order?.orderType === "online" && paymentMethod === "cash"
-      ? "mobile_money"
-      : paymentMethod;
+  const effectivePaymentMethod: PaymentMethodType = paymentMethod;
 
   const handleCompletePayment = () => {
     if (!order) {
@@ -59,7 +56,6 @@ function PaymentContent() {
       return;
     }
 
-    // Cash is grayed out; we only allow mobile money or card for now
     setShowVerification(true);
   };
 
@@ -81,7 +77,7 @@ function PaymentContent() {
         const result = await completeOnlinePayment({
           stationToken,
           orderId: order._id,
-          paymentMethod: effectivePaymentMethod === "mobile_money" ? "mobile_money" : "card",
+          paymentMethod: effectivePaymentMethod === "mobile_money" ? "mobile_money" : effectivePaymentMethod === "cash" ? "cash" : "card",
           verificationId,
         });
         if (effectivePaymentMethod === "mobile_money" && result.ussdSent) {
@@ -265,31 +261,29 @@ function PaymentContent() {
                 )}
               </button>
 
-              {/* Cash second (walk-in only) */}
-              {order.orderType === "walk_in" && (
-                <button
-                  onClick={() => setPaymentMethod("cash")}
-                  className={`p-6 rounded-xl border-2 transition-all flex flex-col items-center gap-3 relative ${
-                    effectivePaymentMethod === "cash"
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-muted-foreground/30"
-                  }`}
-                >
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                    effectivePaymentMethod === "cash" ? "bg-primary text-primary-foreground" : "bg-muted"
-                  }`}>
-                    <Banknote className='w-6 h-6' />
-                  </div>
-                  <span className={`font-medium ${effectivePaymentMethod === "cash" ? "text-primary" : "text-foreground"}`}>Cash</span>
-                  {effectivePaymentMethod === "cash" && (
-                    <div className='absolute top-2 right-2 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs'>✓</div>
-                  )}
-                </button>
-              )}
+              {/* Cash (walk-in and online: attendant can collect cash at check-in) */}
+              <button
+                onClick={() => setPaymentMethod("cash")}
+                className={`p-6 rounded-xl border-2 transition-all flex flex-col items-center gap-3 relative ${
+                  effectivePaymentMethod === "cash"
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-muted-foreground/30"
+                }`}
+              >
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                  effectivePaymentMethod === "cash" ? "bg-primary text-primary-foreground" : "bg-muted"
+                }`}>
+                  <Banknote className='w-6 h-6' />
+                </div>
+                <span className={`font-medium ${effectivePaymentMethod === "cash" ? "text-primary" : "text-foreground"}`}>Cash</span>
+                {effectivePaymentMethod === "cash" && (
+                  <div className='absolute top-2 right-2 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs'>✓</div>
+                )}
+              </button>
             </div>
 
-            {/* Cash UI simplified */}
-            {order.orderType === "walk_in" && effectivePaymentMethod === "cash" && (
+            {/* Cash UI (walk-in and online) */}
+            {effectivePaymentMethod === "cash" && (
               <div className='p-6 bg-muted/20 rounded-xl text-center mb-8'>
                 <h3 className='text-lg font-semibold text-foreground mb-2'>Cash Payment</h3>
                 <p className='text-muted-foreground mb-4'>The customer must pay the exact amount below.</p>
@@ -316,10 +310,7 @@ function PaymentContent() {
               <Button onClick={handleCancel} variant='outline' className='flex-1 h-14 rounded-xl text-lg'>Cancel</Button>
               <Button
                 onClick={handleCompletePayment}
-                disabled={effectivePaymentMethod === "cash"} // grayed out for cash
-                className={`flex-1 h-14 rounded-xl text-lg ${
-                  effectivePaymentMethod === "cash" ? "bg-muted text-muted-foreground" : "bg-primary text-primary-foreground"
-                }`}
+                className="flex-1 h-14 rounded-xl text-lg bg-primary text-primary-foreground"
               >
                 Complete Payment <ArrowRight className='w-5 h-5 ml-2' />
               </Button>
