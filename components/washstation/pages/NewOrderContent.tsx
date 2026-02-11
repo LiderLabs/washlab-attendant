@@ -8,6 +8,8 @@ import { useStationSession } from "@/hooks/useStationSession"
 import { useQuery, useMutation } from "convex/react"
 import { api } from "@devlider001/washlab-backend/api"
 import { Id } from "@devlider001/washlab-backend/dataModel"
+import { useSearchParams } from "next/navigation"
+
 import {
   Phone,
   User,
@@ -30,6 +32,8 @@ export function NewOrderContent() {
   const router = useRouter()
   const { stationToken, isSessionValid } = useStationSession()
 
+
+  
   // Fetch active services from backend
   const dbServices = useQuery(api.services.getActive) ?? []
 
@@ -260,7 +264,7 @@ export function NewOrderContent() {
       toast.success(`Order created successfully! Bag #${result.bagCardNumber}`)
 
       // Navigate to payment page
-      router.push(`/washstation/payment?orderId=${result.orderId}`)
+    router.push(`/washstation/payment?orderId=${result.orderId}&return=order`)
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to create order"
@@ -396,17 +400,7 @@ export function NewOrderContent() {
       {/* Phone Entry Step */}
       {step === "phone" && (
         <div className='max-w-6xl mx-auto'>
-          {/* Breadcrumb */}
-          <div className='flex items-center gap-2 text-xs sm:text-sm mb-6 sm:mb-8 flex-wrap'>
-            <span className='flex items-center gap-1.5 text-primary font-medium'>
-              <CheckCircle className='w-3 h-3 sm:w-4 sm:h-4' /> Phone Lookup
-            </span>
-            <span className='text-muted-foreground'>/</span>
-            <span className='text-muted-foreground'>Registration</span>
-            <span className='text-muted-foreground'>/</span>
-            <span className='text-muted-foreground'>Order Details</span>
-          </div>
-
+          
           <div className='grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8'>
             {/* Left - Phone Input */}
             <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8'>
@@ -633,12 +627,23 @@ export function NewOrderContent() {
         </div>
       )}
 
-      {/* Order Details Step */}
-      {step === "order" && (
-        <div className='max-w-7xl mx-auto'>
-          <div className='flex flex-col lg:flex-row gap-4 sm:gap-6'>
-            {/* Left - Order Form */}
-           <div className='flex-1 space-y-4 sm:space-y-6 min-w-0 pr-[22rem]'>
+     {/* Order Details Step */}
+{step === "order" && (
+  <div className='max-w-7xl mx-auto'>
+
+    {/* Back Button */}
+    <button
+      onClick={() => setStep(foundCustomer ? "customer-found" : "phone")}
+      className='flex items-center gap-2 text-muted-foreground hover:text-foreground mb-4 text-sm'
+    >
+      <ArrowLeft className='w-4 h-4' />
+      Back
+    </button>
+
+    <div className='flex flex-col lg:flex-row gap-4 sm:gap-6'>
+      {/* Left - Order Form */}
+      <div className='flex-1 space-y-4 sm:space-y-6 min-w-0 pr-[22rem]'>
+
 
               {/* Order Header */}
               <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0'>

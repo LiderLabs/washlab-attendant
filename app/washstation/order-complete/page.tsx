@@ -10,8 +10,6 @@ import { Id } from '@devlider001/washlab-backend/dataModel';
 import {
   CheckCircle,
   Plus,
-  Printer,
-  Mail,
   MessageSquare,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -37,7 +35,6 @@ function OrderCompleteContent() {
   );
 
   const [activeStaff, setActiveStaff] = useState<{ name: string; role: string } | null>(null);
-  const [branchName, setBranchName] = useState('Central Branch');
 
   const amountPaid = amountPaidParam > 0 ? amountPaidParam : (order?.finalPrice ?? 0);
   const orderNumber = order?.orderNumber || orderIdParam || '—';
@@ -47,7 +44,6 @@ function OrderCompleteContent() {
     if (typeof window === 'undefined') return;
 
     const staffData = sessionStorage.getItem('washlab_active_staff');
-    const branchData = sessionStorage.getItem('washlab_branch');
 
     if (staffData) {
       try {
@@ -58,27 +54,10 @@ function OrderCompleteContent() {
         // ignore
       }
     }
-
-    if (branchData) {
-      try {
-        const branch = JSON.parse(branchData);
-        setBranchName(branch.name || 'Central Branch');
-      } catch {
-        // ignore
-      }
-    }
   }, []);
 
   const handleStartNewOrder = () => {
     router.push('/washstation/new-order');
-  };
-
-  const handlePrintReceipt = () => {
-    toast.success('Receipt sent to printer');
-  };
-
-  const handleEmailReceipt = () => {
-    toast.success('Receipt sent via email');
   };
 
   const handleWhatsAppReceipt = () => {
@@ -163,7 +142,6 @@ function OrderCompleteContent() {
   return (
     <div className="flex min-h-screen bg-background">
       <WashStationSidebar
-        branchName={branchName}
         collapsed={false}
         onToggle={function (): void {
           throw new Error('Function not implemented.');
@@ -242,38 +220,19 @@ function OrderCompleteContent() {
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex gap-4 w-full max-w-md">
-            <Button
-              onClick={handlePrintReceipt}
-              variant="outline"
-              className="flex-1 h-12 rounded-xl"
-            >
-              <Printer className="w-4 h-4 mr-2" />
-              Print Receipt
-            </Button>
-            <Button
-              onClick={handleEmailReceipt}
-              variant="outline"
-              className="flex-1 h-12 rounded-xl"
-            >
-              <Mail className="w-4 h-4 mr-2" />
-              Email Receipt
-            </Button>
-            <Button
-              onClick={handleWhatsAppReceipt}
-              variant="outline"
-              className="flex-1 h-12 rounded-xl"
-            >
-              <MessageSquare className="w-4 h-4 mr-2" />
-              WhatsApp Receipt
-            </Button>
-          </div>
+          {/* WhatsApp Receipt Button - Full Width, Green */}
+          <Button
+            onClick={handleWhatsAppReceipt}
+            className="w-full max-w-md h-14 bg-[#25D366] hover:bg-[#20BA5A] text-white rounded-xl text-lg font-semibold mb-4"
+          >
+            <MessageSquare className="w-5 h-5 mr-2" />
+            Send Receipt via WhatsApp
+          </Button>
 
           {/* Start New Order */}
           <Button
             onClick={handleStartNewOrder}
-            className="w-full max-w-md h-14 bg-primary text-primary-foreground rounded-xl text-lg font-semibold mt-6"
+            className="w-full max-w-md h-14 bg-primary text-primary-foreground rounded-xl text-lg font-semibold"
           >
             <Plus className="w-5 h-5 mr-2" />
             Start New Order
