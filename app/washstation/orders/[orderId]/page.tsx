@@ -80,13 +80,16 @@ export default function OrderDetailsPage() {
   const params  = useParams();
   const router  = useRouter();
   const orderId = params.orderId as string;
+
+  // ✅ isSessionValid passed to useStationOrder to prevent the query firing
+  // before session is confirmed — fixes "Invalid station session" error
   const { stationToken, isSessionValid } = useStationSession();
-  const { order, isLoading } = useStationOrder(stationToken, orderId as any);
+  const { order, isLoading } = useStationOrder(stationToken, orderId as any, isSessionValid);
   const { changeStatus } = useStationOrderStatus(stationToken);
 
   const activeAttendances = useQuery(
     api.stations.getActiveStationAttendances,
-    stationToken ? { stationToken } : 'skip'
+    stationToken && isSessionValid ? { stationToken } : 'skip'
   ) as Array<{
     _id: Id<'attendanceLogs'>;
     clockInAt: number;
@@ -97,20 +100,23 @@ export default function OrderDetailsPage() {
   const [isUpdating,       setIsUpdating]       = useState(false);
   const [showVerification, setShowVerification] = useState(false);
   const [pendingStage,     setPendingStage]     = useState<string | null>(null);
-  const [showReadyPopup,   setShowReadyPopup]   = useState(false);
   const [whatsappSent,     setWhatsappSent]     = useState(false);
+
+  // ── READY POPUP (disabled — moving to global layout) ──────────────────
+  // const [showReadyPopup,   setShowReadyPopup]   = useState(false);
+  // const readyIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // const readyDismissRef  = useRef<NodeJS.Timeout | null>(null);
+  // ──────────────────────────────────────────────────────────────────────
 
   const [elapsedTime,      setElapsedTime]      = useState(0);
   const [stageDuration,    setStageDuration]    = useState(0);
   const [isPaused,         setIsPaused]         = useState(false);
   const [timerInitialized, setTimerInitialized] = useState(false);
 
-  const timerRef         = useRef<NodeJS.Timeout | null>(null);
-  const startTimeRef     = useRef<number>(0);
-  const pausedTimeRef    = useRef<number>(0);
-  const audioRef         = useRef<HTMLAudioElement | null>(null);
-  const readyIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const readyDismissRef  = useRef<NodeJS.Timeout | null>(null);
+  const timerRef      = useRef<NodeJS.Timeout | null>(null);
+  const startTimeRef  = useRef<number>(0);
+  const pausedTimeRef = useRef<number>(0);
+  const audioRef      = useRef<HTMLAudioElement | null>(null);
 
   const currentStatus       = order ? mapLegacyStatus(order.status) : 'pending_dropoff';
   const currentStageIndex   = WASH_STAGES.findIndex(s => s.id === currentStatus);
@@ -136,27 +142,29 @@ export default function OrderDetailsPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (readyIntervalRef.current) { clearInterval(readyIntervalRef.current); readyIntervalRef.current = null; }
-    if (readyDismissRef.current)  { clearTimeout(readyDismissRef.current);   readyDismissRef.current  = null; }
-
-    if (currentStatus === 'ready') {
-      const showBriefly = () => {
-        setShowReadyPopup(true);
-        audioRef.current?.play().catch(() => {});
-        readyDismissRef.current = setTimeout(() => setShowReadyPopup(false), 3000);
-      };
-      showBriefly();
-      readyIntervalRef.current = setInterval(showBriefly, 3 * 60 * 1000);
-    } else {
-      setShowReadyPopup(false);
-    }
-
-    return () => {
-      if (readyIntervalRef.current) clearInterval(readyIntervalRef.current);
-      if (readyDismissRef.current)  clearTimeout(readyDismissRef.current);
-    };
-  }, [currentStatus]);
+  // ── READY POPUP (disabled — moving to global layout) ──────────────────
+  // useEffect(() => {
+  //   if (readyIntervalRef.current) { clearInterval(readyIntervalRef.current); readyIntervalRef.current = null; }
+  //   if (readyDismissRef.current)  { clearTimeout(readyDismissRef.current);   readyDismissRef.current  = null; }
+  //
+  //   if (currentStatus === 'ready') {
+  //     const showBriefly = () => {
+  //       setShowReadyPopup(true);
+  //       audioRef.current?.play().catch(() => {});
+  //       readyDismissRef.current = setTimeout(() => setShowReadyPopup(false), 3000);
+  //     };
+  //     showBriefly();
+  //     readyIntervalRef.current = setInterval(showBriefly, 3 * 60 * 1000);
+  //   } else {
+  //     setShowReadyPopup(false);
+  //   }
+  //
+  //   return () => {
+  //     if (readyIntervalRef.current) clearInterval(readyIntervalRef.current);
+  //     if (readyDismissRef.current)  clearTimeout(readyDismissRef.current);
+  //   };
+  // }, [currentStatus]);
+  // ──────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!order || timerInitialized) return;
@@ -257,7 +265,7 @@ export default function OrderDetailsPage() {
     if (!pendingStage || !order) return;
     setShowVerification(false);
     setIsUpdating(true);
-    const attendance  = activeAttendances?.find(a => a.attendant?._id === attendantId);
+    const attendance   = activeAttendances?.find(a => a.attendant?._id === attendantId);
     const attendanceId = attendance?._id;
     try {
       const success = await changeStatus(order._id, pendingStage as OrderStatus, undefined, attendantId, attendanceId);
@@ -317,7 +325,7 @@ export default function OrderDetailsPage() {
     <WashStationLayout title={`Order #${order.orderNumber}`}>
       <div className="space-y-6">
 
-        {/* Ready Popup */}
+        {/* ── READY POPUP (disabled — moving to global layout) ────────────
         {showReadyPopup && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-300">
             <div className="bg-white dark:bg-gray-900 rounded-2xl p-8 shadow-2xl max-w-md w-full mx-4 animate-in zoom-in duration-300">
@@ -335,6 +343,7 @@ export default function OrderDetailsPage() {
             </div>
           </div>
         )}
+        ── */}
 
         {/* Back Button */}
         <button onClick={() => router.push('/washstation/orders')} className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors">
@@ -354,7 +363,7 @@ export default function OrderDetailsPage() {
                       {WASH_STAGES.find(s => s.id === currentStatus)?.label} in Progress
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {isPaused ? 'Paused' : `${remainingMinutes}:${remainingSeconds.toString().padStart(2, '0')} remaining`}
+                      {isPaused ? 'Paused' : `${remainingMinutes}:${remainingSeconds.toString().padStart(2, '00')} remaining`}
                     </p>
                   </div>
                 </div>

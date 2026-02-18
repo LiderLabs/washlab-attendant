@@ -15,25 +15,27 @@ import {
   Users,
   Package,
   CheckCircle,
-  DollarSign,
+  Banknote,
   Clock,
   ArrowRight,
   Globe,
   TrendingUp,
+  Loader,
+  Truck,
+  XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useEffect, useState } from 'react';
 
 export function DashboardContent() {
   const router = useRouter();
   const { stationToken, sessionData, isLoading: sessionLoading } = useStationSession();
   const isSessionValid = sessionData?.valid ?? false;
 
-  // Get dashboard stats
+  // ✅ stats is now always a fully-typed object — never undefined
+  // isLoading covers both "token not ready" and "query in flight"
   const { stats, isLoading: statsLoading } = useStationStats(stationToken);
 
-  // Get recent orders (pending and in_progress)
   const { orders: pendingOrders, isLoading: ordersLoading } = useStationOrders(
     stationToken,
     { status: 'pending' }
@@ -44,30 +46,15 @@ export function DashboardContent() {
     { status: 'in_progress' }
   );
 
-  // Get all recent orders for activity feed
   const { orders: recentOrders } = useStationOrders(stationToken);
 
-  // --- 24-Hour Reset Logic ---
-  const [resetDashboard, setResetDashboard] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const LAST_RESET_KEY = 'dashboardLastReset';
-    const now = new Date().getTime();
-    const lastReset = parseInt(localStorage.getItem(LAST_RESET_KEY) || '0');
-
-    if (!lastReset || now - lastReset > 24 * 60 * 60 * 1000) {
-      // It's been 24h or more
-      localStorage.setItem(LAST_RESET_KEY, now.toString());
-      setResetDashboard(true);
-
-      // Auto-refresh page after 1 second to show cleared dashboard
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
-    }
-  }, []);
+  // ── Removed the 24h resetDashboard logic ────────────────────────────────
+  // It was the main reason numbers showed as 0: on every fresh page load
+  // (cleared storage, new device, incognito) it wiped all stats to 0 and
+  // triggered a reload — but by the time the reload happened Convex had
+  // already returned real data which got thrown away.
+  // Real data from Convex is always up to date; no local reset needed.
+  // ────────────────────────────────────────────────────────────────────────
 
   if (sessionLoading || !isSessionValid) {
     return (
@@ -79,36 +66,52 @@ export function DashboardContent() {
 
   const isLoading = statsLoading || ordersLoading;
 
-  // If dashboard reset, show empty/0 values
-  const displayedStats = resetDashboard
-    ? {
-        totalOrders: 0,
-        totalRevenue: 0,
-        averageOrderValue: 0,
-        ordersByStatus: {
-          completed: 0,
-          in_progress: 0,
-          ready_for_pickup: 0,
-          delivered: 0,
-          cancelled: 0,
-        },
-      }
-    : stats || {};
-
-  const displayedPendingOrders = resetDashboard ? [] : pendingOrders;
-  const displayedInProgressOrders = resetDashboard ? [] : inProgressOrders;
-  const displayedRecentOrders = resetDashboard ? [] : recentOrders;
-
   const totalPending =
-    (displayedPendingOrders?.length || 0) + (displayedInProgressOrders?.length || 0);
+    (pendingOrders?.length || 0) + (inProgressOrders?.length || 0);
+
+  const statusCards = [
+    {
+      label: 'In Progress',
+      value: stats.ordersByStatus.in_progress,
+      icon: Loader,
+      colour: 'text-blue-500',
+      bg: 'bg-blue-500/10',
+      border: 'border-blue-500/20',
+    },
+    {
+      label: 'Ready for Pickup',
+      value: stats.ordersByStatus.ready_for_pickup,
+      icon: CheckCircle,
+      colour: 'text-green-500',
+      bg: 'bg-green-500/10',
+      border: 'border-green-500/20',
+    },
+    {
+      label: 'Delivered',
+      value: stats.ordersByStatus.delivered,
+      icon: Truck,
+      colour: 'text-purple-500',
+      bg: 'bg-purple-500/10',
+      border: 'border-purple-500/20',
+    },
+    {
+      label: 'Cancelled',
+      value: stats.ordersByStatus.cancelled,
+      icon: XCircle,
+      colour: 'text-red-500',
+      bg: 'bg-red-500/10',
+      border: 'border-red-500/20',
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Stats Cards */}
+
+      {/* ── Top Stats Row ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard
           title="Total Orders"
-          value={displayedStats.totalOrders ?? 0}
+          value={stats.totalOrders}
           icon={ShoppingBag}
           iconClassName="text-primary"
         />
@@ -117,29 +120,33 @@ export function DashboardContent() {
           value={totalPending}
           icon={Clock}
           iconClassName="text-orange-500"
-          subtitle={displayedPendingOrders?.length ? `${displayedPendingOrders.length} new` : undefined}
+          subtitle={pendingOrders?.length ? `${pendingOrders.length} new` : undefined}
         />
-        <StatCard
-          title="Revenue"
-          value={`₵${displayedStats.totalRevenue?.toFixed(2) ?? '0.00'}`}
-          icon={DollarSign}
-          iconClassName="text-green-500"
-        />
+        <div className="min-w-0 overflow-hidden">
+          <StatCard
+            title="Revenue"
+            value={`₵${stats.totalRevenue.toFixed(2)}`}
+            icon={Banknote}
+            iconClassName="text-green-500"
+          />
+        </div>
         <StatCard
           title="Completed"
-          value={displayedStats.ordersByStatus?.completed ?? 0}
+          value={stats.ordersByStatus.completed}
           icon={CheckCircle}
           iconClassName="text-blue-500"
         />
-        <StatCard
-          title="Avg Order"
-          value={`₵${displayedStats.averageOrderValue?.toFixed(2) ?? '0.00'}`}
-          icon={TrendingUp}
-          iconClassName="text-purple-500"
-        />
+        <div className="min-w-0 overflow-hidden">
+          <StatCard
+            title="Avg Order"
+            value={`₵${stats.averageOrderValue.toFixed(2)}`}
+            icon={TrendingUp}
+            iconClassName="text-purple-500"
+          />
+        </div>
       </div>
 
-      {/* Action Cards */}
+      {/* ── Action Cards ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <Card
           className="bg-primary text-primary-foreground cursor-pointer hover:shadow-lg transition-all"
@@ -149,12 +156,8 @@ export function DashboardContent() {
             <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl bg-primary-foreground/20 flex items-center justify-center mb-4">
               <Plus className="w-6 h-6 md:w-7 md:h-7" />
             </div>
-            <h3 className="text-lg md:text-xl font-bold mb-1">
-              Start New Walk-in Order
-            </h3>
-            <p className="text-primary-foreground/80 text-sm">
-              Select Service & Customer
-            </p>
+            <h3 className="text-lg md:text-xl font-bold mb-1">Start New Walk-in Order</h3>
+            <p className="text-primary-foreground/80 text-sm">Select Service & Customer</p>
           </CardContent>
         </Card>
 
@@ -166,12 +169,8 @@ export function DashboardContent() {
             <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl bg-muted flex items-center justify-center mb-4">
               <Users className="w-6 h-6 md:w-7 md:h-7 text-muted-foreground" />
             </div>
-            <h3 className="text-lg md:text-xl font-bold text-foreground mb-1">
-              Find Customer
-            </h3>
-            <p className="text-muted-foreground text-sm">
-              Search by phone, name, or ID
-            </p>
+            <h3 className="text-lg md:text-xl font-bold text-foreground mb-1">Find Customer</h3>
+            <p className="text-muted-foreground text-sm">Search by phone, name, or ID</p>
           </CardContent>
         </Card>
 
@@ -188,17 +187,44 @@ export function DashboardContent() {
             <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl bg-muted flex items-center justify-center mb-4">
               <Globe className="w-6 h-6 md:w-7 md:h-7 text-muted-foreground" />
             </div>
-            <h3 className="text-lg md:text-xl font-bold text-foreground mb-1">
-              Online Orders
-            </h3>
-            <p className="text-muted-foreground text-sm">
-              Review and accept incoming requests
-            </p>
+            <h3 className="text-lg md:text-xl font-bold text-foreground mb-1">Online Orders</h3>
+            <p className="text-muted-foreground text-sm">Review and accept incoming requests</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Recent Orders */}
+      {/* ── Quick Status Cards ─────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {statsLoading ? (
+          // ✅ Show skeletons while loading instead of 0s
+          Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="overflow-hidden">
+              <CardContent className="p-4">
+                <div className="h-4 w-24 bg-muted rounded animate-pulse mb-3" />
+                <div className="h-8 w-12 bg-muted rounded animate-pulse" />
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          statusCards.map(({ label, value, icon: Icon, colour, bg, border }) => (
+            <Card key={label} className={`border-t-4 ${border} overflow-hidden`}>
+              <CardContent className="p-4 min-w-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className={`w-7 h-7 rounded-lg ${bg} flex items-center justify-center flex-shrink-0`}>
+                    <Icon className={`w-4 h-4 ${colour}`} />
+                  </div>
+                  <span className="text-sm text-muted-foreground truncate">{label}</span>
+                </div>
+                <div className={`text-2xl font-bold truncate ${colour}`}>
+                  {value}
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+
+      {/* ── Recent Orders ──────────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -214,12 +240,10 @@ export function DashboardContent() {
         <CardContent>
           {isLoading ? (
             <LoadingSpinner text="Loading orders..." />
-          ) : displayedRecentOrders && displayedRecentOrders.length > 0 ? (
+          ) : recentOrders && recentOrders.length > 0 ? (
             <OrderList
-              orders={displayedRecentOrders.slice(0, 6)}
-              onOrderClick={(orderId) =>
-                router.push(`/washstation/orders/${orderId}`)
-              }
+              orders={recentOrders.slice(0, 6)}
+              onOrderClick={(orderId) => router.push(`/washstation/orders/${orderId}`)}
             />
           ) : (
             <EmptyState
@@ -234,48 +258,6 @@ export function DashboardContent() {
           )}
         </CardContent>
       </Card>
-
-      {/* Quick Stats by Status */}
-      {displayedStats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground mb-1">
-                In Progress
-              </div>
-              <div className="text-2xl font-bold">
-                {displayedStats.ordersByStatus?.in_progress ?? 0}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground mb-1">
-                Ready for Pickup
-              </div>
-              <div className="text-2xl font-bold">
-                {displayedStats.ordersByStatus?.ready_for_pickup ?? 0}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground mb-1">Delivered</div>
-              <div className="text-2xl font-bold">
-                {displayedStats.ordersByStatus?.delivered ?? 0}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground mb-1">Cancelled</div>
-              <div className="text-2xl font-bold">
-                {displayedStats.ordersByStatus?.cancelled ?? 0}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   );
 }

@@ -52,15 +52,21 @@ export function useStationOrders(
 }
 
 /**
- * Hook to fetch single order details
+ * Hook to fetch single order details.
+ *
+ * ✅ Fix: added `isSessionValid` guard so the query never fires until the
+ * session is fully confirmed. Without this, the token could be present in
+ * localStorage but the session verification query hasn't resolved yet,
+ * causing the backend to throw "Invalid station session".
  */
 export function useStationOrder(
   stationToken: string | null,
-  orderId: Id<'orders'> | null
+  orderId: Id<'orders'> | null,
+  isSessionValid?: boolean
 ) {
   const order = useQuery(
     api.stations.getStationOrderDetails,
-    stationToken && orderId ? {
+    stationToken && orderId && isSessionValid ? {
       stationToken,
       orderId,
     } : 'skip'
@@ -68,6 +74,6 @@ export function useStationOrder(
 
   return {
     order: order ?? null,
-    isLoading: order === undefined && stationToken !== null && orderId !== null,
+    isLoading: order === undefined && stationToken !== null && orderId !== null && isSessionValid === true,
   };
 }

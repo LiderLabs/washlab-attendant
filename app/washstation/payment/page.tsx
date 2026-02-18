@@ -42,6 +42,10 @@ function PaymentContent() {
   const { stationToken } = useStationSession();
   const paystackLoaded = usePaystackScript();
 
+  const createPayment = useMutation((api as any).payments.create);
+  const initiatePayment = useMutation((api as any).payments.initiate);
+  const finalizePaymentSafe = useMutation((api as any).payments.finalizePaymentSafe);
+
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>("mobile_money");
   const [showVerification, setShowVerification] = useState(false);
   const [mobileView, setMobileView] = useState<"summary" | "payment">("payment");
@@ -53,8 +57,6 @@ function PaymentContent() {
   const pendingVerificationId = useRef<Id<"biometricVerifications"> | null>(null);
   const paystackHandlerRef = useRef<any>(null);
   const isPaying = useRef(false);
-
-  const finalizePaymentSafe = useMutation((api as any).payments.finalizePaymentSafe);
 
   const orderIdParam = searchParams?.get("orderId");
   const returnTo = searchParams?.get("return");
@@ -71,8 +73,6 @@ function PaymentContent() {
 
   // ─── Step 1: Attendant clicks "Verify & Pay" ─────────────────────────────────
 
-  // ─── Step 1: Attendant clicks "Verify & Pay" ─────────────────────────────────
-
   const handleCompletePayment = () => {
     if (!order) { toast.error("Order not found"); return; }
     if (isPaying.current || isProcessing) return;
@@ -82,24 +82,41 @@ function PaymentContent() {
     }
 
     setStage("verification");
-
     setShowVerification(true);
   };
 
   // ─── Step 2: Verification passed ─────────────────────────────────────────────
 
-  const handleVerificationSuccess = (
+  const handleVerificationSuccess = async (
     attendantId: Id<"attendants">,
     verificationId: Id<"biometricVerifications">
   ) => {
     setShowVerification(false);
     if (!order) { toast.error("Order not found"); setStage("idle"); return; }
-    if (effectivePaymentMethod === "cash") {
+
+    try {
+      // ✅ Ensure payment record exists BEFORE finalizing
+      const paymentId = await createPayment({
+        orderId: order._id,
+        amount: totalDue,
+        paymentMethod: effectivePaymentMethod,
+      });
+
+      if (effectivePaymentMethod !== "cash") {
+        // ✅ Initiate gateway session, then open Paystack popup
+        await initiatePayment({ paymentId });
+        pendingVerificationId.current = verificationId;
+        openPaystack(effectivePaymentMethod as "card" | "mobile_money", verificationId);
+        return;
+      }
+
+      // ✅ Cash: finalize immediately (no popup needed)
       finalizePayment({ verificationId, gatewayTransactionId: null });
-      return;
+
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start payment");
+      setStage("idle");
     }
-    pendingVerificationId.current = verificationId;
-    openPaystack(effectivePaymentMethod as "card" | "mobile_money", verificationId);
   };
 
   // ─── Step 3: Open Paystack iframe ────────────────────────────────────────────
@@ -170,7 +187,6 @@ function PaymentContent() {
     toast.loading("Finalizing payment…", { id: "finalizing" });
 
     try {
-
       const result = await finalizePaymentSafe({
         orderId: order._id,
         verificationId,
@@ -181,12 +197,10 @@ function PaymentContent() {
 
       if ((result as any)?.alreadyCompleted) {
         toast.info("This payment was already completed.");
-
       } else {
         toast.success("Payment completed successfully!");
       }
 
-      // Clean up draft now that payment is done
       sessionStorage.removeItem(`checkin_draft_${order._id}`);
 
       setPaystackRef(null);
@@ -222,7 +236,6 @@ function PaymentContent() {
     router.push("/washstation/dashboard");
   };
 
-  // Back goes to online orders page with the orderId so the form is restored
   const handleBackNavigation = () => {
     if (isProcessing) return;
     if (returnTo === "order" && order) {
@@ -237,7 +250,6 @@ function PaymentContent() {
       }
       router.push("/washstation/new-order");
     } else {
-      // ── Go back to online orders and restore the form with the draft ──────
       router.push(`/washstation/online-orders?returnOrder=${order?._id}`);
     }
   };
@@ -530,7 +542,6 @@ function PaymentContent() {
     <WashStationLayout title="Payment">
       <div className="flex flex-col h-full min-h-0">
 
-        {/* Back button — always visible, goes back to online orders with draft restore */}
         <div className="px-4 sm:px-6 pt-3 pb-1 flex-shrink-0">
           <button
             onClick={handleBackNavigation}
@@ -567,7 +578,6 @@ function PaymentContent() {
               >
                 {tab === "summary" ? "Order Summary" : "Payment"}
               </button>
-
             ))}
           </div>
           <div className="flex-1 overflow-y-auto">
