@@ -71,6 +71,8 @@ function PaymentContent() {
 
   // ─── Step 1: Attendant clicks "Verify & Pay" ─────────────────────────────────
 
+  // ─── Step 1: Attendant clicks "Verify & Pay" ─────────────────────────────────
+
   const handleCompletePayment = () => {
     if (!order) { toast.error("Order not found"); return; }
     if (isPaying.current || isProcessing) return;
