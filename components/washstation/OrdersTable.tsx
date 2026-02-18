@@ -65,28 +65,26 @@ interface OrdersTableProps {
   onCollectPayment?: (orderId: Id<'orders'>) => void;
 }
 
-
 const getStatusBadge = (status: OrderStatus) => {
   const statusConfig: Record<string, { label: string; className: string; icon: LucideIcon }> = {
-    pending_dropoff: { label: 'New Order', className: 'bg-primary/10 text-primary', icon: Clock },
-    pending: { label: 'New Order', className: 'bg-primary/10 text-primary', icon: Clock },
-    checked_in: { label: 'Checked in', className: 'bg-warning/10 text-warning', icon: Package },
-    sorting: { label: 'sorting', className: 'bg-warning/10 text-warning', icon: Package },
-    washing: { label: 'washing', className: 'bg-warning/10 text-warning', icon: Package },
-    drying: { label: 'drying', className: 'bg-warning/10 text-warning', icon: Package },
-    folding: { label: 'folding', className: 'bg-warning/10 text-warning', icon: Package },
-    in_progress: { label: 'in progress', className: 'bg-warning/10 text-warning', icon: Package },
-    ready: { label: 'Ready for Pickup', className: 'bg-success/10 text-success', icon: CheckCircle },
-    ready_for_pickup: { label: 'Ready for Pickup', className: 'bg-success/10 text-success', icon: CheckCircle },
-    completed: { label: 'Delivered', className: 'bg-muted text-muted-foreground', icon: Truck },
-    delivered: { label: 'Delivered', className: 'bg-muted text-muted-foreground', icon: Truck },
-    cancelled: { label: 'Cancelled', className: 'bg-destructive/10 text-destructive', icon: Clock },
+    pending_dropoff: { label: 'New Order',        className: 'bg-primary/10 text-primary',          icon: Clock        },
+    pending:         { label: 'New Order',        className: 'bg-primary/10 text-primary',          icon: Clock        },
+    checked_in:      { label: 'Checked in',       className: 'bg-warning/10 text-warning',          icon: Package      },
+    sorting:         { label: 'Sorting',          className: 'bg-warning/10 text-warning',          icon: Package      },
+    washing:         { label: 'Washing',          className: 'bg-warning/10 text-warning',          icon: Package      },
+    drying:          { label: 'Drying',           className: 'bg-warning/10 text-warning',          icon: Package      },
+    folding:         { label: 'Folding',          className: 'bg-warning/10 text-warning',          icon: Package      },
+    in_progress:     { label: 'In Progress',      className: 'bg-warning/10 text-warning',          icon: Package      },
+    ready:           { label: 'Ready for Pickup', className: 'bg-success/10 text-success',          icon: CheckCircle  },
+    ready_for_pickup:{ label: 'Ready for Pickup', className: 'bg-success/10 text-success',          icon: CheckCircle  },
+    completed:       { label: 'Delivered',        className: 'bg-muted text-muted-foreground',      icon: Truck        },
+    delivered:       { label: 'Delivered',        className: 'bg-muted text-muted-foreground',      icon: Truck        },
+    cancelled:       { label: 'Cancelled',        className: 'bg-destructive/10 text-destructive',  icon: Clock        },
   };
   return statusConfig[status] || statusConfig.pending_dropoff;
 };
 
 export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTableProps) {
-  console.log(orders)
   if (orders.length === 0) {
     return (
       <div className="text-center py-12">
@@ -118,7 +116,8 @@ export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTa
             const StatusIcon = status.icon;
             const weight = order.actualWeight || order.estimatedWeight || 0;
             const serviceType = order.serviceType?.replace('_', ' & ') || 'Wash & Fold';
-            
+            const unpaid = order.paymentStatus !== 'paid';
+
             return (
               <TableRow key={order._id} className="hover:bg-muted/30 transition-colors">
                 <TableCell className='whitespace-nowrap'>
@@ -133,7 +132,7 @@ export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTa
                   </div>
                 </TableCell>
                 <TableCell className='text-muted-foreground whitespace-nowrap'>
-                  {order.orderType === 'walk_in' ? 'Walk-in': 'Online'}
+                  {order.orderType === 'walk_in' ? 'Walk-in' : 'Online'}
                 </TableCell>
                 <TableCell className="text-muted-foreground whitespace-nowrap">
                   {serviceType} ({weight.toFixed(1)}kg)
@@ -145,13 +144,13 @@ export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTa
                   </span>
                 </TableCell>
                 <TableCell>
-                  {order.paymentStatus === 'paid' ? (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-success/10 text-success">
-                      Paid
-                    </span>
-                  ) : (
+                  {unpaid ? (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-warning/10 text-warning">
                       Pending
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-success/10 text-success">
+                      Paid
                     </span>
                   )}
                 </TableCell>
@@ -159,18 +158,19 @@ export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTa
                   {getPaymentMethodLabel(order.paymentMethod)}
                 </TableCell>
                 <TableCell className="text-sm font-medium whitespace-nowrap">
-                  {order.paymentStatus === 'paid' ? `₵${order.finalPrice.toFixed(2)}` : '—'}
+                  {unpaid ? '—' : `₵${order.finalPrice.toFixed(2)}`}
                 </TableCell>
                 <TableCell className="text-muted-foreground text-sm whitespace-normal">
                   {formatDistanceToNow(new Date(order.createdAt), { addSuffix: true })}
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    {order.orderType === 'walk_in' && order.paymentStatus !== 'paid' && (
+                    {/* Pay button — shown for ALL unpaid orders (walk-in and online) */}
+                    {unpaid && order.status !== 'cancelled' && (
                       <Button
                         variant="default"
                         size="sm"
-                        className="bg-success hover:bg-success/90"
+                        className="bg-success hover:bg-success/90 text-white"
                         onClick={(e) => {
                           e.stopPropagation();
                           onCollectPayment?.(order._id);

@@ -39,30 +39,34 @@ import { ActionVerification } from '@/components/washstation/ActionVerification'
 import { Id } from "@devlider001/washlab-backend/dataModel";
 import { toast } from 'sonner';
 
-// Washing stages in order
 const WASH_STAGES = [
-  { id: 'pending_dropoff', label: 'Pending Dropoff', icon: Package, requiresVerification: false },
-  { id: 'checked_in', label: 'Received', icon: Package, requiresVerification: false },
-  { id: 'sorting', label: 'Sorting', icon: Package, requiresVerification: false },
-  { id: 'washing', label: 'Washing', icon: Droplets, requiresVerification: false },
-  { id: 'drying', label: 'Drying', icon: Wind, requiresVerification: false },
-  { id: 'folding', label: 'Folding', icon: Shirt, requiresVerification: false },
-  { id: 'ready', label: 'Ready', icon: CheckCircle, requiresVerification: false },
-  { id: 'completed', label: 'Delivered', icon: Truck, requiresVerification: true },
+  { id: 'pending_dropoff', label: 'Pending Dropoff', icon: Package,     requiresVerification: false },
+  { id: 'checked_in',     label: 'Received',         icon: Package,     requiresVerification: false },
+  { id: 'sorting',        label: 'Start Wash',        icon: Package,     requiresVerification: false },
+  { id: 'washing',        label: 'Washing',           icon: Droplets,    requiresVerification: false },
+  { id: 'drying',         label: 'Drying',            icon: Wind,        requiresVerification: false },
+  { id: 'folding',        label: 'Folding',           icon: Shirt,       requiresVerification: false },
+  { id: 'ready',          label: 'Ready',             icon: CheckCircle, requiresVerification: false },
+  { id: 'completed',      label: 'Delivered',         icon: Truck,       requiresVerification: true  },
 ];
 
-// Map legacy statuses
+const STAGE_DURATIONS: Record<string, number> = {
+  sorting: 10 * 60 * 1000,
+  washing: 35 * 60 * 1000,
+  drying:  40 * 60 * 1000,
+  folding: 20 * 60 * 1000,
+};
+
 const mapLegacyStatus = (status: string): string => {
   const mapping: Record<string, string> = {
-    'pending': 'pending_dropoff',
-    'in_progress': 'washing',
+    'pending':          'pending_dropoff',
+    'in_progress':      'washing',
     'ready_for_pickup': 'ready',
-    'delivered': 'completed',
+    'delivered':        'completed',
   };
   return mapping[status] || status;
 };
 
-// Timer state interface
 interface TimerState {
   orderId: string;
   status: string;
@@ -73,8 +77,8 @@ interface TimerState {
 }
 
 export default function OrderDetailsPage() {
-  const params = useParams();
-  const router = useRouter();
+  const params  = useParams();
+  const router  = useRouter();
   const orderId = params.orderId as string;
   const { stationToken, isSessionValid } = useStationSession();
   const { order, isLoading } = useStationOrder(stationToken, orderId as any);
@@ -90,306 +94,143 @@ export default function OrderDetailsPage() {
     attendant: { _id: Id<'attendants'>; name: string; email: string } | null;
   }> | undefined;
 
-  // State management
-  const [isUpdating, setIsUpdating] = useState(false);
+  const [isUpdating,       setIsUpdating]       = useState(false);
   const [showVerification, setShowVerification] = useState(false);
-  const [pendingStage, setPendingStage] = useState<string | null>(null);
-  const [showReadyPopup, setShowReadyPopup] = useState(false);
-  const [whatsappSent, setWhatsappSent] = useState(false);
-  
-  // Timer states
-  const [elapsedTime, setElapsedTime] = useState(0);
-  const [stageDuration, setStageDuration] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
+  const [pendingStage,     setPendingStage]     = useState<string | null>(null);
+  const [showReadyPopup,   setShowReadyPopup]   = useState(false);
+  const [whatsappSent,     setWhatsappSent]     = useState(false);
+
+  const [elapsedTime,      setElapsedTime]      = useState(0);
+  const [stageDuration,    setStageDuration]    = useState(0);
+  const [isPaused,         setIsPaused]         = useState(false);
   const [timerInitialized, setTimerInitialized] = useState(false);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const startTimeRef = useRef<number>(0);
-  const pausedTimeRef = useRef<number>(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const hasShownReadyPopup = useRef(false);
 
-  // Map order status
-  const currentStatus = order ? mapLegacyStatus(order.status) : 'pending_dropoff';
-  const currentStageIndex = WASH_STAGES.findIndex(s => s.id === currentStatus);
+  const timerRef         = useRef<NodeJS.Timeout | null>(null);
+  const startTimeRef     = useRef<number>(0);
+  const pausedTimeRef    = useRef<number>(0);
+  const audioRef         = useRef<HTMLAudioElement | null>(null);
+  const readyIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const readyDismissRef  = useRef<NodeJS.Timeout | null>(null);
+
+  const currentStatus       = order ? mapLegacyStatus(order.status) : 'pending_dropoff';
+  const currentStageIndex   = WASH_STAGES.findIndex(s => s.id === currentStatus);
   const effectiveStageIndex = currentStageIndex >= 0 ? currentStageIndex : 0;
-  const nextStage = effectiveStageIndex < WASH_STAGES.length - 1 ? WASH_STAGES[effectiveStageIndex + 1] : null;
+  const nextStage           = effectiveStageIndex < WASH_STAGES.length - 1 ? WASH_STAGES[effectiveStageIndex + 1] : null;
+  const showWhatsApp        = currentStatus === 'ready' || currentStatus === 'completed';
 
-  // Show WhatsApp button when status is ready or completed
-  const showWhatsApp = currentStatus === 'ready' || currentStatus === 'completed';
-
-  // Storage key for this order's timer
-  const getTimerKey = (orderId: string) => `washlab_timer_${orderId}`;
-
-  // Load timer state from localStorage
-  const loadTimerState = (orderId: string): TimerState | null => {
+  const getTimerKey    = (id: string) => `washlab_timer_${id}`;
+  const loadTimerState = (id: string): TimerState | null => {
     try {
       if (typeof window === 'undefined') return null;
-      const stored = localStorage.getItem(getTimerKey(orderId));
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (error) {
-      console.log('No existing timer state found');
-    }
+      const stored = localStorage.getItem(getTimerKey(id));
+      if (stored) return JSON.parse(stored);
+    } catch {}
     return null;
   };
+  const saveTimerState  = (s: TimerState) => { try { localStorage.setItem(getTimerKey(s.orderId), JSON.stringify(s)); } catch {} };
+  const clearTimerState = (id: string)    => { try { localStorage.removeItem(getTimerKey(id)); } catch {} };
 
-  // Save timer state to localStorage
-  const saveTimerState = (state: TimerState) => {
-    try {
-      if (typeof window === 'undefined') return;
-      localStorage.setItem(getTimerKey(state.orderId), JSON.stringify(state));
-    } catch (error) {
-      console.error('Failed to save timer state:', error);
-    }
-  };
-
-  // Clear timer state from localStorage
-  const clearTimerState = (orderId: string) => {
-    try {
-      if (typeof window === 'undefined') return;
-      localStorage.removeItem(getTimerKey(orderId));
-    } catch (error) {
-      console.error('Failed to clear timer state:', error);
-    }
-  };
-
-  // Initialize notification sound
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      audioRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTUIGWi68OScTgwMUKvm8LNgGgU7k9nyz3gsBS1/zPLaizsKGGS66OihUBELTKXh8bllHAU2jdTxz38vBSl+zPDaizwLGGa67+idUBELTqfi8bllHAU3jdXyz38vBSp+zPDaizwKF2W57+idUREKTqXi8bhlHAU3jdXxz38vBSl+y/HajDsLF2S57umeUBELTqXi8bhlHAU2jdXxz38vBSl+y/HajDsLGGS57umeUBELTabh8bllHAU2jdXxz38vBSl+y/HajDsLGGS47umeTxALTabh8bllHAU2jdXxz38vBSl+y/HajDsLGGS47umeTxALTabh8bllHAU2jdXxz38vBSl+y/HajDwLGGO67+meTxALTabh8bllHAU2jdXxz38vBSl+y/HajDwLGGO67+meTxALTabh8blmHAU1jdXxz38vBSl+y/HajDwLGGO67+meTxALTabh8blmHAU1jdXxz38vBSl+y/HajDwLGGO67+mdTxALTabh8blmHAU1jdXxz38vBSl+y/HajDwLGGO67+mdTxALTabh8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz38vBSl+y/HbjDwLGGO67+mdTxALTabg8blmHAU1jdXxz3');
+      audioRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTUIGWi68OScTgwMUKvm8LNgGgU7k9nyz3gsBS1/zPLaizsKGGS66OihUBELTKXh8bllHAU2jdTxz38vBSl+zPDaizwLGGa67+idUBELTqfi8bllHAU3jdXyz38vBSp+zPDaizwKF2W57+idUREKTqXi8bhlHAU3jdXxz38vBSl+y/HajDsLF2S57umeUBELTqXi8bhlHAU2jdXxz38vBSl+y/HajDsLGGS57umeUBELTabh8bllHAU2jdXxz38vBSl+y/HajDsLGGS47umeTxALTabh8bllHAU2jdXxz38vBSl+y/HajDwLGGO67+meTxALTabh8blmHAU1jdXxz38vBSl+y/HajDwLTabh8blmHAU1');
     }
   }, []);
 
-  // Show popup when order reaches "ready" status
   useEffect(() => {
-    if (currentStatus === 'ready' && !hasShownReadyPopup.current && order) {
-      hasShownReadyPopup.current = true;
-      setShowReadyPopup(true);
-      
-      // Play notification sound
-      if (audioRef.current) {
-        audioRef.current.play().catch(err => console.log('Audio play failed:', err));
-      }
+    if (readyIntervalRef.current) { clearInterval(readyIntervalRef.current); readyIntervalRef.current = null; }
+    if (readyDismissRef.current)  { clearTimeout(readyDismissRef.current);   readyDismissRef.current  = null; }
 
-      // Auto-hide popup after 5 seconds
-      setTimeout(() => {
-        setShowReadyPopup(false);
-      }, 5000);
+    if (currentStatus === 'ready') {
+      const showBriefly = () => {
+        setShowReadyPopup(true);
+        audioRef.current?.play().catch(() => {});
+        readyDismissRef.current = setTimeout(() => setShowReadyPopup(false), 3000);
+      };
+      showBriefly();
+      readyIntervalRef.current = setInterval(showBriefly, 3 * 60 * 1000);
+    } else {
+      setShowReadyPopup(false);
     }
-  }, [currentStatus, order]);
-
-  // Initialize timer from storage or start new
-  useEffect(() => {
-    if (!order || timerInitialized) return;
-
-    const stageDurations: Record<string, number> = {
-      sorting: 10 * 60 * 1000,  // 10 minutes
-      washing: 30 * 60 * 1000,  // 30 minutes
-      drying: 35 * 60 * 1000,   // 35 minutes
-      folding: 10 * 60 * 1000,  // 10 minutes
-    };
-
-    const initializeTimer = () => {
-      // Check if this stage even needs a timer
-      if (!stageDurations[currentStatus]) {
-        clearTimerState(orderId);
-        setTimerInitialized(true);
-        console.log('No timer needed for stage:', currentStatus);
-        return;
-      }
-
-      const savedState = loadTimerState(orderId);
-      
-      // Only resume if saved state is for the SAME status
-      if (savedState && savedState.status === currentStatus) {
-        // Resume from saved state
-        const now = Date.now();
-        const totalPausedTime = savedState.pausedTime;
-        let currentElapsed = now - savedState.startTime - totalPausedTime;
-        
-        // Safety check: don't exceed stage duration
-        if (currentElapsed > savedState.duration) {
-          currentElapsed = savedState.duration;
-        }
-        
-        setStageDuration(savedState.duration);
-        setElapsedTime(currentElapsed);
-        setIsPaused(savedState.isPaused);
-        startTimeRef.current = savedState.startTime;
-        pausedTimeRef.current = totalPausedTime;
-        
-        console.log('✅ Resumed timer from storage:', {
-          status: currentStatus,
-          elapsed: Math.floor(currentElapsed / 1000) + 's',
-          duration: Math.floor(savedState.duration / 1000) + 's',
-          paused: savedState.isPaused,
-          remaining: Math.floor((savedState.duration - currentElapsed) / 1000) + 's'
-        });
-      } else {
-        // Start completely new timer for this stage
-        const newStartTime = Date.now();
-        const duration = stageDurations[currentStatus];
-        
-        setStageDuration(duration);
-        setElapsedTime(0);
-        setIsPaused(false);
-        startTimeRef.current = newStartTime;
-        pausedTimeRef.current = 0;
-        
-        const newState: TimerState = {
-          orderId,
-          status: currentStatus,
-          startTime: newStartTime,
-          pausedTime: 0,
-          isPaused: false,
-          duration: duration
-        };
-        saveTimerState(newState);
-        
-        console.log('🆕 Started NEW timer:', {
-          status: currentStatus,
-          duration: Math.floor(duration / 1000) + 's (' + Math.floor(duration / 60000) + ' min)'
-        });
-      }
-      
-      setTimerInitialized(true);
-    };
-
-    initializeTimer();
-  }, [order, orderId, currentStatus, timerInitialized]);
-
-  // Timer tick effect
-  useEffect(() => {
-    if (!order || !timerInitialized) return;
-
-    const stageDurations: Record<string, number> = {
-      sorting: 10 * 60 * 1000,
-      washing: 30 * 60 * 1000,
-      drying: 35 * 60 * 1000,
-      folding: 10 * 60 * 1000,
-    };
-
-    const stageDuration = stageDurations[currentStatus];
-
-    // No timer needed for this stage
-    if (!stageDuration) {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      return;
-    }
-
-    // Clear any existing timer
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    console.log('⏰ Starting timer interval for:', currentStatus, 'Duration:', Math.floor(stageDuration / 60000) + ' min');
-
-    let lastSaveTime = 0;
-
-    timerRef.current = setInterval(() => {
-      if (!isPaused) {
-        const now = Date.now();
-        const elapsed = now - startTimeRef.current - pausedTimeRef.current;
-        
-        setElapsedTime(elapsed);
-
-        // Save state every 10 seconds
-        if (now - lastSaveTime > 10000) {
-          lastSaveTime = now;
-          const state: TimerState = {
-            orderId,
-            status: currentStatus,
-            startTime: startTimeRef.current,
-            pausedTime: pausedTimeRef.current,
-            isPaused: false,
-            duration: stageDuration
-          };
-          saveTimerState(state);
-        }
-
-        // Check if stage is complete
-        if (elapsed >= stageDuration) {
-          console.log('✅ Timer completed! Elapsed:', Math.floor(elapsed / 1000) + 's', 'Duration:', Math.floor(stageDuration / 1000) + 's');
-          
-          if (timerRef.current) {
-            clearInterval(timerRef.current);
-            timerRef.current = null;
-          }
-          
-          clearTimerState(orderId);
-          
-          const stageName = WASH_STAGES.find(s => s.id === currentStatus)?.label;
-          toast.success(`Stage "${stageName}" completed`, {
-            description: 'Automatically advancing to next stage',
-            duration: 3000
-          });
-          
-          // Small delay before advancing to ensure state is saved
-          setTimeout(() => {
-            if (nextStage) {
-              handleAdvanceStage(nextStage.id);
-            }
-          }, 500);
-        } else {
-          // Log progress every 30 seconds
-          const elapsedSeconds = Math.floor(elapsed / 1000);
-          if (elapsedSeconds > 0 && elapsedSeconds % 30 === 0) {
-            const remaining = stageDuration - elapsed;
-            console.log('⏱️ Progress:', Math.floor(elapsed / 60000) + 'm', 'Remaining:', Math.floor(remaining / 60000) + 'm');
-          }
-        }
-      }
-    }, 100); // Update every 100ms for smooth display
 
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      if (readyIntervalRef.current) clearInterval(readyIntervalRef.current);
+      if (readyDismissRef.current)  clearTimeout(readyDismissRef.current);
     };
+  }, [currentStatus]);
+
+  useEffect(() => {
+    if (!order || timerInitialized) return;
+    if (!STAGE_DURATIONS[currentStatus]) { clearTimerState(orderId); setTimerInitialized(true); return; }
+
+    const saved = loadTimerState(orderId);
+    if (saved && saved.status === currentStatus) {
+      const now = Date.now();
+      let elapsed = now - saved.startTime - saved.pausedTime;
+      if (elapsed > saved.duration) elapsed = saved.duration;
+      setStageDuration(saved.duration);
+      setElapsedTime(elapsed);
+      setIsPaused(saved.isPaused);
+      startTimeRef.current  = saved.startTime;
+      pausedTimeRef.current = saved.pausedTime;
+    } else {
+      const now      = Date.now();
+      const duration = STAGE_DURATIONS[currentStatus];
+      setStageDuration(duration);
+      setElapsedTime(0);
+      setIsPaused(false);
+      startTimeRef.current  = now;
+      pausedTimeRef.current = 0;
+      saveTimerState({ orderId, status: currentStatus, startTime: now, pausedTime: 0, isPaused: false, duration });
+    }
+    setTimerInitialized(true);
+  }, [order, orderId, currentStatus, timerInitialized]);
+
+  useEffect(() => {
+    if (!order || !timerInitialized) return;
+    const stageDurationMs = STAGE_DURATIONS[currentStatus];
+    if (!stageDurationMs) {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      return;
+    }
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+
+    let lastSaveTime = 0;
+    timerRef.current = setInterval(() => {
+      if (!isPaused) {
+        const now     = Date.now();
+        const elapsed = now - startTimeRef.current - pausedTimeRef.current;
+        setElapsedTime(elapsed);
+        if (now - lastSaveTime > 10000) {
+          lastSaveTime = now;
+          saveTimerState({ orderId, status: currentStatus, startTime: startTimeRef.current, pausedTime: pausedTimeRef.current, isPaused: false, duration: stageDurationMs });
+        }
+        if (elapsed >= stageDurationMs) {
+          if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+          clearTimerState(orderId);
+          const stageName = WASH_STAGES.find(s => s.id === currentStatus)?.label;
+          toast.success(`"${stageName}" stage complete`, { description: 'Moving to next stage...', duration: 3000 });
+          setTimeout(() => { if (nextStage) handleAdvanceStage(nextStage.id); }, 500);
+        }
+      }
+    }, 100);
+
+    return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
   }, [order, currentStatus, nextStage, isPaused, timerInitialized, orderId, stageDuration]);
 
-  // Helper functions
   const togglePause = () => {
     const newPausedState = !isPaused;
-    
     if (newPausedState) {
-      // Pausing - record the current elapsed time
-      const currentElapsed = Date.now() - startTimeRef.current - pausedTimeRef.current;
-      setElapsedTime(currentElapsed);
-      console.log('⏸️ Timer PAUSED at:', Math.floor(currentElapsed / 1000) + 's');
+      setElapsedTime(Date.now() - startTimeRef.current - pausedTimeRef.current);
     } else {
-      // Resuming - calculate how long we were paused and add to total paused time
-      const pauseStartTime = startTimeRef.current + pausedTimeRef.current + elapsedTime;
-      const pauseDuration = Date.now() - pauseStartTime;
-      pausedTimeRef.current += pauseDuration;
-      console.log('▶️ Timer RESUMED. Total paused time:', Math.floor(pausedTimeRef.current / 1000) + 's');
+      pausedTimeRef.current += Date.now() - (startTimeRef.current + pausedTimeRef.current + elapsedTime);
     }
-    
     setIsPaused(newPausedState);
-    
-    // Save the paused state
-    const state: TimerState = {
-      orderId,
-      status: currentStatus,
-      startTime: startTimeRef.current,
-      pausedTime: pausedTimeRef.current,
-      isPaused: newPausedState,
-      duration: stageDuration
-    };
-    saveTimerState(state);
+    saveTimerState({ orderId, status: currentStatus, startTime: startTimeRef.current, pausedTime: pausedTimeRef.current, isPaused: newPausedState, duration: stageDuration });
   };
 
   const handleAdvanceStage = (stageId: string) => {
-    // Clear timer state when advancing
     clearTimerState(orderId);
     setTimerInitialized(false);
-    
     const stage = WASH_STAGES.find(s => s.id === stageId);
     if (stage?.requiresVerification) {
       setPendingStage(stageId);
@@ -404,9 +245,7 @@ export default function OrderDetailsPage() {
     setIsUpdating(true);
     try {
       const success = await changeStatus(order._id, newStatus);
-      if (success) {
-        toast.success(`Order advanced to ${WASH_STAGES.find(s => s.id === newStatus)?.label}`);
-      }
+      if (success) toast.success(`Order advanced to ${WASH_STAGES.find(s => s.id === newStatus)?.label}`);
     } catch {
       toast.error('Failed to update order status');
     } finally {
@@ -418,13 +257,11 @@ export default function OrderDetailsPage() {
     if (!pendingStage || !order) return;
     setShowVerification(false);
     setIsUpdating(true);
-    const attendance = activeAttendances?.find(a => a.attendant?._id === attendantId);
+    const attendance  = activeAttendances?.find(a => a.attendant?._id === attendantId);
     const attendanceId = attendance?._id;
     try {
       const success = await changeStatus(order._id, pendingStage as OrderStatus, undefined, attendantId, attendanceId);
-      if (success) {
-        toast.success(`Order advanced to ${WASH_STAGES.find(s => s.id === pendingStage)?.label}`);
-      }
+      if (success) toast.success(`Order advanced to ${WASH_STAGES.find(s => s.id === pendingStage)?.label}`);
     } catch {
       toast.error('Failed to update order status');
     } finally {
@@ -433,90 +270,54 @@ export default function OrderDetailsPage() {
     }
   };
 
-  // Check if WhatsApp was already sent for this order
   useEffect(() => {
     if (order && typeof window !== 'undefined') {
       const sent = localStorage.getItem(`whatsapp_sent_${order._id}`);
-      if (sent === 'true') {
-        setWhatsappSent(true);
-      }
+      if (sent === 'true') setWhatsappSent(true);
     }
   }, [order]);
 
   const handleWhatsAppClick = () => {
-    if (!order?.customer?.phoneNumber) {
-      toast.error('Customer phone number not available');
-      return;
-    }
-
-    const phone = order.customer.phoneNumber.replace(/\D/g, '');
+    if (!order?.customer?.phoneNumber) { toast.error('Customer phone number not available'); return; }
+    const phone   = order.customer.phoneNumber.replace(/\D/g, '');
     const message = encodeURIComponent(
-      `🧺 WashLab Update\n\n` +
-      `Hi ${order.customer.name},\n` +
-      `Your laundry order *#${order.orderNumber}* is ready for pickup.\n\n` +
-      `Total: ₵${order.finalPrice.toFixed(2)}\n` +
-      `Please come along with your bag card.\n\nThank you!`
+      `🧺 WashLab Update\n\nHi ${order.customer.name},\nYour laundry order *#${order.orderNumber}* is ready for pickup.\n\nTotal: ₵${order.finalPrice.toFixed(2)}\nPlease come along with your bag card.\n\nThank you!`
     );
-
     window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
-    
-    // Mark as sent and save to localStorage
     setWhatsappSent(true);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(`whatsapp_sent_${order._id}`, 'true');
-    }
-    
+    localStorage.setItem(`whatsapp_sent_${order._id}`, 'true');
     toast.success('WhatsApp notification sent!');
   };
 
   const getStatusColor = (stageId: string) => {
-    const stageIndex = WASH_STAGES.findIndex(s => s.id === stageId);
-    if (stageIndex < effectiveStageIndex) return 'bg-success text-success-foreground';
-    if (stageIndex === effectiveStageIndex) return 'bg-primary text-primary-foreground';
+    const idx = WASH_STAGES.findIndex(s => s.id === stageId);
+    if (idx < effectiveStageIndex)  return 'bg-success text-success-foreground';
+    if (idx === effectiveStageIndex) return 'bg-primary text-primary-foreground';
     return 'bg-muted text-muted-foreground';
   };
 
   const progressPercentage = stageDuration > 0 ? Math.min((elapsedTime / stageDuration) * 100, 100) : 0;
-  const remainingTime = Math.max(stageDuration - elapsedTime, 0);
-  const remainingMinutes = Math.floor(remainingTime / 60000);
-  const remainingSeconds = Math.floor((remainingTime % 60000) / 1000);
-  const elapsedMinutes = Math.floor(elapsedTime / 60000);
-  const elapsedSeconds = Math.floor((elapsedTime % 60000) / 1000);
+  const remainingTime      = Math.max(stageDuration - elapsedTime, 0);
+  const remainingMinutes   = Math.floor(remainingTime / 60000);
+  const remainingSeconds   = Math.floor((remainingTime % 60000) / 1000);
+  const elapsedMinutes     = Math.floor(elapsedTime / 60000);
+  const elapsedSeconds     = Math.floor((elapsedTime % 60000) / 1000);
 
-  // Early returns after all hooks
-  if (!isSessionValid) {
-    return (
-      <WashStationLayout title="Order Details">
-        <LoadingSpinner text="Verifying session..." />
-      </WashStationLayout>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <WashStationLayout title="Order Details">
-        <LoadingSpinner text="Loading order details..." />
-      </WashStationLayout>
-    );
-  }
-
-  if (!order) {
-    return (
-      <WashStationLayout title="Order Details">
-        <EmptyState
-          icon={Package}
-          title="Order not found"
-          description="The order you're looking for doesn't exist or you don't have access to it."
-          action={{ label: 'Back to Orders', onClick: () => router.push('/washstation/orders') }}
-        />
-      </WashStationLayout>
-    );
-  }
+  if (!isSessionValid) return <WashStationLayout title="Order Details"><LoadingSpinner text="Verifying session..." /></WashStationLayout>;
+  if (isLoading)       return <WashStationLayout title="Order Details"><LoadingSpinner text="Loading order details..." /></WashStationLayout>;
+  if (!order)          return (
+    <WashStationLayout title="Order Details">
+      <EmptyState icon={Package} title="Order not found"
+        description="The order you're looking for doesn't exist or you don't have access to it."
+        action={{ label: 'Back to Orders', onClick: () => router.push('/washstation/orders') }} />
+    </WashStationLayout>
+  );
 
   return (
     <WashStationLayout title={`Order #${order.orderNumber}`}>
       <div className="space-y-6">
-        {/* Ready Notification Popup */}
+
+        {/* Ready Popup */}
         {showReadyPopup && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-300">
             <div className="bg-white dark:bg-gray-900 rounded-2xl p-8 shadow-2xl max-w-md w-full mx-4 animate-in zoom-in duration-300">
@@ -525,23 +326,11 @@ export default function OrderDetailsPage() {
                   <CheckCircle className="w-12 h-12 text-green-600 dark:text-green-400" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                    Order Ready! 🎉
-                  </h2>
-                  <p className="text-lg font-semibold text-primary">
-                    #{order.orderNumber}
-                  </p>
-                  <p className="text-gray-600 dark:text-gray-400 mt-2">
-                    {order.customer?.name}'s laundry is ready for pickup
-                  </p>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Order Ready! 🎉</h2>
+                  <p className="text-lg font-semibold text-primary">#{order.orderNumber}</p>
+                  <p className="text-gray-600 dark:text-gray-400 mt-2">{order.customer?.name}'s laundry is ready for pickup</p>
                 </div>
-                <Button 
-                  onClick={() => setShowReadyPopup(false)}
-                  className="w-full"
-                  size="lg"
-                >
-                  Got it!
-                </Button>
+                <Button onClick={() => setShowReadyPopup(false)} className="w-full" size="lg">Got it!</Button>
               </div>
             </div>
           </div>
@@ -569,46 +358,32 @@ export default function OrderDetailsPage() {
                     </p>
                   </div>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={togglePause}
-                  disabled={isUpdating}
-                >
+                <Button variant="outline" size="sm" onClick={togglePause} disabled={isUpdating}>
                   {isPaused ? <Play className="w-4 h-4 mr-2" /> : <Pause className="w-4 h-4 mr-2" />}
                   {isPaused ? 'Resume' : 'Pause'}
                 </Button>
               </div>
               <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-3 bg-primary transition-all duration-300"
-                  style={{ width: `${progressPercentage}%` }}
-                />
+                <div className="h-3 bg-primary transition-all duration-300" style={{ width: `${progressPercentage}%` }} />
               </div>
               <div className="flex justify-between items-center mt-2">
-                <p className="text-xs text-muted-foreground">
-                  Elapsed: {elapsedMinutes}:{elapsedSeconds.toString().padStart(2, '0')}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {Math.floor(progressPercentage)}% complete
-                </p>
+                <p className="text-xs text-muted-foreground">Elapsed: {elapsedMinutes}:{elapsedSeconds.toString().padStart(2, '0')}</p>
+                <p className="text-xs text-muted-foreground">{Math.floor(progressPercentage)}% complete</p>
               </div>
             </CardContent>
           </Card>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Order Info */}
           <div className="lg:col-span-2 space-y-6">
+
             {/* Order Header with Visual Progress */}
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between mb-6">
                   <div>
                     <CardTitle className="text-2xl">{order.orderNumber}</CardTitle>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {format(new Date(order.createdAt), 'PPp')}
-                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">{format(new Date(order.createdAt), 'PPp')}</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <Badge variant={order.paymentStatus === 'paid' ? 'default' : 'outline'}
@@ -624,30 +399,25 @@ export default function OrderDetailsPage() {
                 {/* Visual Progress Steps */}
                 <div className="flex items-center justify-between overflow-x-auto pb-2">
                   {WASH_STAGES.slice(0, -1).map((stage, index) => {
-                    const StageIcon = stage.icon;
+                    const StageIcon   = stage.icon;
                     const isCompleted = index < effectiveStageIndex;
-                    const isCurrent = index === effectiveStageIndex;
-                    
+                    const isCurrent   = index === effectiveStageIndex;
                     return (
                       <div key={stage.id} className="flex items-center">
                         <div className={`flex flex-col items-center ${index < WASH_STAGES.length - 2 ? 'flex-1' : ''}`}>
                           <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
                             isCompleted ? 'bg-success text-success-foreground' :
-                            isCurrent ? 'bg-primary text-primary-foreground animate-pulse' :
-                            'bg-muted text-muted-foreground'
+                            isCurrent   ? 'bg-primary text-primary-foreground animate-pulse' :
+                                          'bg-muted text-muted-foreground'
                           }`}>
                             <StageIcon className="w-5 h-5" />
                           </div>
                           <span className={`text-xs mt-2 text-center whitespace-nowrap ${
                             isCompleted || isCurrent ? 'text-foreground font-medium' : 'text-muted-foreground'
-                          }`}>
-                            {stage.label}
-                          </span>
+                          }`}>{stage.label}</span>
                         </div>
                         {index < WASH_STAGES.length - 2 && (
-                          <div className={`h-1 w-16 mx-2 rounded transition-all ${
-                            isCompleted ? 'bg-success' : 'bg-muted'
-                          }`} />
+                          <div className={`h-1 w-16 mx-2 rounded transition-all ${isCompleted ? 'bg-success' : 'bg-muted'}`} />
                         )}
                       </div>
                     );
@@ -678,9 +448,7 @@ export default function OrderDetailsPage() {
 
             {/* Order Items */}
             <Card>
-              <CardHeader>
-                <CardTitle>Order Items</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle>Order Items</CardTitle></CardHeader>
               <CardContent>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
@@ -703,60 +471,49 @@ export default function OrderDetailsPage() {
               </CardContent>
             </Card>
 
-            {/* WhatsApp Notification Button */}
+            {/* WhatsApp Notification */}
             {showWhatsApp && (
               <Card>
-                <CardHeader>
-                  <CardTitle>Customer Notification</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle>Customer Notification</CardTitle></CardHeader>
                 <CardContent>
-                  <Button 
-                    size="lg" 
+                  <Button size="lg"
                     className="w-full bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={handleWhatsAppClick}
-                    disabled={whatsappSent}
-                  >
+                    onClick={handleWhatsAppClick} disabled={whatsappSent}>
                     <MessageCircle className="w-5 h-5 mr-2" />
                     {whatsappSent ? 'WhatsApp Notification Sent ✓' : 'Send WhatsApp Notification'}
                   </Button>
                   <p className="text-xs text-muted-foreground mt-2 text-center">
-                    {whatsappSent 
-                      ? 'Customer has been notified via WhatsApp' 
-                      : 'Notify customer that their order is ready for pickup'}
+                    {whatsappSent ? 'Customer has been notified via WhatsApp' : 'Notify customer that their order is ready for pickup'}
                   </p>
                 </CardContent>
               </Card>
             )}
 
-            {/* Action Buttons */}
+            {/* Actions */}
             {nextStage && order.status !== 'completed' && (
               <Card>
-                <CardHeader>
-                  <CardTitle>Actions</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle>Actions</CardTitle></CardHeader>
                 <CardContent>
+
+                  {/* ── Payment banner — ALL unpaid orders, both walk-in and online ── */}
                   {order.paymentStatus !== 'paid' && (
                     <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 mb-4 space-y-3">
                       <p className="text-warning font-medium flex items-center gap-2">
                         <CreditCard className="w-5 h-5" /> Payment Required
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {order.orderType === 'walk_in'
-                          ? 'Collect payment from the customer to proceed.'
-                          : 'Staff cannot proceed to processing until order is paid.'}
+                        Collect payment from the customer before or after the wash.
                       </p>
-                      {order.orderType === 'walk_in' && (
-                        <Button
-                          size="default"
-                          className="w-full sm:w-auto"
-                          onClick={() => router.push(`/washstation/payment?orderId=${order._id}`)}
-                        >
-                          <CreditCard className="w-4 h-4 mr-2" />
-                          Collect Payment
-                        </Button>
-                      )}
+                      <Button
+                        size="default"
+                        className="w-full sm:w-auto bg-success hover:bg-success/90 text-white"
+                        onClick={() => router.push(`/washstation/payment?orderId=${order._id}`)}
+                      >
+                        <CreditCard className="w-4 h-4 mr-2" /> Collect Payment
+                      </Button>
                     </div>
                   )}
+
                   <Button size="lg" className="w-full" onClick={() => handleAdvanceStage(nextStage.id)} disabled={isUpdating}>
                     <nextStage.icon className="w-5 h-5 mr-2" /> Move to {nextStage.label}
                     {nextStage.requiresVerification && <span className="ml-2 text-xs opacity-75">(Requires Verification)</span>}
@@ -795,15 +552,12 @@ export default function OrderDetailsPage() {
                 {order.deliveryHall && (
                   <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-xl">
                     <MapPin className="w-5 h-5 text-muted-foreground mt-0.5" />
-                    <span className="text-foreground">
-                      {order.deliveryHall} - Room {order.deliveryRoom || 'N/A'}
-                    </span>
+                    <span className="text-foreground">{order.deliveryHall} - Room {order.deliveryRoom || 'N/A'}</span>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Timeline */}
             <Card>
               <CardHeader><CardTitle>Timeline</CardTitle></CardHeader>
               <CardContent>
@@ -821,8 +575,8 @@ export default function OrderDetailsPage() {
                       <div>
                         <p className="text-sm font-medium text-foreground">Payment Confirmed</p>
                         <p className="text-xs text-muted-foreground">
-                          {order.statusHistory?.find(e => e.status === 'checked_in')
-                            ? format(new Date(order.statusHistory.find(e => e.status === 'checked_in')!.changedAt), 'PPp')
+                          {order.statusHistory?.find((e: any) => e.status === 'checked_in')
+                            ? format(new Date(order.statusHistory.find((e: any) => e.status === 'checked_in')!.changedAt), 'PPp')
                             : 'Confirmed'}
                         </p>
                       </div>
@@ -843,7 +597,6 @@ export default function OrderDetailsPage() {
           </div>
         </div>
 
-        {/* Verification Modal */}
         <ActionVerification
           open={showVerification}
           onCancel={() => { setShowVerification(false); setPendingStage(null); }}

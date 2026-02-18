@@ -302,14 +302,14 @@ export function EnrollmentFlow({
           </div>
           <h3 className='text-xl font-semibold'>Set Up Your PIN</h3>
           <p className='text-sm text-muted-foreground'>
-            Create a 6-digit PIN that you'll use for secure actions
+            Create a 4-digit PIN that you'll use for secure actions
           </p>
         </div>
 
         <PINInput
           onComplete={handlePINComplete}
           title='Create PIN'
-          description="Enter a 6-digit PIN (you'll use this for secure actions)"
+          description="Enter a 4-digit PIN (you'll use this for secure actions)"
           error={error || undefined}
         />
 

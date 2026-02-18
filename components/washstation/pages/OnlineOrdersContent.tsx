@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -13,7 +13,6 @@ import {
   Search,
   Phone,
   Mail,
-  AlertTriangle,
   Minus,
   Plus,
   Scale,
@@ -24,16 +23,9 @@ import {
   ArrowRight,
   Clock,
   User,
-  Tag,
-  CheckCircle,
-  X,
-  Droplets,
-  Wind,
-  History,
 } from "lucide-react"
 import { toast } from "sonner"
 import { LoadingSpinner } from "@/components/washstation/LoadingSpinner"
-import { EmptyState } from "@/components/washstation/EmptyState"
 import { ActionVerification } from "@/components/washstation/ActionVerification"
 import {
   Select,
@@ -42,11 +34,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 
 export function OnlineOrdersContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { stationToken, isSessionValid } = useStationSession()
 
   const [selectedOrder, setSelectedOrder] = useState<{
@@ -66,9 +57,8 @@ export function OnlineOrdersContent() {
   // Weight intake
   const [weight, setWeight] = useState(0)
   const [laundryBags, setLaundryBags] = useState(1)
-  const [hangers, setHangers] = useState(0)
   const [bagCardNumber, setBagCardNumber] = useState("")
-const [notes, setNotes] = useState(selectedOrder?.notes || "")
+  const [notes, setNotes] = useState("")
 
   // Service details
   const [detergent, setDetergent] = useState("standard")
@@ -81,7 +71,7 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
       stationToken ? { stationToken } : "skip"
     ) ?? []
 
-  // Get pending online orders (pending_dropoff or pending status, online type only)
+  // Get pending online orders
   const allOnlineOrdersResult = usePaginatedQuery(
     api.stations.getStationOrders,
     stationToken
@@ -93,10 +83,13 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
     { initialNumItems: 50 }
   )
 
-  // Filter for pending orders (both "pending" and "pending_dropoff" statuses)
   const pendingOrders = (allOnlineOrdersResult.results || []).filter(
     (order) => order.status === "pending_dropoff" || order.status === "pending"
   )
+
+  // Include checked-in orders so a returning order stays visible
+  const allOrders = allOnlineOrdersResult.results || []
+
   const isLoadingOrders = allOnlineOrdersResult.status === "LoadingFirstPage"
 
   const checkInOrder = useMutation(api.stations.checkInOnlineOrder)
@@ -104,13 +97,37 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
 
   // Get branch info for pricing
   const branchInfo = useQuery(
-    // @ts-ignore - getStationInfo exists but may not be in generated types yet
+    // @ts-ignore
     api.stations.getStationInfo,
     stationToken ? { stationToken } : "skip"
   ) as { pricingPerKg: number; deliveryFee: number } | undefined
 
+  // ── Restore draft when returning from payment page ──────────────────────────
   useEffect(() => {
-    // Auto-select first pending order
+    const returningOrderId = searchParams?.get("returnOrder")
+    if (!returningOrderId || isLoadingOrders) return
+
+    const draft = sessionStorage.getItem(`checkin_draft_${returningOrderId}`)
+    if (!draft) return
+
+    // Find the order in ALL orders (it's now checked_in, not pending)
+    const returningOrder = allOrders.find((o) => o._id === returningOrderId)
+    if (!returningOrder) return
+
+    try {
+      const { weight: w, laundryBags: lb, bagCardNumber: bc, notes: n } = JSON.parse(draft)
+      setSelectedOrder(returningOrder)
+      setWeight(w)
+      setLaundryBags(lb)
+      setBagCardNumber(bc)
+      setNotes(n)
+    } catch {}
+  }, [searchParams, isLoadingOrders, allOrders.length])
+
+  useEffect(() => {
+    // Only auto-select first pending order if not returning from payment
+    const returningOrderId = searchParams?.get("returnOrder")
+    if (returningOrderId) return
     if (pendingOrders.length > 0 && !selectedOrder) {
       setSelectedOrder(pendingOrders[0])
     }
@@ -118,10 +135,10 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
 
   const handleSelectOrder = (order: any) => {
     setSelectedOrder(order)
-    setWeight(0) // Reset weight - staff needs to weigh it
+    setWeight(0)
     setLaundryBags(1)
-    setHangers(0)
     setBagCardNumber("")
+    setNotes("")
   }
 
   const handleRejectClick = () => {
@@ -152,8 +169,8 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
       setSelectedOrder(null)
       setWeight(0)
       setLaundryBags(1)
-      setHangers(0)
       setBagCardNumber("")
+      setNotes("")
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to cancel order"
@@ -194,27 +211,36 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
       return
     }
 
-    try {
-      const amountToCharge = Math.round(calculateEstimatedTotal() * 100) / 100
-      await checkInOrder({
-        stationToken,
-        orderId: selectedOrder._id,
-        actualWeight: weight,
-        itemCount: laundryBags || 1,
-        bagCardNumber: bagCardNumber,
-        notes: undefined,
-        calculatedTotal: amountToCharge,
-      } as Parameters<typeof checkInOrder>[0])
+    const orderId = selectedOrder._id
+    const isAlreadyCheckedIn =
+      (selectedOrder as any).status === "checked_in"
 
-      toast.success("Order checked in. Proceeding to payment.")
-      const orderId = selectedOrder._id
-      // Reset state
+    try {
+      // Only call checkInOrder if not already checked in (i.e. not returning)
+      if (!isAlreadyCheckedIn) {
+        await checkInOrder({
+          stationToken,
+          orderId,
+          actualWeight: weight,
+          itemCount: laundryBags || 1,
+          bagCardNumber,
+          notes: notes || undefined,
+        } as Parameters<typeof checkInOrder>[0])
+      }
+
+      toast.success("Proceeding to payment.")
+
+      // Save draft so attendant can review if they go back again
+      sessionStorage.setItem(
+        `checkin_draft_${orderId}`,
+        JSON.stringify({ weight, laundryBags, bagCardNumber, notes })
+      )
+
       setSelectedOrder(null)
       setWeight(0)
       setLaundryBags(1)
-      setHangers(0)
       setBagCardNumber("")
-      // Navigate to same payment interface as walk-in (Card or Mobile Money)
+      setNotes("")
       router.push(`/washstation/payment?orderId=${orderId}`)
     } catch (error) {
       toast.error(
@@ -230,7 +256,6 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
     return `${Math.floor(minutes / 60)}h ago`
   }
 
-  // Calculate totals
   const totalVolume = pendingOrders.reduce(
     (acc, o) => acc + (o.estimatedWeight || 5),
     0
@@ -240,13 +265,11 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
       ? getTimeAgo(pendingOrders[pendingOrders.length - 1].createdAt)
       : "N/A"
 
-  // Calculate estimated total using new pricing logic (8kg per load)
   const calculateEstimatedTotal = () => {
     if (!selectedOrder || weight <= 0) {
       return selectedOrder?.finalPrice || 0
     }
 
-    // Service pricing per load
     const servicePricing: Record<string, number> = {
       wash_only: 25,
       wash_and_dry: 50,
@@ -254,22 +277,15 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
       dry_only: 25,
     }
 
-    // Calculate number of loads (8kg per load, plus 1 minus 1 logic)
     const numberOfLoads = Math.ceil(weight / 8)
-
-    // Get service type
     const serviceType = selectedOrder.serviceType || "wash_and_dry"
     const pricePerLoad = servicePricing[serviceType] || 50
-
-    // Calculate base price
     let basePrice = numberOfLoads * pricePerLoad
 
-    // Add whites separate fee if applicable (25 GHS for separate wash)
     if ((selectedOrder as any).whitesSeparate) {
       basePrice += 25
     }
 
-    // Add delivery fee if applicable
     const deliveryFee =
       selectedOrder.isDelivery && branchInfo ? branchInfo.deliveryFee : 0
 
@@ -278,7 +294,6 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
 
   const estimatedTotal = calculateEstimatedTotal()
 
-  // Get service name
   const getServiceName = (serviceType: string) => {
     const serviceMap: Record<string, string> = {
       wash_only: "Wash Only",
@@ -289,7 +304,6 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
     return serviceMap[serviceType] || serviceType.replace(/_/g, " & ")
   }
 
-  // Generate available bag numbers (001-010, skipping taken ones, extending if needed)
   const takenNumbers = new Set(activeBagNumbers)
   const availableNumbers: string[] = []
   let num = 1
@@ -485,19 +499,21 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
                 </div>
 
                 <div className='bg-card border border-border rounded-xl p-4 sm:p-6 mb-4'>
-                 <div className='text-center'>
-                <Input
-                type="number"
-               step={0.1}
-               min={0}
-               value={weight}
-               onChange={(e) => setWeight(parseFloat(e.target.value) || 0)}
-              className='text-3xl sm:text-4xl md:text-5xl font-bold text-foreground text-center border-0 bg-transparent focus:ring-0'
-              />
-              <span className='text-lg sm:text-xl text-muted-foreground ml-2'>
-              kg
-              </span>
-              </div>
+                  <div className='text-center'>
+                    <Input
+                      type='number'
+                      step={0.1}
+                      min={0}
+                      value={weight}
+                      onChange={(e) =>
+                        setWeight(parseFloat(e.target.value) || 0)
+                      }
+                      className='text-3xl sm:text-4xl md:text-5xl font-bold text-foreground text-center border-0 bg-transparent focus:ring-0'
+                    />
+                    <span className='text-lg sm:text-xl text-muted-foreground ml-2'>
+                      kg
+                    </span>
+                  </div>
                 </div>
 
                 <div className='flex flex-col sm:flex-row gap-2 justify-center'>
@@ -522,18 +538,17 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
 
               {/* Customer Instructions */}
               <div className='bg-warning/5 border border-warning/20 rounded-xl p-4'>
-  <h3 className='font-semibold text-foreground flex items-center gap-2 mb-3'>
-    <MessageSquare className='w-5 h-5 text-warning' />
-    CUSTOMER INSTRUCTIONS
-  </h3>
-  <textarea
-    value={notes}
-    onChange={(e) => setNotes(e.target.value)}
-    placeholder="Add or edit customer instructions..."
-    className='w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted border-0 rounded-xl text-foreground placeholder:text-muted-foreground resize-none h-20 sm:h-24 text-sm sm:text-base'
-  />
-</div>
-
+                <h3 className='font-semibold text-foreground flex items-center gap-2 mb-3'>
+                  <MessageSquare className='w-5 h-5 text-warning' />
+                  CUSTOMER INSTRUCTIONS
+                </h3>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder='Add or edit customer instructions...'
+                  className='w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted border-0 rounded-xl text-foreground placeholder:text-muted-foreground resize-none h-20 sm:h-24 text-sm sm:text-base'
+                />
+              </div>
             </div>
 
             {/* Bag Card Number */}
@@ -570,95 +585,57 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
               )}
             </div>
 
-            {/* Items Verification */}
+            {/* Items Verification — Laundry Bags only */}
             <div className='mt-6'>
               <h3 className='font-semibold text-foreground flex items-center gap-2 mb-4'>
                 <ShoppingBag className='w-5 h-5' />
                 Items Verification
               </h3>
 
-              <div className='grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4'>
-              <div className="flex flex-col p-3 sm:p-4 bg-card border border-border rounded-xl">
-  {/* Top: Label */}
-  <div className="flex items-center gap-3 mb-2">
-    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-      <Package className="w-5 h-5 text-muted-foreground" />
-    </div>
-    <div className="min-w-0">
-      <p className="font-medium text-foreground text-sm">Laundry Bags</p>
-      <p className="text-xs text-muted-foreground truncate">Standard WashLab Bag</p>
-    </div>
-  </div>
-
-  {/* Bottom: - [input] + */}
-  <div className="flex items-center gap-2">
-    <button
-      type="button"
-      onClick={() => setLaundryBags(Math.max(0, laundryBags - 1))}
-      className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center"
-    >
-      <Minus className="w-4 h-4" />
-    </button>
-
-    <Input
-      type="number"
-      min={0}
-      step={1}
-      value={laundryBags}
-      onChange={(e) => setLaundryBags(parseInt(e.target.value) || 0)}
-      className="w-16 text-center font-semibold text-foreground border-0 bg-transparent focus:ring-0"
-    />
-
-    <button
-      type="button"
-      onClick={() => setLaundryBags(laundryBags + 1)}
-      className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center"
-    >
-      <Plus className="w-4 h-4" />
-    </button>
-  </div>
-</div>
-
-
-             <div className="flex flex-col p-3 sm:p-4 bg-card border border-border rounded-xl">
-  {/* Top: Label */}
-  <div className="flex items-center gap-3 mb-2">
-    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-      <Tag className="w-5 h-5 text-muted-foreground" />
-    </div>
-    <div className="min-w-0">
-      <p className="font-medium text-foreground text-sm">Hangers</p>
-      <p className="text-xs text-muted-foreground truncate">Customer Provided</p>
-    </div>
-  </div>
-
-  {/* Bottom: - [input] + */}
-  <div className="flex items-center gap-2">
-    <button
-      type="button"
-      onClick={() => setHangers(Math.max(0, hangers - 1))}
-      className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center"
-    >
-      <Minus className="w-4 h-4" />
-    </button>
-
-    <Input
-      type="number"
-      min={0}
-      step={1}
-      value={hangers}
-      onChange={(e) => setHangers(parseInt(e.target.value) || 0)}
-      className="w-16 text-center font-semibold text-foreground border-0 bg-transparent focus:ring-0"
-    />
-
-    <button
-      type="button"
-      onClick={() => setHangers(hangers + 1)}
-      className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center"
-    >
-      <Plus className="w-4 h-4" />
-    </button>
+              <div className='flex flex-col p-3 sm:p-4 bg-card border border-border rounded-xl max-w-xs'>
+                <div className='flex items-center gap-3 mb-2'>
+                  <div className='w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0'>
+                    <Package className='w-5 h-5 text-muted-foreground' />
                   </div>
+                  <div className='min-w-0'>
+                    <p className='font-medium text-foreground text-sm'>
+                      Laundry Bags
+                    </p>
+                    <p className='text-xs text-muted-foreground truncate'>
+                      Standard WashLab Bag
+                    </p>
+                  </div>
+                </div>
+
+                <div className='flex items-center gap-2'>
+                  <button
+                    type='button'
+                    onClick={() =>
+                      setLaundryBags(Math.max(0, laundryBags - 1))
+                    }
+                    className='w-8 h-8 rounded-lg bg-muted flex items-center justify-center'
+                  >
+                    <Minus className='w-4 h-4' />
+                  </button>
+
+                  <Input
+                    type='number'
+                    min={0}
+                    step={1}
+                    value={laundryBags}
+                    onChange={(e) =>
+                      setLaundryBags(parseInt(e.target.value) || 0)
+                    }
+                    className='w-16 text-center font-semibold text-foreground border-0 bg-transparent focus:ring-0'
+                  />
+
+                  <button
+                    type='button'
+                    onClick={() => setLaundryBags(laundryBags + 1)}
+                    className='w-8 h-8 rounded-lg bg-muted flex items-center justify-center'
+                  >
+                    <Plus className='w-4 h-4' />
+                  </button>
                 </div>
               </div>
             </div>
@@ -684,7 +661,6 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
               >
                 <Phone className='w-4 h-4 sm:mr-2' />
                 <span className='text-xs sm:text-sm'>Contact</span>
-                <span className='sm:hidden'>Call</span>
               </Button>
             </div>
             <Button
@@ -693,10 +669,7 @@ const [notes, setNotes] = useState(selectedOrder?.notes || "")
               disabled={weight === 0 || !bagCardNumber}
               size='sm'
             >
-              <span className='text-xs sm:text-sm'>
-                Proceed to Payment
-              </span>
-              <span className='lg:hidden'>Payment</span>
+              <span className='text-xs sm:text-sm'>Proceed to Payment</span>
               <ArrowRight className='w-4 h-4 ml-2' />
             </Button>
           </div>

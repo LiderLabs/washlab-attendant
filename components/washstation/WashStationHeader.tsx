@@ -214,7 +214,7 @@ const WashStationHeader = ({
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 pl-2 md:pl-3 border-l border-border hover:bg-muted/50 rounded-lg p-2 transition-colors">
               <div className="hidden md:block text-right">
-                <p className="text-xs text-muted-foreground">Station</p>
+                <p className="text-xs text-muted-foreground">Wash Site</p>
                 <p className="font-medium text-foreground text-sm">{branchName}</p>
               </div>
               <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
