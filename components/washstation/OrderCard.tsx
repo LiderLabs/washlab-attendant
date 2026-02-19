@@ -55,10 +55,11 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
     ? order.statusHistory[order.statusHistory.length - 1]
     : null
 
-  const assignedByName =
-    lastStatusChange?.changedBy?.type === "attendant"
-      ? lastStatusChange?.changedBy?.name
-      : "Admin"
+ const assignedByName =
+  lastStatusChange?.changedBy?.type === "attendant"
+    ? lastStatusChange?.changedBy?.name
+    : null
+
 
   /**
    * WhatsApp should appear when:

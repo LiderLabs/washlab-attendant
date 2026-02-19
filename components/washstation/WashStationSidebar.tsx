@@ -7,7 +7,6 @@ import { useStationSession } from '@/hooks/useStationSession';
 import {
   LayoutDashboard,
   ClipboardList,
-  Users,
   Package,
   Settings,
   Clock,
@@ -41,7 +40,6 @@ const WashStationSidebar = ({
     { id: 'notifications', label: 'Notifications', icon: Bell, path: '/washstation/notifications' },
     { id: 'transactions', label: 'Transactions', icon: CreditCard, path: '/washstation/transactions' },
     { id: 'activity', label: 'Activity Log', icon: Activity, path: '/washstation/activity' },
-    { id: 'customers', label: 'Customers', icon: Users, path: '/washstation/customers' },
     { id: 'inventory', label: 'Inventory', icon: Package, path: '/washstation/inventory' },
   ];
 

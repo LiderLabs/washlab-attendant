@@ -23,34 +23,33 @@ import {
   Clock,
   CheckCircle,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { toast } from "sonner"
 
 type Step = "phone" | "customer-found" | "register" | "order"
 
 /**
- * Normalise any phone input into bare 9-digit local number (no country code,
- * no leading 0). Always caps at 9 chars.
+ * Normalise any phone input into a clean local number.
+ * Accepts 10-digit numbers starting with 0 (e.g. "0241234567")
+ * or 9-digit numbers without leading 0 (e.g. "241234567").
+ * Always caps at 10 chars (the full local format).
  *
- * Examples:
- *   "0241234567"    → "241234567"   (user typed 10 digits with leading 0)
- *   "241234567"     → "241234567"   (user typed 9 digits)
- *   "+233241234567" → "241234567"   (full international)
- *   "233241234567"  → "241234567"   (international without +)
- *
- * So whether someone types 9 keys (no 0) or 10 keys (with leading 0),
- * the result is always 9 bare digits — which with +233 gives the full 12.
+ * We store the number WITH the leading 0 internally now,
+ * so the numpad just appends digits freely.
  */
 function normaliseToLocalDigits(raw: string): string {
   const digits = raw.replace(/\D/g, "")
-  if (digits.startsWith("233")) return digits.slice(3).slice(0, 9)
-  if (digits.startsWith("0"))   return digits.slice(1).slice(0, 9)
-  return digits.slice(0, 9)
+  // Strip international prefix if present
+  if (digits.startsWith("233")) return ("0" + digits.slice(3)).slice(0, 10)
+  // Already has leading 0 or not — just cap at 10
+  return digits.slice(0, 10)
 }
 
-/** Phone is ready when we have exactly 9 bare local digits. */
+/** Phone is ready when we have exactly 10 digits (e.g. "0241234567"). */
 function isPhoneComplete(phone: string): boolean {
-  return phone.length === 9
+  return phone.length === 10 && phone.startsWith("0")
 }
 
 /** Safe unique placeholder — no backend changes needed. */
@@ -64,12 +63,13 @@ export function NewOrderContent() {
 
   const dbServices = useQuery(api.services.getActive) ?? []
 
+  // phone is stored as full 10-digit local number e.g. "0241234567"
   const formatPhoneForBackend = (phone: string): string => {
-    // phone is always bare 9-digit local, e.g. "241234567"
-    return `+233${phone}`
+    // Strip leading 0, prepend +233
+    const stripped = phone.startsWith("0") ? phone.slice(1) : phone
+    return `+233${stripped}`
   }
 
-  // Always bare 9-digit local digits, e.g. "241234567"
   const [phone, setPhone] = useState("")
 
   const handlePhoneInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -171,13 +171,6 @@ export function NewOrderContent() {
   }, [dbServices, serviceType])
 
   const quickNotes = ["Rush Service", "Stains", "Delicate", "No Softener"]
-
-  const handlePhoneSubmit = () => {
-    if (!isPhoneComplete(phone)) {
-      toast.error("Please enter a valid phone number")
-      return
-    }
-  }
 
   useEffect(() => {
     if (step !== "phone") return
@@ -297,20 +290,14 @@ export function NewOrderContent() {
   }))
 
   /**
-   * Display: prepend a leading 0 so the attendant sees the familiar 10-digit
-   * local format "024 123 4567", even though we store 9 bare digits internally.
-   *
-   * Numpad:  type "241234567" (9 presses) → displays "024 123 4567" ✅
-   * Keyboard: type "0241234567" (10 chars) → normalise strips the 0 → "241234567"
-   *           → displays "024 123 4567" ✅
+   * Display phone with spacing: "024 123 4567"
+   * phone is stored as "0241234567" (10 digits)
    */
   const formatPhoneDisplay = (p: string): string => {
-    const full = p ? `0${p}` : ""          // always prepend 0 for display
-    if (full.length <= 3)  return full
-    if (full.length <= 7)  return `${full.slice(0, 3)} ${full.slice(3)}`
-    return `${full.slice(0, 3)} ${full.slice(3, 7)} ${full.slice(7)}`
-    // e.g. "0241234567" → "024 1234 567" ... adjusted below:
-    // "024" + " " + "123" + " " + "4567" → "024 123 4567"
+    if (!p) return ""
+    if (p.length <= 3)  return p
+    if (p.length <= 6)  return `${p.slice(0, 3)} ${p.slice(3)}`
+    return `${p.slice(0, 3)} ${p.slice(3, 6)} ${p.slice(6)}`
   }
 
   const NumberPad = ({
@@ -363,49 +350,38 @@ export function NewOrderContent() {
                 Enter mobile number to find or create profile
               </p>
 
-              <div className='flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6'>
-                <div className='bg-muted rounded-xl px-3 sm:px-4 py-3 sm:py-4 text-base sm:text-lg font-semibold text-foreground whitespace-nowrap flex-shrink-0'>
-                  +233
-                </div>
-                <div className='flex-1 relative'>
-                  {/*
-                    ✅ type="tel" + inputMode="numeric" → numeric keyboard on mobile.
-                    Value displayed with leading 0 (e.g. "024 123 4567").
-                    onChange strips the 0 back off before storing.
-                    Numpad also strips any leading 0 automatically via normalise.
-                  */}
-                  <Input
-                    type='tel'
-                    inputMode='numeric'
-                    value={formatPhoneDisplay(phone)}
-                    onChange={handlePhoneInputChange}
-                    placeholder='024 XXX XXXX'
-                    className='h-12 sm:h-14 text-xl sm:text-2xl font-semibold bg-muted border-0 rounded-xl px-3 sm:px-4 text-foreground'
-                    autoComplete='off'
-                  />
-                  <Phone className='absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground pointer-events-none' />
-                </div>
+              {/* Phone input — no +233 prefix box */}
+              <div className='relative mb-6'>
+                <Input
+                  type='tel'
+                  inputMode='numeric'
+                  value={formatPhoneDisplay(phone)}
+                  onChange={handlePhoneInputChange}
+                  placeholder='024 XXX XXXX'
+                  className='h-12 sm:h-14 text-xl sm:text-2xl font-semibold bg-muted border-0 rounded-xl px-3 sm:px-4 pr-10 text-foreground'
+                  autoComplete='off'
+                />
+                <Phone className='absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground pointer-events-none' />
               </div>
 
-              <Button
-                onClick={handlePhoneSubmit}
-                disabled={!isPhoneComplete(phone)}
-                className='w-full h-12 sm:h-14 text-base sm:text-lg rounded-xl bg-primary text-primary-foreground font-semibold'
-              >
-                Check Number
-                <ArrowRight className='w-4 h-4 sm:w-5 sm:h-5 ml-2' />
-              </Button>
+              {/* Clear button — only shown when digits have been entered */}
+              {phone.length > 0 && (
+                <button
+                  onClick={() => { setPhone(""); hasNavigatedFromPhoneRef.current = false }}
+                  className='flex items-center justify-center gap-2 h-12 sm:h-14 px-5 w-full rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 transition-colors'
+                >
+                  <ChevronLeft className='w-5 h-5' />
+                  Clear
+                </button>
+              )}
             </div>
 
             <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8'>
               <NumberPad
                 onDigit={(d) => {
                   setPhone((prev) => {
-                    // 0 as first digit is display-only — skip it so they can
-                    // type "0241234567" naturally and still land on 9 bare digits
-                    if (prev.length === 0 && d === "0") return prev
                     const next = prev + d
-                    return next.length <= 9 ? next : prev   // hard cap at 9
+                    return next.length <= 10 ? next : prev  // 10-digit cap
                   })
                   hasNavigatedFromPhoneRef.current = false
                 }}
@@ -499,7 +475,7 @@ export function NewOrderContent() {
               <div className='flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-muted rounded-xl'>
                 <Phone className='w-4 h-4 text-muted-foreground flex-shrink-0' />
                 <span className='text-foreground font-medium text-sm sm:text-base truncate'>
-                  +233 {formatPhoneDisplay(phone)}
+                  {formatPhoneDisplay(phone)}
                 </span>
                 <span className='ml-auto text-muted-foreground flex-shrink-0'>🔒</span>
               </div>

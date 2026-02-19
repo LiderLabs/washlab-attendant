@@ -42,7 +42,7 @@ interface HeaderProps {
 
 const WashStationHeader = ({ 
   title, 
-  branchName = 'Central Branch',
+  branchName = 'Academic city',
   activeAttendances = [],
   pendingCount = 0,
   onNotificationClick,
