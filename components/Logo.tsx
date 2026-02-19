@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { useTheme } from 'next-themes';
-
+import { useEffect, useState } from 'react';
 
 interface LogoProps {
   className?: string;
@@ -12,33 +12,35 @@ interface LogoProps {
 }
 
 export const Logo = ({ className, showText = true, size = 'md' }: LogoProps) => {
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
 
-  const { theme } = useTheme();
+  // Avoid hydration mismatch — only read theme after mount
+  useEffect(() => { setMounted(true); }, []);
 
-  const sizeClasses = {
-    sm: 'h-[80px]',  // mobile / small
-  md: 'h-[100px]',  // default desktop
-  lg: 'h-[200px]',  // large
+  const sizeConfig = {
+    sm: { height: 28,  width: 100 },
+    md: { height: 40,  width: 160 },
+    lg: { height: 80,  width: 280 },
   };
 
-  // Choose logo depending on theme
-  const logoSrc =
-    theme === 'dark'
-      ? '/assets/washlab logo-dark.png'
-      : '/assets/washlab logo-light.png';
+  const { height, width } = sizeConfig[size];
+
+  // Use the same root-level paths that already work in the sidebar
+  const logoSrc = mounted && resolvedTheme === 'dark'
+    ? '/washlab-logo-dark.png'
+    : '/washlab-logo.png';
 
   return (
     <div className={cn('flex items-center', className)}>
       <Image
         src={logoSrc}
         alt="WashLab - Life made simple"
-        className={cn(sizeClasses[size], 'w-auto')}
-  height={size === 'sm' ? 40 : size === 'md' ? 56 : 80}  // exact pixel height
-      width={size === 'sm' ? 150 : size === 'md' ? 250 : 280}
+        height={height}
+        width={width}
+        className="w-auto h-auto"
+        priority
       />
     </div>
   );
 };
-
-
-

@@ -8,16 +8,14 @@ import { useStationSession } from '@/hooks/useStationSession';
 import { 
   LayoutDashboard, 
   ClipboardList, 
-  Users, 
   Package, 
   Settings,
   Clock,
   CreditCard,
   Activity,
   Bell,
-  X
 } from 'lucide-react';
-import Image from 'next/image';
+import { Logo } from '@/components/Logo';
 import { Badge } from '@/components/ui/badge';
 import {
   Sheet,
@@ -36,34 +34,31 @@ export function MobileSidebar({ open, onOpenChange, branchName = 'Central Branch
   const pathname = usePathname();
   const { stationToken } = useStationSession();
   
-  // Get unread notification count
   const unreadCount = useQuery(
     api.stations.getStationUnreadCount,
     stationToken ? { stationToken } : 'skip'
   ) ?? 0;
 
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/washstation/dashboard' },
-    { id: 'orders', label: 'Orders', icon: ClipboardList, path: '/washstation/orders' },
-    { id: 'clock-in', label: 'Clock In/Out', icon: Clock, path: '/washstation/clock-in' },
-    { id: 'attendance', label: 'Attendance', icon: Clock, path: '/washstation/attendance' },
-    { id: 'notifications', label: 'Notifications', icon: Bell, path: '/washstation/notifications', showBadge: true },
-    { id: 'transactions', label: 'Transactions', icon: CreditCard, path: '/washstation/transactions' },
-    { id: 'activity', label: 'Activity Log', icon: Activity, path: '/washstation/activity' },
-    { id: 'customers', label: 'Customers', icon: Users, path: '/washstation/customers' },
-    { id: 'inventory', label: 'Inventory', icon: Package, path: '/washstation/inventory' },
+    { id: 'dashboard',     label: 'Dashboard',    icon: LayoutDashboard, path: '/washstation/dashboard' },
+    { id: 'orders',        label: 'Orders',        icon: ClipboardList,   path: '/washstation/orders' },
+    { id: 'clock-in',      label: 'Clock In/Out',  icon: Clock,           path: '/washstation/clock-in' },
+    { id: 'attendance',    label: 'Attendance',    icon: Clock,           path: '/washstation/attendance' },
+    { id: 'notifications', label: 'Notifications', icon: Bell,            path: '/washstation/notifications', showBadge: true },
+    { id: 'transactions',  label: 'Transactions',  icon: CreditCard,      path: '/washstation/transactions' },
+    { id: 'activity',      label: 'Activity Log',  icon: Activity,        path: '/washstation/activity' },
+    { id: 'inventory',     label: 'Inventory',     icon: Package,         path: '/washstation/inventory' },
   ];
 
-  const isActive = (path: string) => {
-    return pathname === path || pathname?.startsWith(path + '/');
-  };
+  const isActive = (path: string) =>
+    pathname === path || pathname?.startsWith(path + '/');
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="w-64 p-0 flex flex-col">
         <SheetHeader className="p-4 border-b border-border">
           <SheetTitle className="flex items-center gap-2">
-            <Image src="/washlab-logo.png" alt="WashLab" width={120} height={40} className="h-10 w-auto" priority />
+            <Logo size="sm" />
           </SheetTitle>
         </SheetHeader>
 
@@ -104,7 +99,7 @@ export function MobileSidebar({ open, onOpenChange, branchName = 'Central Branch
           })}
         </nav>
 
-        {/* Settings - Bottom */}
+        {/* Settings */}
         <div className="p-3 border-t border-border">
           <Link
             href="/washstation/settings"
@@ -120,15 +115,13 @@ export function MobileSidebar({ open, onOpenChange, branchName = 'Central Branch
           </Link>
         </div>
 
-        {/* Staff Info */}
         {/* Branch Info */}
-        {(
-          <div className="p-4 border-t border-border">
-            <Link 
-              href="/washstation/shift"
-              onClick={() => onOpenChange(false)}
-              className="flex items-center gap-3 hover:bg-muted/50 p-2 -m-2 rounded-xl transition-colors"
-            >
+        <div className="p-4 border-t border-border">
+          <Link 
+            href="/washstation/shift"
+            onClick={() => onOpenChange(false)}
+            className="flex items-center gap-3 hover:bg-muted/50 p-2 -m-2 rounded-xl transition-colors"
+          >
             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold border-2 border-primary">
               {branchName.split(' ').map(n => n[0]).join('').slice(0, 2)}
             </div>
@@ -136,9 +129,8 @@ export function MobileSidebar({ open, onOpenChange, branchName = 'Central Branch
               <p className="text-xs text-muted-foreground">Branch</p>
               <p className="font-medium text-foreground text-sm truncate">{branchName}</p>
             </div>
-            </Link>
-          </div>
-        )}
+          </Link>
+        </div>
       </SheetContent>
     </Sheet>
   );

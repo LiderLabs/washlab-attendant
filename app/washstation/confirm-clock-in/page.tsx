@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import Image from 'next/image';
+import { Logo } from '@/components/Logo';
 import { CheckCircle, X, User, Calendar, Clock, Building2 } from 'lucide-react';
 import { format } from 'date-fns';
+
 
 interface StaffData {
   id: string;
@@ -28,7 +29,6 @@ export default function ConfirmClockInPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
-    // Get pending staff from session (set during face scan)
     const pendingStaff = sessionStorage.getItem('washstation_pending_staff');
     const storedBranch = sessionStorage.getItem('washlab_branch');
     
@@ -51,7 +51,6 @@ export default function ConfirmClockInPage() {
       }
     }
 
-    // Update time every second
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, [router]);
@@ -59,11 +58,9 @@ export default function ConfirmClockInPage() {
   const handleConfirm = () => {
     if (!staffData || typeof window === 'undefined') return;
 
-    // Get existing active staff
     const existingStaff = sessionStorage.getItem('washlab_active_staff');
     const activeStaff = existingStaff ? JSON.parse(existingStaff) : [];
 
-    // Add new staff with clock-in time
     const newStaffEntry = {
       id: staffData.id,
       name: staffData.name,
@@ -76,18 +73,13 @@ export default function ConfirmClockInPage() {
     activeStaff.push(newStaffEntry);
     sessionStorage.setItem('washlab_active_staff', JSON.stringify(activeStaff));
     
-    // Store branch info consistently
     if (branch) {
       sessionStorage.setItem('washlab_branch', JSON.stringify(branch));
     }
     
-    // Clear pending staff
     sessionStorage.removeItem('washstation_pending_staff');
-    
-    // Set as current staff
     sessionStorage.setItem('washlab_current_staff', JSON.stringify(newStaffEntry));
 
-    // Record attendance log
     try {
       const attendanceLog = JSON.parse(localStorage.getItem('washlab_attendance_log') || '[]');
       attendanceLog.push({
@@ -104,9 +96,7 @@ export default function ConfirmClockInPage() {
       console.error('Error saving attendance log:', error);
     }
 
-    // Trigger storage event for other components
     window.dispatchEvent(new Event('storage'));
-
     router.push('/washstation/dashboard');
   };
 
@@ -123,14 +113,7 @@ export default function ConfirmClockInPage() {
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <header className="p-6 border-b border-border flex items-center justify-between">
-        <Image 
-          src="/washlab-logo.png" 
-          alt="WashLab" 
-          width={120}
-          height={40}
-          className="h-8 w-auto"
-          priority
-        />
+        <Logo size="sm" />
       </header>
 
       {/* Main Content */}

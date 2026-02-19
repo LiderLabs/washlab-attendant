@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import Image from 'next/image';
+import { Logo } from '@/components/Logo';
 import { 
   User, 
   Calendar, 
@@ -44,7 +44,6 @@ export default function ShiftManagementPage() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [shiftNotes, setShiftNotes] = useState('');
 
-  // Mock shift data
   const [shiftStats] = useState({
     ordersProcessed: 12,
     cashInDrawer: 450.00,
@@ -59,7 +58,6 @@ export default function ShiftManagementPage() {
     if (activeStaffData) {
       try {
         const parsed = JSON.parse(activeStaffData);
-        // Get current staff - either first in array or the object itself
         const staff = Array.isArray(parsed) ? parsed[0] : parsed;
         if (staff) {
           setStaffData({
@@ -109,10 +107,8 @@ export default function ShiftManagementPage() {
   const handleClockOut = () => {
     if (!staffData || typeof window === 'undefined') return;
 
-    // Clear active staff
     sessionStorage.removeItem('washlab_active_staff');
 
-    // Record clock out in attendance log
     try {
       const attendanceLog = JSON.parse(localStorage.getItem('washlab_attendance_log') || '[]');
       attendanceLog.push({
@@ -131,9 +127,7 @@ export default function ShiftManagementPage() {
       console.error('Error saving attendance log:', error);
     }
 
-    // Clear branch and go back to login
     sessionStorage.removeItem('washlab_branch');
-
     toast.success(`${staffData.name} clocked out successfully`);
     router.push('/washstation');
   };
@@ -149,27 +143,15 @@ export default function ShiftManagementPage() {
         
         if (staffIndex !== -1) {
           if (staffData.onBreak) {
-            // End break
-            activeStaff[staffIndex] = {
-              ...activeStaff[staffIndex],
-              onBreak: false,
-              breakStartTime: undefined,
-            };
+            activeStaff[staffIndex] = { ...activeStaff[staffIndex], onBreak: false, breakStartTime: undefined };
             toast.success('Break ended');
           } else {
-            // Start break
-            activeStaff[staffIndex] = {
-              ...activeStaff[staffIndex],
-              onBreak: true,
-              breakStartTime: new Date().toISOString(),
-            };
+            activeStaff[staffIndex] = { ...activeStaff[staffIndex], onBreak: true, breakStartTime: new Date().toISOString() };
             toast.success('Break started');
           }
           
           sessionStorage.setItem('washlab_active_staff', JSON.stringify(activeStaff));
           setStaffData(activeStaff[staffIndex]);
-          
-          // Trigger storage event for dashboard to update
           window.dispatchEvent(new Event('storage'));
         }
       } catch (error) {
@@ -193,21 +175,13 @@ export default function ShiftManagementPage() {
           >
             <ArrowLeft className="w-5 h-5 text-muted-foreground" />
           </button>
-          <Image 
-            src="/washlab-logo.png" 
-            alt="WashLab" 
-            width={120}
-            height={40}
-            className="h-8 w-auto"
-            priority
-          />
+          <Logo size="sm" />
         </div>
       </header>
 
       {/* Main Content */}
       <main className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-lg">
-          {/* Title */}
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-foreground">Confirm Clock Out</h1>
             <p className="text-muted-foreground mt-2">
@@ -215,7 +189,6 @@ export default function ShiftManagementPage() {
             </p>
           </div>
 
-          {/* System Status */}
           <div className="flex justify-end mb-6">
             <span className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300 rounded-full text-sm font-medium border border-emerald-200 dark:border-emerald-700">
               <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />

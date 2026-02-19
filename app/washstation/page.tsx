@@ -9,6 +9,7 @@ import { Building2, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { getActiveBranches, getBranchByCode, Branch } from '@/config/branches';
 import Image from 'next/image';
+import { Logo } from '@/components/Logo'
 
 /**
  * Branch Entry Page
@@ -58,14 +59,9 @@ export default function BranchEntryPage() {
     <div className="min-h-screen bg-gradient-to-br from-primary via-primary/95 to-primary flex flex-col">
       {/* Header */}
       <header className="p-6">
-        <Image 
-          src="/washlab-logo.png" 
-          alt="WashLab" 
-          width={120}
-          height={40}
-          className="h-10 w-auto"
-          priority
-        />
+        <header className="p-6">
+       <Logo size="sm" className="h-10" />
+       </header>
       </header>
 
       {/* Main Content */}
