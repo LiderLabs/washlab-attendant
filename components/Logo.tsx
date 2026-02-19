@@ -15,21 +15,22 @@ export const Logo = ({ className, showText = true, size = 'md' }: LogoProps) => 
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
-  // Avoid hydration mismatch — only read theme after mount
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const sizeConfig = {
-    sm: { height: 28,  width: 100 },
-    md: { height: 40,  width: 160 },
-    lg: { height: 80,  width: 280 },
+    sm: { height: 28, width: 100 },
+    md: { height: 40, width: 160 },
+    lg: { height: 80, width: 280 },
   };
 
   const { height, width } = sizeConfig[size];
 
-  // Use the same root-level paths that already work in the sidebar
-  const logoSrc = mounted && resolvedTheme === 'dark'
-    ? '/washlab-logo-dark.png'
-    : '/washlab-logo.png';
+  const logoSrc =
+    mounted && resolvedTheme === 'dark'
+      ? '/assets/washlab-logo-dark.png'
+      : '/assets/washlab-logo-light.png';
 
   return (
     <div className={cn('flex items-center', className)}>
