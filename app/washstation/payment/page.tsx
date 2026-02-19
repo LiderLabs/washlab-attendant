@@ -39,7 +39,10 @@ function usePaystackScript() {
 function PaymentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { stationToken } = useStationSession();
+
+  // ✅ Pull isSessionValid — gates useStationOrder so it never fires
+  // before the session token is confirmed, fixing "Invalid station session"
+  const { stationToken, isSessionValid } = useStationSession();
   const paystackLoaded = usePaystackScript();
 
   const createPayment = useMutation((api as any).payments.create);
@@ -61,9 +64,11 @@ function PaymentContent() {
   const orderIdParam = searchParams?.get("orderId");
   const returnTo = searchParams?.get("return");
 
+  // ✅ isSessionValid passed as third arg — query skips until session confirmed
   const { order, isLoading: isLoadingOrder } = useStationOrder(
     stationToken,
-    orderIdParam ? (orderIdParam as Id<"orders">) : null
+    orderIdParam ? (orderIdParam as Id<"orders">) : null,
+    isSessionValid  // ← THIS IS THE FIX
   );
 
   const subtotal = order ? (order.basePrice || 0) + (order.deliveryFee || 0) : 0;
@@ -95,7 +100,6 @@ function PaymentContent() {
     if (!order) { toast.error("Order not found"); setStage("idle"); return; }
 
     try {
-      // ✅ Ensure payment record exists BEFORE finalizing
       const paymentId = await createPayment({
         orderId: order._id,
         amount: totalDue,
@@ -103,14 +107,12 @@ function PaymentContent() {
       });
 
       if (effectivePaymentMethod !== "cash") {
-        // ✅ Initiate gateway session, then open Paystack popup
         await initiatePayment({ paymentId });
         pendingVerificationId.current = verificationId;
         openPaystack(effectivePaymentMethod as "card" | "mobile_money", verificationId);
         return;
       }
 
-      // ✅ Cash: finalize immediately (no popup needed)
       finalizePayment({ verificationId, gatewayTransactionId: null });
 
     } catch (err) {
@@ -263,7 +265,8 @@ function PaymentContent() {
 
   // ─── Loading / error states ───────────────────────────────────────────────────
 
-  if (isLoadingOrder) {
+  // ✅ Show spinner while session verifying OR order loading
+  if (!isSessionValid || isLoadingOrder) {
     return (
       <WashStationLayout title="Payment">
         <div className="flex items-center justify-center min-h-[60vh]">
