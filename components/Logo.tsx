@@ -7,17 +7,18 @@ import { useEffect, useState } from 'react';
 
 interface LogoProps {
   className?: string;
-  showText?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
 
-export const Logo = ({ className, showText = true, size = 'md' }: LogoProps) => {
+export const Logo = ({ className, size = 'md' }: LogoProps) => {
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  if (!mounted) return null; // 🔥 prevents hydration issues in prod
 
   const sizeConfig = {
     sm: { height: 28, width: 100 },
@@ -28,7 +29,7 @@ export const Logo = ({ className, showText = true, size = 'md' }: LogoProps) => 
   const { height, width } = sizeConfig[size];
 
   const logoSrc =
-    mounted && resolvedTheme === 'dark'
+    resolvedTheme === 'dark'
       ? '/assets/washlab-logo-dark.png'
       : '/assets/washlab-logo-light.png';
 
