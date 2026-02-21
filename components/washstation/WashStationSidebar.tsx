@@ -11,7 +11,7 @@ import {
   Settings,
   Clock,
   CreditCard,
-  Activity,
+  // Activity,
   Bell,
   ChevronLeft,
   ChevronRight,
@@ -39,7 +39,7 @@ const WashStationSidebar = ({
     { id: 'attendance', label: 'Attendance', icon: Clock, path: '/washstation/attendance' },
     { id: 'notifications', label: 'Notifications', icon: Bell, path: '/washstation/notifications' },
     { id: 'transactions', label: 'Transactions', icon: CreditCard, path: '/washstation/transactions' },
-    { id: 'activity', label: 'Activity Log', icon: Activity, path: '/washstation/activity' },
+    // { id: 'activity', label: 'Activity Log', icon: Activity, path: '/washstation/activity' },
     { id: 'inventory', label: 'Inventory', icon: Package, path: '/washstation/inventory' },
   ];
 
@@ -55,23 +55,25 @@ const WashStationSidebar = ({
       {/* Logo + Toggle */}
       <div className="p-4 border-b border-border flex items-center justify-between">
         <Link href="/washstation/dashboard" className="flex items-center">
-          {!collapsed ? (
-            <Image
-              src="/washlab-logo.png"
-              alt="WashLab"
-              width={140}
-              height={40}
-              priority
-            />
-          ) : (
-            <Image
-              src="/washlab-favicon1.png"
-              alt="WashLab"
-              width={40}
-              height={40}
-              priority
-            />
-          )}
+         {!collapsed ? (
+  <Image
+    src="/assets/washlab-logo-light.png"  // ← updated
+    alt="WashLab"
+    width={140}
+    height={40}
+    priority
+    unoptimized
+  />
+) : (
+  <Image
+    src="/washlab-favicon1.png"  // ← stays the same
+    alt="WashLab"
+    width={40}
+    height={40}
+    priority
+    unoptimized
+  />
+)}
         </Link>
 
         <button

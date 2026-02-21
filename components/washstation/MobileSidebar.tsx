@@ -12,7 +12,7 @@ import {
   Settings,
   Clock,
   CreditCard,
-  Activity,
+  // Activity,
   Bell,
 } from 'lucide-react';
 import { Logo } from '@/components/Logo';
@@ -46,7 +46,7 @@ export function MobileSidebar({ open, onOpenChange, branchName = 'Central Branch
     { id: 'attendance',    label: 'Attendance',    icon: Clock,           path: '/washstation/attendance' },
     { id: 'notifications', label: 'Notifications', icon: Bell,            path: '/washstation/notifications', showBadge: true },
     { id: 'transactions',  label: 'Transactions',  icon: CreditCard,      path: '/washstation/transactions' },
-    { id: 'activity',      label: 'Activity Log',  icon: Activity,        path: '/washstation/activity' },
+    // { id: 'activity',      label: 'Activity Log',  icon: Activity,        path: '/washstation/activity' },
     { id: 'inventory',     label: 'Inventory',     icon: Package,         path: '/washstation/inventory' },
   ];
 

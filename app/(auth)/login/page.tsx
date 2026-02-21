@@ -10,8 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/Logo';
-import { AlertCircle, Loader2, ArrowRight, FileText, Lock } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Loader2, ArrowRight, Lock } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { LoginFlow } from '@/components/auth/LoginFlow';
 
@@ -20,24 +19,24 @@ type LoginStep = 'branch-code' | 'branch-info' | 'station-login' | 'attendant-au
 export default function LoginPage() {
   const router = useRouter();
   
-  // Check if already logged in on mount
   useEffect(() => {
     if (typeof window === "undefined") return
     const stationToken = localStorage.getItem("station_token")
     const branchId = localStorage.getItem("station_branch_id")
 
     if (stationToken && branchId) {
-      // Already logged in, redirect to dashboard
       router.push("/washstation/dashboard")
     }
   }, [router])
+
   const [step, setStep] = useState<LoginStep>("branch-code")
   const [branchCode, setBranchCode] = useState("")
   const [branchId, setBranchId] = useState<Id<"branches"> | null>(null)
   const [stationPin, setStationPin] = useState("")
   const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+
   const deviceId = useState<string>(() => {
-    // Generate or retrieve device ID from localStorage
     if (typeof window === "undefined") {
       return `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     }
@@ -49,26 +48,15 @@ export default function LoginPage() {
     return deviceId
   })[0]
 
-  // Query branch by code (using admin query)
-  // Keep query active on branch-info and station-login steps to maintain branch data
   const branchInfo = useQuery(
     api.admin.getBranchByCode,
-    (step === "branch-code" && branchCode.length >= 2) ||
-      (step === "branch-info" && branchCode.length >= 2) ||
-      (step === "station-login" && branchCode.length >= 2)
+    submitted && branchCode.length >= 2
+      ? { code: branchCode.toUpperCase() }
+      : (step === "branch-info" || step === "station-login") && branchCode.length >= 2
       ? { code: branchCode.toUpperCase() }
       : "skip"
   )
 
-  // Query all active branches for display (public query - no auth required)
-  // Type assertion needed until types regenerate after adding getActiveBranchesList to admin.ts
-  const activeBranches = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (api.admin as any).getActiveBranchesList ?? null,
-    step === "branch-code" ? {} : "skip"
-  ) as { code: string; name: string }[] | undefined | null
-
-  // Station login mutation (type assertion needed until types regenerate)
   const loginStation = useMutation(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).stations?.loginStation as any
@@ -86,9 +74,11 @@ export default function LoginPage() {
       return
     }
 
+    setSubmitted(true)
+
     // Wait for query result
     if (branchInfo === undefined) {
-      return // Still loading
+      return
     }
 
     if (!branchInfo) {
@@ -97,12 +87,13 @@ export default function LoginPage() {
         description: "The branch code you entered is not valid or inactive.",
         variant: "destructive",
       })
+      setSubmitted(false)
       return
     }
 
-    // Move to branch info step
     setBranchId(branchInfo._id)
     setStep("branch-info")
+    setSubmitted(false)
   }
 
   const handleContinueToSignIn = async () => {
@@ -114,8 +105,6 @@ export default function LoginPage() {
       })
       return
     }
-
-    // Station login is always required - move to station login step
     setStep("station-login")
   }
 
@@ -129,7 +118,6 @@ export default function LoginPage() {
       return
     }
 
-    // Station PIN is always required
     if (!pin || !pin.trim()) {
       toast({
         title: "Station PIN required",
@@ -142,14 +130,12 @@ export default function LoginPage() {
     try {
       setIsLoggingIn(true)
 
-      // Get device info
       const deviceInfo = JSON.stringify({
         userAgent: navigator.userAgent,
         platform: navigator.platform,
         language: navigator.language,
       })
 
-      // Login to station
       const result = await loginStation({
         branchId,
         deviceId,
@@ -157,7 +143,6 @@ export default function LoginPage() {
         deviceInfo,
       })
 
-      // Store station session info
       if (result?.stationToken && typeof window !== "undefined") {
         localStorage.setItem("station_token", result.stationToken)
         localStorage.setItem("station_branch_id", branchId)
@@ -170,7 +155,6 @@ export default function LoginPage() {
           description: `Welcome to ${branchInfo.name}`,
         })
 
-        // After station login, go directly to dashboard (skip attendant auth)
         router.push("/washstation/dashboard")
       } else {
         throw new Error("Station login failed")
@@ -199,12 +183,9 @@ export default function LoginPage() {
         <Card className="w-full max-w-md border-2 shadow-2xl">
           <CardHeader className="text-center space-y-4 pb-6">
             <div className="flex justify-center">
-              <Logo className="h-12 w-auto" />
+              <Logo className="h-8 w-auto" />
             </div>
             <div className="space-y-2">
-              <div className="flex justify-center">
-                <FileText className="h-12 w-12 text-blue-600" />
-              </div>
               <CardTitle className="text-2xl font-bold">WashStation</CardTitle>
               <CardDescription className="text-base">
                 Enter your branch code to begin
@@ -222,7 +203,10 @@ export default function LoginPage() {
                   type="text"
                   placeholder="e.g., ACD"
                   value={branchCode}
-                  onChange={(e) => setBranchCode(e.target.value.toUpperCase().trim())}
+                  onChange={(e) => {
+                    setBranchCode(e.target.value.toUpperCase().trim())
+                    setSubmitted(false)
+                  }}
                   className="text-center text-lg font-semibold tracking-wider uppercase"
                   maxLength={10}
                   autoFocus
@@ -233,54 +217,25 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                disabled={branchInfo === undefined || !branchCode.trim()}
+                disabled={isLoggingIn || !branchCode.trim()}
               >
-                {branchInfo === undefined ? (
+                {submitted && branchInfo === undefined ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Verifying...
                   </>
                 ) : (
                   <>
-                    Continue to Sign In
+                    Verify
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </>
                 )}
               </Button>
             </form>
-
-            <div className="pt-4 border-t space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">
-                Available codes
-              </p>
-              {activeBranches === undefined ? (
-                <div className="flex items-center justify-center py-4">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  <span className="ml-2 text-sm text-muted-foreground">Loading branches...</span>
-                </div>
-              ) : activeBranches && activeBranches.length > 0 ? (
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  {activeBranches.map((branch) => (
-                    <div key={branch.code} className="flex justify-between">
-                      <span className="font-mono font-semibold">{branch.code}</span>
-                      <span className="text-muted-foreground truncate ml-2" title={branch.name}>
-                        {branch.name}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-2">
-                  No active branches available
-                </p>
-              )}
-            </div>
-
-
           </CardContent>
         </Card>
         <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-sm">
-          © 2026 WashLab · Powered by Lider Technologies LTD
+          © {new Date().getFullYear()} WashLab · Powered by Lider Technologies LTD
         </div>
       </div>
     );
@@ -292,7 +247,7 @@ export default function LoginPage() {
         <Card className="w-full max-w-md border-2 shadow-2xl">
           <CardHeader className="text-center space-y-4 pb-6">
             <div className="flex justify-center">
-              <Logo className="h-12 w-auto" />
+              <Logo className="h-8 w-auto" />
             </div>
             <CardTitle className="text-2xl font-bold">WashStation</CardTitle>
             <CardDescription className="text-base">
@@ -302,34 +257,24 @@ export default function LoginPage() {
           <CardContent className="space-y-6">
             <div className="space-y-4 p-4 bg-muted rounded-lg">
               <div>
-                <Label className="text-sm font-medium text-muted-foreground">
-                  Branch Name
-                </Label>
+                <Label className="text-sm font-medium text-muted-foreground">Branch Name</Label>
                 <p className="text-lg font-semibold">{branchInfo.name}</p>
               </div>
               <div>
-                <Label className="text-sm font-medium text-muted-foreground">
-                  Code
-                </Label>
+                <Label className="text-sm font-medium text-muted-foreground">Code</Label>
                 <p className="text-lg font-mono font-semibold">{branchInfo.code}</p>
               </div>
               <div>
-                <Label className="text-sm font-medium text-muted-foreground">
-                  Address
-                </Label>
+                <Label className="text-sm font-medium text-muted-foreground">Address</Label>
                 <p className="text-sm">{branchInfo.address}</p>
               </div>
               <div>
-                <Label className="text-sm font-medium text-muted-foreground">
-                  City
-                </Label>
+                <Label className="text-sm font-medium text-muted-foreground">City</Label>
                 <p className="text-sm">{branchInfo.city}, {branchInfo.country}</p>
               </div>
               {branchInfo.phoneNumber && (
                 <div>
-                  <Label className="text-sm font-medium text-muted-foreground">
-                    Phone
-                  </Label>
+                  <Label className="text-sm font-medium text-muted-foreground">Phone</Label>
                   <p className="text-sm">{branchInfo.phoneNumber}</p>
                 </div>
               )}
@@ -366,7 +311,7 @@ export default function LoginPage() {
         <Card className="w-full max-w-md border-2 shadow-2xl">
           <CardHeader className="text-center space-y-4 pb-6">
             <div className="flex justify-center">
-              <Logo className="h-12 w-auto" />
+              <Logo className="h-8 w-auto" />
             </div>
             <CardTitle className="text-2xl font-bold">WashStation</CardTitle>
             <CardDescription className="text-base">
@@ -376,21 +321,15 @@ export default function LoginPage() {
           <CardContent className="space-y-6">
             <div className="space-y-3 p-4 bg-muted rounded-lg">
               <div>
-                <Label className="text-sm font-medium text-muted-foreground">
-                  Branch Name
-                </Label>
+                <Label className="text-sm font-medium text-muted-foreground">Branch Name</Label>
                 <p className="text-lg font-semibold">{branchInfo.name}</p>
               </div>
               <div>
-                <Label className="text-sm font-medium text-muted-foreground">
-                  Code
-                </Label>
+                <Label className="text-sm font-medium text-muted-foreground">Code</Label>
                 <p className="text-lg font-mono font-semibold">{branchInfo.code}</p>
               </div>
               <div>
-                <Label className="text-sm font-medium text-muted-foreground">
-                  Address
-                </Label>
+                <Label className="text-sm font-medium text-muted-foreground">Address</Label>
                 <p className="text-sm">{branchInfo.address}</p>
               </div>
             </div>
@@ -463,7 +402,7 @@ export default function LoginPage() {
         <Card className="w-full max-w-md border-2 shadow-2xl">
           <CardHeader className="text-center space-y-4 pb-6">
             <div className="flex justify-center">
-              <Logo className="h-12 w-auto" />
+              <Logo className="h-8 w-auto" />
             </div>
             <CardTitle className="text-2xl font-bold">WashStation</CardTitle>
             <CardDescription className="text-base">
@@ -477,7 +416,6 @@ export default function LoginPage() {
                 router.push('/washstation/dashboard');
               }}
               onBack={() => {
-                // Always go back to station login (always required)
                 setStep('station-login');
               }}
             />
