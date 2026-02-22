@@ -31,16 +31,17 @@ export function CustomersContent() {
   const handleSearch = (query: string) => {
     setSearchQuery(query);
     setFoundByCard(false);
-    
-    if (query.length >= 1) {
-      // First try to find by bag card number (for retrieval)
-      const orderByCard = orders.find(o => 
-        o.bagCardNumber === query || 
-        o.bagCardNumber === query.replace('#', '')
+
+    // Strip spaces so "055 288 7039" and "0552887039" both match
+    const cleanQuery = query.replace(/\s/g, '');
+
+    if (cleanQuery.length >= 1) {
+      const orderByCard = orders.find(o =>
+        o.bagCardNumber === cleanQuery ||
+        o.bagCardNumber === cleanQuery.replace('#', '')
       );
-      
+
       if (orderByCard) {
-        // Found by card - find customer from order
         const customer = findByPhone(orderByCard.customerPhone);
         setSelectedCustomer({
           ...customer,
@@ -51,10 +52,9 @@ export function CustomersContent() {
         setFoundByCard(true);
         return;
       }
-      
-      // Otherwise search by phone
-      if (query.length >= 3) {
-        const found = findByPhone(query);
+
+      if (cleanQuery.length >= 3) {
+        const found = findByPhone(cleanQuery);
         setSelectedCustomer(found || null);
       } else {
         setSelectedCustomer(null);
@@ -64,22 +64,17 @@ export function CustomersContent() {
     }
   };
 
-  // FIXED: Store customer data in sessionStorage and navigate with skipPhone flag
   const handleNewOrder = (customerId: string) => {
-    // Store complete customer data in sessionStorage
     sessionStorage.setItem('washlab_prefilledCustomer', JSON.stringify({
       id: selectedCustomer.id || selectedCustomer._id,
       name: selectedCustomer.name,
       phone: selectedCustomer.phone || selectedCustomer.phoneNumber,
       email: selectedCustomer.email,
-      skipPhone: true // Flag to skip phone entry step
+      skipPhone: true
     }));
-    
-    // Navigate to new order page - it will read from sessionStorage
     router.push('/washstation/new-order');
   };
 
-  // Mock customer orders
   const mockOrders = [
     { id: 'ORD-9281', date: 'Oct 12, 2023', items: '3x Wash & Fold (L)', total: 45.00, status: 'Completed' },
     { id: 'ORD-8842', date: 'Sep 28, 2023', items: '1x Comforter (K)', total: 22.50, status: 'Completed' },
@@ -103,7 +98,7 @@ export function CustomersContent() {
             className="pl-12 pr-12 py-4 text-lg rounded-xl"
           />
           {searchQuery && (
-            <button 
+            <button
               onClick={() => { setSearchQuery(''); setSelectedCustomer(null); }}
               className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               aria-label="Clear search"
@@ -128,7 +123,7 @@ export function CustomersContent() {
               </p>
             </div>
           </div>
-          <Button 
+          <Button
             onClick={() => router.push(`/washstation/orders/${selectedCustomer.linkedOrder.id}`)}
             className="gap-2 w-full sm:w-auto"
           >
@@ -141,7 +136,6 @@ export function CustomersContent() {
       {/* Customer Profile Card */}
       {selectedCustomer ? (
         <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-          {/* Customer Header */}
           <div className="p-6 border-b border-border">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center gap-4">
@@ -177,7 +171,7 @@ export function CustomersContent() {
                   <Edit className="w-4 h-4" />
                   Edit Profile
                 </Button>
-                <Button 
+                <Button
                   onClick={() => handleNewOrder(selectedCustomer.id)}
                   className="bg-primary text-primary-foreground gap-2 flex-1 sm:flex-initial"
                 >
@@ -224,7 +218,6 @@ export function CustomersContent() {
                 View All <ArrowRight className="w-4 h-4" />
               </button>
             </div>
-
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -268,7 +261,7 @@ export function CustomersContent() {
           </div>
           <h3 className="text-lg font-semibold text-foreground mb-2">No Customer Found</h3>
           <p className="text-muted-foreground mb-6">Would you like to create a new customer profile?</p>
-          <Button 
+          <Button
             onClick={() => router.push('/washstation/new-order')}
             className="bg-primary text-primary-foreground gap-2"
           >

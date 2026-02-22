@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -105,11 +105,7 @@ export function TransactionsContent() {
       if (filter === 'card' && !['card', 'hubtel'].includes(txn.paymentMethod)) return false;
       if (filter === 'mobile_money' && !['mobile_money', 'momo'].includes(txn.paymentMethod)) return false;
     }
-
-    if (typeFilter !== 'all' && txn.orderType !== typeFilter) {
-      return false;
-    }
-    
+    if (typeFilter !== 'all' && txn.orderType !== typeFilter) return false;
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       return (
@@ -148,21 +144,13 @@ export function TransactionsContent() {
         </div>
       </div>
 
-      {/* Search & Filters */}
+      {/* Filters — single row */}
       <Card className="mb-6">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Filters</CardTitle>
-            <Button variant="outline" size="sm" onClick={handleClearFilters}>
-              <Filter className="h-4 w-4 mr-2" />
-              Clear Filters
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-            <div className="space-y-2 lg:col-span-2">
-              <label className="text-sm font-medium">Search</label>
+        <CardContent className="pt-4">
+          <div className="flex flex-wrap items-end gap-3">
+            {/* Search */}
+            <div className="flex-1 min-w-[180px] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Search</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -175,8 +163,9 @@ export function TransactionsContent() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Payment Method</label>
+            {/* Payment Method */}
+            <div className="w-[150px] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Payment Method</label>
               <Select value={filter} onValueChange={(value) => setFilter(value as typeof filter)}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Methods" />
@@ -190,8 +179,9 @@ export function TransactionsContent() {
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Order Type</label>
+            {/* Order Type */}
+            <div className="w-[130px] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Order Type</label>
               <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as typeof typeFilter)}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Types" />
@@ -204,8 +194,9 @@ export function TransactionsContent() {
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Start Date</label>
+            {/* Start Date */}
+            <div className="w-[140px] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Start Date</label>
               <Input
                 type="date"
                 value={startDate}
@@ -213,14 +204,21 @@ export function TransactionsContent() {
               />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">End Date</label>
+            {/* End Date */}
+            <div className="w-[140px] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">End Date</label>
               <Input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
             </div>
+
+            {/* Clear */}
+            <Button variant="outline" size="sm" onClick={handleClearFilters} className="flex-shrink-0 gap-2 self-end">
+              <Filter className="h-4 w-4" />
+              Clear
+            </Button>
           </div>
         </CardContent>
       </Card>
