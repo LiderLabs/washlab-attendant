@@ -8,7 +8,6 @@ import { useStationSession } from "@/hooks/useStationSession"
 import { useQuery, useMutation } from "convex/react"
 import { api } from "@devlider001/washlab-backend/api"
 import { Id } from "@devlider001/washlab-backend/dataModel"
-import { useSearchParams } from "next/navigation"
 
 import {
   Phone,
@@ -30,50 +29,52 @@ import { toast } from "sonner"
 
 type Step = "phone" | "customer-found" | "register" | "order"
 
-/**
- * Normalise any phone input into a clean local number.
- * Accepts 10-digit numbers starting with 0 (e.g. "0241234567")
- * or 9-digit numbers without leading 0 (e.g. "241234567").
- * Always caps at 10 chars (the full local format).
- *
- * We store the number WITH the leading 0 internally now,
- * so the numpad just appends digits freely.
- */
 function normaliseToLocalDigits(raw: string): string {
   const digits = raw.replace(/\D/g, "")
-  // Strip international prefix if present
   if (digits.startsWith("233")) return ("0" + digits.slice(3)).slice(0, 10)
-  // Already has leading 0 or not — just cap at 10
   return digits.slice(0, 10)
 }
 
-/** Phone is ready when we have exactly 10 digits (e.g. "0241234567"). */
 function isPhoneComplete(phone: string): boolean {
   return phone.length === 10 && phone.startsWith("0")
 }
 
-/** Safe unique placeholder — no backend changes needed. */
 function generatePlaceholderEmail(phone: string): string {
   return `noemail_${phone || Date.now()}@washlab.app`
 }
 
 export function NewOrderContent() {
   const router = useRouter()
-  const { stationToken, isSessionValid } = useStationSession()
+  const { stationToken, isSessionValid, sessionData } = useStationSession()
 
-  const dbServices = useQuery(api.services.getActive) ?? []
+  // ── Fetch services for THIS branch only ──────────────────────────────────
+  const branchServices = useQuery(
+    api.admin.getBranchServicesPublic,
+    sessionData?.branchId ? { branchId: sessionData.branchId } : "skip"
+  ) ?? []
 
-  // phone is stored as full 10-digit local number e.g. "0241234567"
+  // Map branchServices fields to the shape the rest of the component expects
+  const dbServices = branchServices.map((s: any) => ({
+    _id: s._id,
+    code: s.code,
+    name: s.name,
+    basePrice: s.price,       // branchServices uses "price", component uses "basePrice"
+    pricingType: "per_load",  // all branch services are per load
+    imageUrl: undefined,
+    isActive: s.isActive,
+  }))
+
   const formatPhoneForBackend = (phone: string): string => {
-    // Strip leading 0, prepend +233
-    const stripped = phone.startsWith("0") ? phone.slice(1) : phone
+    const clean = phone.replace(/\D/g, '')
+    const stripped = clean.startsWith("0") ? clean.slice(1) : clean
     return `+233${stripped}`
   }
 
   const [phone, setPhone] = useState("")
 
   const handlePhoneInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const normalised = normaliseToLocalDigits(e.target.value)
+    const raw = e.target.value.replace(/\s/g, '')
+    const normalised = normaliseToLocalDigits(raw)
     setPhone(normalised)
     hasNavigatedFromPhoneRef.current = false
   }
@@ -166,6 +167,7 @@ export function NewOrderContent() {
     }
   }, [])
 
+  // Default to first service once loaded
   useEffect(() => {
     if (dbServices.length > 0 && !serviceType) setServiceType(dbServices[0].code)
   }, [dbServices, serviceType])
@@ -256,12 +258,9 @@ export function NewOrderContent() {
 
   const calculatePrice = () => {
     if (!selectedService) return { basePrice: 0, subtotal: 0, total: 0, totalPrice: 0 }
-    let basePrice = 0
-    if (selectedService.pricingType === "per_kg") {
-      basePrice = weight * selectedService.basePrice
-    } else {
-      basePrice = Math.ceil(weight / 8) * selectedService.basePrice
-    }
+    // All branch services are per load (8kg per load)
+    const loads = Math.ceil(weight / 8)
+    const basePrice = loads * selectedService.basePrice
     const total = Math.round(basePrice * 100) / 100
     return { basePrice: total, subtotal: total, total, totalPrice: total }
   }
@@ -283,20 +282,14 @@ export function NewOrderContent() {
   const services = dbServices.map((s) => ({
     id: s.code,
     name: s.name,
-    price: s.pricingType === "per_kg"
-      ? `₵${s.basePrice.toFixed(2)} / kg`
-      : `₵${s.basePrice.toFixed(2)} / load`,
+    price: `₵${s.basePrice.toFixed(2)} / load`,
     image: s.imageUrl || getFallbackImage(s.code),
   }))
 
-  /**
-   * Display phone with spacing: "024 123 4567"
-   * phone is stored as "0241234567" (10 digits)
-   */
   const formatPhoneDisplay = (p: string): string => {
     if (!p) return ""
-    if (p.length <= 3)  return p
-    if (p.length <= 6)  return `${p.slice(0, 3)} ${p.slice(3)}`
+    if (p.length <= 3) return p
+    if (p.length <= 6) return `${p.slice(0, 3)} ${p.slice(3)}`
     return `${p.slice(0, 3)} ${p.slice(3, 6)} ${p.slice(6)}`
   }
 
@@ -349,8 +342,6 @@ export function NewOrderContent() {
               <p className='text-sm sm:text-base text-muted-foreground mb-4 sm:mb-6'>
                 Enter mobile number to find or create profile
               </p>
-
-              {/* Phone input — no +233 prefix box */}
               <div className='relative mb-6'>
                 <Input
                   type='tel'
@@ -363,8 +354,6 @@ export function NewOrderContent() {
                 />
                 <Phone className='absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground pointer-events-none' />
               </div>
-
-              {/* Clear button — only shown when digits have been entered */}
               {phone.length > 0 && (
                 <button
                   onClick={() => { setPhone(""); hasNavigatedFromPhoneRef.current = false }}
@@ -375,13 +364,12 @@ export function NewOrderContent() {
                 </button>
               )}
             </div>
-
             <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8'>
               <NumberPad
                 onDigit={(d) => {
                   setPhone((prev) => {
                     const next = prev + d
-                    return next.length <= 10 ? next : prev  // 10-digit cap
+                    return next.length <= 10 ? next : prev
                   })
                   hasNavigatedFromPhoneRef.current = false
                 }}
@@ -402,7 +390,6 @@ export function NewOrderContent() {
           >
             <ArrowLeft className='w-4 h-4' /> Back to Phone Entry
           </button>
-
           <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-6 sm:p-8 text-center'>
             <div className='w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-success/10 mx-auto mb-4 flex items-center justify-center'>
               <CheckCircle className='w-6 h-6 sm:w-8 sm:h-8 text-success' />
@@ -463,13 +450,11 @@ export function NewOrderContent() {
             <span className='text-muted-foreground'>/</span>
             <span className='text-muted-foreground'>Order Details</span>
           </div>
-
           <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8'>
             <h2 className='text-xl sm:text-2xl font-bold text-foreground mb-2'>New Customer</h2>
             <p className='text-sm sm:text-base text-muted-foreground mb-4 sm:mb-6'>
               Quick create profile for order processing.
             </p>
-
             <div className='mb-4'>
               <label className='text-xs font-medium text-muted-foreground mb-2 block'>MOBILE NUMBER</label>
               <div className='flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-muted rounded-xl'>
@@ -480,7 +465,6 @@ export function NewOrderContent() {
                 <span className='ml-auto text-muted-foreground flex-shrink-0'>🔒</span>
               </div>
             </div>
-
             <div className='mb-4'>
               <label className='text-xs font-medium text-muted-foreground mb-2 block'>
                 FULL NAME <span className='text-destructive'>*</span>
@@ -497,8 +481,6 @@ export function NewOrderContent() {
               </div>
               <p className='text-xs text-muted-foreground mt-1'>Enter the customer&apos;s first and last name.</p>
             </div>
-
-            {/* ── Email with "No Email" toggle ─────────────────────────── */}
             <div className='mb-6 sm:mb-8'>
               <div className='flex items-center justify-between mb-2'>
                 <label className='text-xs font-medium text-muted-foreground'>EMAIL ADDRESS</label>
@@ -514,7 +496,6 @@ export function NewOrderContent() {
                   {skipEmail ? "✓ No email — add one" : "No email"}
                 </button>
               </div>
-
               {skipEmail ? (
                 <div className='flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-muted/50 border border-dashed border-border rounded-xl'>
                   <span className='text-muted-foreground text-sm flex-1 truncate'>
@@ -532,7 +513,6 @@ export function NewOrderContent() {
                 />
               )}
             </div>
-
             <div className='flex flex-col sm:flex-row gap-3'>
               <Button type="button" onClick={goBack} variant='outline' className='flex-1 h-11 sm:h-12 rounded-xl'>
                 <ArrowLeft className='w-4 h-4 mr-2' /> Back
@@ -547,7 +527,6 @@ export function NewOrderContent() {
               </Button>
             </div>
           </div>
-
           <div className='flex items-center justify-center gap-2 mt-4 text-xs sm:text-sm text-muted-foreground'>
             <div className='w-2 h-2 rounded-full bg-success' />
             <span>STATUS</span>
@@ -593,7 +572,7 @@ export function NewOrderContent() {
                 </h3>
                 {dbServices.length === 0 ? (
                   <div className='text-center py-8 bg-muted/50 rounded-xl border border-border'>
-                    <p className='text-sm text-muted-foreground'>No services available</p>
+                    <p className='text-sm text-muted-foreground'>No services available. Please contact admin to add services for this branch.</p>
                   </div>
                 ) : (
                   <div className='grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4'>
@@ -744,9 +723,7 @@ export function NewOrderContent() {
                   </div>
                   {selectedService && (
                     <div className='text-xs sm:text-sm text-muted-foreground pl-2'>
-                      {selectedService.pricingType === "per_kg"
-                        ? `${weight.toFixed(1)} kg × ₵${selectedService.basePrice.toFixed(2)}`
-                        : `${Math.ceil(weight / 8)} loads × ₵${selectedService.basePrice.toFixed(2)}`}
+                      {Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedService.basePrice.toFixed(2)}
                     </div>
                   )}
                   {orderNotes.includes("Rush Service") && (
