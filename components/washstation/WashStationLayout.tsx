@@ -29,7 +29,7 @@ export function WashStationLayout({
   onNotificationClick,
 }: WashStationLayoutProps) {
   const { getPendingOrders } = useOrders();
-  const { stationToken } = useStationSession();
+  const { stationToken, sessionData } = useStationSession();
   const { attendances } = useStationAttendance(stationToken);
 
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -195,6 +195,7 @@ export function WashStationLayout({
       >
         <WashStationHeader
           title={title}
+          branchName={sessionData?.branchName}
           activeAttendances={attendances}
           pendingCount={actualPendingCount}
           onNotificationClick={onNotificationClick}
