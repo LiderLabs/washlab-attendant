@@ -9,7 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@devlider001/washlab-backend": "C:\\Users\\user\\Desktop\\washlab-backend-main\\washlab-backend-main\\devlider001-washlab-backend-1.1.52.tgz",
     "@hookform/resolvers": "^3.10.0",
     "@jordan6699/washlab-backend": "1.1.52",
     "@mediapipe/camera_utils": "^0.3.1675466862",

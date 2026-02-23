@@ -263,14 +263,6 @@
     "@devlider001/washlab-backend" "^1.1.1"
     convex "^1.31.2"
 
-"@devlider001/washlab-backend@file:../../washlab-backend-main/washlab-backend-main/devlider001-washlab-backend-1.1.52.tgz":
-  version "1.1.52"
-  resolved "file:../../washlab-backend-main/washlab-backend-main/devlider001-washlab-backend-1.1.52.tgz#24442849fa18a76d489a2255533a0bb43cd50144"
-  dependencies:
-    "@clerk/clerk-sdk-node" "^5.1.6"
-    "@devlider001/washlab-backend" "^1.0.3"
-    convex "^1.32.0"
-
 "@emnapi/core@^1.4.3":
   version "1.8.1"
   resolved "https://registry.yarnpkg.com/@emnapi/core/-/core-1.8.1.tgz#fd9efe721a616288345ffee17a1f26ac5dd01349"
