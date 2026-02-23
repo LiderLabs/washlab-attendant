@@ -47,20 +47,16 @@ export function NewOrderContent() {
   const router = useRouter()
   const { stationToken, isSessionValid, sessionData } = useStationSession()
 
-  // ── Fetch services for THIS branch only ──────────────────────────────────
-  const branchServices = useQuery(
-    api.admin.getBranchServicesPublic,
-    sessionData?.branchId ? { branchId: sessionData.branchId } : "skip"
-  ) ?? []
+  // ── Fetch global services (per-branch services coming in future update) ──
+  const branchServices = useQuery(api.services.getActive) ?? []
 
-  // Map branchServices fields to the shape the rest of the component expects
   const dbServices = branchServices.map((s: any) => ({
     _id: s._id,
     code: s.code,
     name: s.name,
-    basePrice: s.price,       // branchServices uses "price", component uses "basePrice"
-    pricingType: "per_load",  // all branch services are per load
-    imageUrl: undefined,
+    basePrice: s.pricingPerKg ?? s.price ?? s.basePrice ?? 50,
+    pricingType: s.pricingType ?? "per_load",
+    imageUrl: s.imageUrl,
     isActive: s.isActive,
   }))
 
@@ -258,7 +254,6 @@ export function NewOrderContent() {
 
   const calculatePrice = () => {
     if (!selectedService) return { basePrice: 0, subtotal: 0, total: 0, totalPrice: 0 }
-    // All branch services are per load (8kg per load)
     const loads = Math.ceil(weight / 8)
     const basePrice = loads * selectedService.basePrice
     const total = Math.round(basePrice * 100) / 100
@@ -572,7 +567,7 @@ export function NewOrderContent() {
                 </h3>
                 {dbServices.length === 0 ? (
                   <div className='text-center py-8 bg-muted/50 rounded-xl border border-border'>
-                    <p className='text-sm text-muted-foreground'>No services available. Please contact admin to add services for this branch.</p>
+                    <p className='text-sm text-muted-foreground'>No services available. Please contact admin.</p>
                   </div>
                 ) : (
                   <div className='grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4'>
