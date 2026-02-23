@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useStationSession } from "@/hooks/useStationSession"
 import { useQuery, useMutation } from "convex/react"
-import { api } from "@devlider001/washlab-backend/api"
-import { Id } from "@devlider001/washlab-backend/dataModel"
+import { api } from "@jordan6699/washlab-backend/api"
+import { Id } from "@jordan6699/washlab-backend/dataModel"
 
 import {
   Phone,
@@ -48,7 +48,7 @@ export function NewOrderContent() {
   const { stationToken, isSessionValid, sessionData } = useStationSession()
 
   // ── Fetch global services (per-branch services coming in future update) ──
-  const branchServices = useQuery(api.services.getActive) ?? []
+  const branchServices = useQuery(api.admin.getBranchServicesPublic, sessionData?.branchId ? { branchId: sessionData.branchId } : "skip") ?? []
 
   const dbServices = branchServices.map((s: any) => ({
     _id: s._id,

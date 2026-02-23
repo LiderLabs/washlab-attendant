@@ -20,6 +20,23 @@ import { toast } from "sonner";
 type PaymentMethodType = "cash" | "mobile_money" | "card";
 type Stage = "idle" | "verification" | "paystack" | "finalizing";
 
+// ─── Paystack fee config ──────────────────────────────────────────────────────
+// Paystack Ghana: 2% of transaction amount (capped at GH₵ 2,000 for local cards)
+// We gross-up the charge so YOU receive the full order amount after Paystack's cut.
+// Formula: chargeAmount = orderTotal / (1 - 0.02)
+// Example: ₵100 order → charge ₵102.04 → Paystack takes ₵2.04 (2%) → you net ₵100
+const PAYSTACK_FEE_RATE = 0.02;
+
+function calcPaystackCharge(orderAmount: number): {
+  chargeAmount: number;
+  fee: number;
+} {
+  const chargeAmount = parseFloat((orderAmount / (1 - PAYSTACK_FEE_RATE)).toFixed(2));
+  const fee = parseFloat((chargeAmount - orderAmount).toFixed(2));
+  return { chargeAmount, fee };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function usePaystackScript() {
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
@@ -40,8 +57,6 @@ function PaymentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // ✅ Pull isSessionValid — gates useStationOrder so it never fires
-  // before the session token is confirmed, fixing "Invalid station session"
   const { stationToken, isSessionValid } = useStationSession();
   const paystackLoaded = usePaystackScript();
 
@@ -64,17 +79,26 @@ function PaymentContent() {
   const orderIdParam = searchParams?.get("orderId");
   const returnTo = searchParams?.get("return");
 
-  // ✅ isSessionValid passed as third arg — query skips until session confirmed
   const { order, isLoading: isLoadingOrder } = useStationOrder(
     stationToken,
     orderIdParam ? (orderIdParam as Id<"orders">) : null,
-    isSessionValid  // ← THIS IS THE FIX
+    isSessionValid
   );
 
   const subtotal = order ? (order.basePrice || 0) + (order.deliveryFee || 0) : 0;
   const totalDue = order?.finalPrice || order?.totalPrice || subtotal || 0;
 
   const effectivePaymentMethod: PaymentMethodType = paymentMethod;
+
+  // ─── Paystack fee calculation ─────────────────────────────────────────────
+  // Only applied when paying by card or mobile_money (not cash)
+  const isPaystackMethod = effectivePaymentMethod !== "cash";
+  const { chargeAmount: paystackChargeAmount, fee: paystackFee } = isPaystackMethod
+    ? calcPaystackCharge(totalDue)
+    : { chargeAmount: totalDue, fee: 0 };
+  // The amount the customer actually pays (gross of fee)
+  const customerFacingAmount = isPaystackMethod ? paystackChargeAmount : totalDue;
+  // ─────────────────────────────────────────────────────────────────────────
 
   // ─── Step 1: Attendant clicks "Verify & Pay" ─────────────────────────────────
 
@@ -100,6 +124,7 @@ function PaymentContent() {
     if (!order) { toast.error("Order not found"); setStage("idle"); return; }
 
     try {
+      // Record the order amount (what the service costs), not the grossed-up charge
       const paymentId = await createPayment({
         orderId: order._id,
         amount: totalDue,
@@ -140,16 +165,20 @@ function PaymentContent() {
     setStage("paystack");
     toast.info("Payment window opening for customer…");
 
-    const handler = (window as any).PaystackPop.setup({
+    // ✅ Use newTransaction instead of setup() + openIframe()
+    // setup() requires a <form> element which doesn't exist in React apps.
+    // newTransaction() works without a form and is the recommended approach.
+    const handler = (window as any).PaystackPop.newTransaction({
       key: "pk_test_0bcc36edcd86cbe2439fc3274f5e6b6e501c4730",
       email: order.customer?.email || order.customerEmail || "customer@washlab.com",
-      amount: Math.round(totalDue * 100),
+      // ✅ Grossed-up amount so after Paystack's 2% cut you net exactly totalDue
+      amount: Math.round(paystackChargeAmount * 100),
       currency: "GHS",
       ref,
       channels,
       ...(customerPhone ? { phone: customerPhone } : {}),
 
-      callback: function (response: any) {
+      onSuccess: function (response: any) {
         paystackHandlerRef.current = null;
         toast.success(`${method === "card" ? "Card" : "Mobile Money"} payment authorised`);
         finalizePayment({
@@ -158,7 +187,7 @@ function PaymentContent() {
         });
       },
 
-      onClose: function () {
+      onCancel: function () {
         paystackHandlerRef.current = null;
         pendingVerificationId.current = null;
         setPaystackRef(null);
@@ -169,7 +198,6 @@ function PaymentContent() {
     });
 
     paystackHandlerRef.current = handler;
-    handler.openIframe();
   };
 
   // ─── Step 4: Finalize payment on backend ─────────────────────────────────────
@@ -210,7 +238,7 @@ function PaymentContent() {
       isPaying.current = false;
 
       router.push(
-        `/washstation/order-complete?orderId=${order._id}&paymentMethod=${effectivePaymentMethod}&amountPaid=${totalDue}&changeDue=0`
+        `/washstation/order-complete?orderId=${order._id}&paymentMethod=${effectivePaymentMethod}&amountPaid=${customerFacingAmount}&changeDue=0`
       );
     } catch (error) {
       toast.dismiss("finalizing");
@@ -265,7 +293,6 @@ function PaymentContent() {
 
   // ─── Loading / error states ───────────────────────────────────────────────────
 
-  // ✅ Show spinner while session verifying OR order loading
   if (!isSessionValid || isLoadingOrder) {
     return (
       <WashStationLayout title="Payment">
@@ -354,9 +381,30 @@ function PaymentContent() {
           <span className="text-muted-foreground">Tax (0%)</span>
           <span className="text-foreground">₵0.00</span>
         </div>
+
+        {/* ✅ Paystack fee line — only shown for card/mobile_money */}
+        {isPaystackMethod && (
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">
+              Processing Fee (2%)
+              <span className="ml-1 text-[10px] text-muted-foreground/60">via Paystack</span>
+            </span>
+            <span className="text-foreground">₵{paystackFee.toFixed(2)}</span>
+          </div>
+        )}
+
         <div className="flex justify-between pt-2 border-t border-border items-center">
           <span className="font-semibold text-foreground">Total Due</span>
-          <span className="text-xl sm:text-2xl font-bold text-primary">₵{totalDue.toFixed(2)}</span>
+          <div className="text-right">
+            <span className="text-xl sm:text-2xl font-bold text-primary">
+              ₵{customerFacingAmount.toFixed(2)}
+            </span>
+            {isPaystackMethod && (
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                incl. 2% processing fee
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -382,7 +430,12 @@ function PaymentContent() {
 
       <div className="lg:hidden mb-4 px-4 py-3 bg-muted/30 rounded-xl flex items-center justify-between">
         <span className="text-sm text-muted-foreground">Order #{order.orderNumber}</span>
-        <span className="text-lg font-bold text-primary">₵{totalDue.toFixed(2)}</span>
+        <div className="text-right">
+          <span className="text-lg font-bold text-primary">₵{customerFacingAmount.toFixed(2)}</span>
+          {isPaystackMethod && (
+            <p className="text-[10px] text-muted-foreground">incl. 2% fee</p>
+          )}
+        </div>
       </div>
 
       <h2 className="text-lg sm:text-xl font-bold text-foreground mb-1">Select Payment Method</h2>
@@ -476,7 +529,11 @@ function PaymentContent() {
               <p className="text-muted-foreground text-xs sm:text-sm mb-2">
                 After you verify, a Paystack prompt opens for the customer to pay.
               </p>
-              <p className="text-xl sm:text-2xl font-bold text-primary">₵{totalDue.toFixed(2)}</p>
+              {/* ✅ Show grossed-up amount with fee breakdown */}
+              <p className="text-xl sm:text-2xl font-bold text-primary">₵{paystackChargeAmount.toFixed(2)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Order total ₵{totalDue.toFixed(2)} + ₵{paystackFee.toFixed(2)} processing fee
+              </p>
             </div>
           )}
           {effectivePaymentMethod === "card" && (
@@ -488,7 +545,11 @@ function PaymentContent() {
               <p className="text-muted-foreground text-xs sm:text-sm mb-2">
                 After you verify, a secure Paystack popup opens for the customer to pay.
               </p>
-              <p className="text-xl sm:text-2xl font-bold text-primary">₵{totalDue.toFixed(2)}</p>
+              {/* ✅ Show grossed-up amount with fee breakdown */}
+              <p className="text-xl sm:text-2xl font-bold text-primary">₵{paystackChargeAmount.toFixed(2)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Order total ₵{totalDue.toFixed(2)} + ₵{paystackFee.toFixed(2)} processing fee
+              </p>
               <div className="mt-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
                 <CreditCard className="w-3 h-3" />
                 <span>Powered by Paystack</span>
@@ -533,7 +594,7 @@ function PaymentContent() {
           ) : (
             <>
               <ShieldCheck className="w-4 h-4 mr-2 flex-shrink-0" />
-              Verify & Pay
+              Verify & Pay ₵{customerFacingAmount.toFixed(2)}
             </>
           )}
         </Button>
@@ -593,7 +654,7 @@ function PaymentContent() {
         open={showVerification}
         onCancel={handleVerificationCancel}
         onVerified={handleVerificationSuccess}
-        actionType={`complete_payment:₵${totalDue.toFixed(2)}`}
+        actionType={`complete_payment:₵${customerFacingAmount.toFixed(2)}`}
         orderId={order._id}
       />
     </WashStationLayout>
