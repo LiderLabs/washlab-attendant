@@ -7,8 +7,8 @@ import { WashStationLayout } from "@/components/washstation/WashStationLayout";
 import { useStationSession } from "@/hooks/useStationSession";
 import { useStationOrder } from "@/hooks/useStationOrders";
 import { useMutation } from "convex/react";
-import { api } from "@jordan6699/washlab-backend/api";
-import { Id } from "@jordan6699/washlab-backend/dataModel";
+import { api } from "@devlider001/washlab-backend/api";
+import { Id } from "@devlider001/washlab-backend/dataModel";
 import { ActionVerification } from "@/components/washstation/ActionVerification";
 import {
   Banknote, Smartphone, CreditCard,
@@ -21,42 +21,41 @@ type PaymentMethodType = "cash" | "mobile_money" | "card";
 type Stage = "idle" | "verification" | "paystack" | "finalizing";
 
 // ─── Paystack fee config ──────────────────────────────────────────────────────
-// Paystack Ghana: 2% of transaction amount (capped at GH₵ 2,000 for local cards)
-// We gross-up the charge so YOU receive the full order amount after Paystack's cut.
-// Formula: chargeAmount = orderTotal / (1 - 0.02)
-// Example: ₵140 order → charge ₵142.86 → Paystack takes ₵2.86 (2%) → you net ₵140
 const PAYSTACK_FEE_RATE = 0.02;
 
-function calcPaystackCharge(orderAmount: number): {
-  chargeAmount: number;
-  fee: number;
-} {
+function calcPaystackCharge(orderAmount: number): { chargeAmount: number; fee: number } {
   const chargeAmount = parseFloat((orderAmount / (1 - PAYSTACK_FEE_RATE)).toFixed(2));
   const fee = parseFloat((chargeAmount - orderAmount).toFixed(2));
   return { chargeAmount, fee };
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ✅ Load Paystack v2 inline script
-// v1 (js.paystack.co/v1/inline.js) only has setup()+openIframe() which requires
-// a <form> element and throws an error in React. v2 exposes newTransaction()
-// which works without any form element.
+// ✅ Load Paystack v1 inline script dynamically.
+// Remove the <Script> tag from layout.tsx so it's not loaded twice.
 function usePaystackScript() {
   const [loaded, setLoaded] = useState(false);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-    // Already loaded with newTransaction support
-    if ((window as any).PaystackPop?.newTransaction) { setLoaded(true); return; }
-    // Remove any stale v1 script to avoid version conflicts
-    const existing = document.querySelector('script[src*="paystack"]');
-    if (existing) existing.remove();
+
+    // Already loaded
+    if ((window as any).PaystackPop) {
+      setLoaded(true);
+      return;
+    }
+
     const script = document.createElement("script");
-    script.src = "https://js.paystack.co/v2/inline.js";
+    script.src = "https://js.paystack.co/v1/inline.js";
     script.async = true;
     script.onload = () => setLoaded(true);
+    script.onerror = () => console.error("Failed to load Paystack script");
     document.body.appendChild(script);
-    return () => { if (document.body.contains(script)) document.body.removeChild(script); };
+
+    return () => {
+      if (document.body.contains(script)) document.body.removeChild(script);
+    };
   }, []);
+
   return loaded;
 }
 
@@ -93,11 +92,6 @@ function PaymentContent() {
     isSessionValid
   );
 
-  // ✅ Price field priority fix:
-  // basePrice + deliveryFee is what the new-order flow calculates (e.g. ₵140).
-  // finalPrice / totalPrice may hold a stale or backend-overridden value (e.g. ₵100).
-  // We prefer basePrice + deliveryFee when available, and only fall back to
-  // finalPrice/totalPrice if basePrice is missing.
   const deliveryFee = order?.deliveryFee || 0;
   const basePrice = order?.basePrice || 0;
   const subtotal = basePrice + deliveryFee;
@@ -115,7 +109,7 @@ function PaymentContent() {
   const customerFacingAmount = isPaystackMethod ? paystackChargeAmount : totalDue;
   // ─────────────────────────────────────────────────────────────────────────
 
-  // ─── Step 1: Attendant clicks "Verify & Pay" ─────────────────────────────────
+  // ─── Step 1: Attendant clicks "Verify & Pay" ─────────────────────────────
 
   const handleCompletePayment = () => {
     if (!order) { toast.error("Order not found"); return; }
@@ -124,12 +118,11 @@ function PaymentContent() {
       toast.error("Payment processor not ready. Please wait a moment and try again.");
       return;
     }
-
     setStage("verification");
     setShowVerification(true);
   };
 
-  // ─── Step 2: Verification passed ─────────────────────────────────────────────
+  // ─── Step 2: Verification passed ─────────────────────────────────────────
 
   const handleVerificationSuccess = async (
     attendantId: Id<"attendants">,
@@ -139,7 +132,7 @@ function PaymentContent() {
     if (!order) { toast.error("Order not found"); setStage("idle"); return; }
 
     try {
-      // Record the order amount (what the service costs), not the grossed-up charge
+      // Record the order amount (not the grossed-up charge) in the DB
       const paymentId = await createPayment({
         orderId: order._id,
         amount: totalDue,
@@ -161,7 +154,7 @@ function PaymentContent() {
     }
   };
 
-  // ─── Step 3: Open Paystack popup ─────────────────────────────────────────────
+  // ─── Step 3: Open Paystack popup (v1 API) ────────────────────────────────
 
   const openPaystack = (
     method: "card" | "mobile_money",
@@ -180,18 +173,20 @@ function PaymentContent() {
     setStage("paystack");
     toast.info("Payment window opening for customer…");
 
-    // ✅ newTransaction() — Paystack v2 API, no <form> element required
-    const handler = (window as any).PaystackPop.newTransaction({
+    // ✅ Paystack v1 API — setup() + openIframe()
+    // The "form element" console warning from v1 is harmless in React;
+    // openIframe() still works correctly without a <form>.
+    const handler = (window as any).PaystackPop.setup({
       key: "pk_test_0bcc36edcd86cbe2439fc3274f5e6b6e501c4730",
       email: order.customer?.email || order.customerEmail || "customer@washlab.com",
-      // ✅ Grossed-up amount — customer pays this, you net exactly totalDue after fee
+      // ✅ Grossed-up amount — customer pays this, you net exactly totalDue after Paystack's 2% cut
       amount: Math.round(paystackChargeAmount * 100),
       currency: "GHS",
       ref,
       channels,
       ...(customerPhone ? { phone: customerPhone } : {}),
 
-      onSuccess: function (response: any) {
+      callback: function (response: any) {
         paystackHandlerRef.current = null;
         toast.success(`${method === "card" ? "Card" : "Mobile Money"} payment authorised`);
         finalizePayment({
@@ -200,7 +195,7 @@ function PaymentContent() {
         });
       },
 
-      onCancel: function () {
+      onClose: function () {
         paystackHandlerRef.current = null;
         pendingVerificationId.current = null;
         setPaystackRef(null);
@@ -211,9 +206,10 @@ function PaymentContent() {
     });
 
     paystackHandlerRef.current = handler;
+    handler.openIframe();
   };
 
-  // ─── Step 4: Finalize payment on backend ─────────────────────────────────────
+  // ─── Step 4: Finalize payment on backend ─────────────────────────────────
 
   const finalizePayment = async ({
     verificationId,
@@ -245,7 +241,6 @@ function PaymentContent() {
       }
 
       sessionStorage.removeItem(`checkin_draft_${order._id}`);
-
       setPaystackRef(null);
       setStage("idle");
       isPaying.current = false;
@@ -262,7 +257,7 @@ function PaymentContent() {
     }
   };
 
-  // ─── Verification cancelled ───────────────────────────────────────────────────
+  // ─── Verification cancelled ───────────────────────────────────────────────
 
   const handleVerificationCancel = () => {
     setShowVerification(false);
@@ -272,7 +267,7 @@ function PaymentContent() {
     toast.info("Verification cancelled. Payment not processed.");
   };
 
-  // ─── Navigation ──────────────────────────────────────────────────────────────
+  // ─── Navigation ──────────────────────────────────────────────────────────
 
   const handleCancel = () => {
     if (isProcessing) return;
@@ -304,7 +299,7 @@ function PaymentContent() {
     finalizing: "Finalizing payment…",
   };
 
-  // ─── Loading / error states ───────────────────────────────────────────────────
+  // ─── Loading / error states ───────────────────────────────────────────────
 
   if (!isSessionValid || isLoadingOrder) {
     return (
@@ -347,7 +342,7 @@ function PaymentContent() {
     );
   }
 
-  // ─── Panels ───────────────────────────────────────────────────────────────────
+  // ─── Panels ───────────────────────────────────────────────────────────────
 
   const OrderSummaryPanel = () => (
     <div className="flex flex-col h-full p-4 sm:p-6">
@@ -395,7 +390,6 @@ function PaymentContent() {
           <span className="text-foreground">₵0.00</span>
         </div>
 
-        {/* ✅ Paystack processing fee line */}
         {isPaystackMethod && (
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">

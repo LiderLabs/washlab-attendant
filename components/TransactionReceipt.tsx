@@ -1,6 +1,8 @@
+import { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Check, Printer, MessageSquare, X } from 'lucide-react';
 import { Order } from '@/context/OrderContext';
+import { toast } from 'sonner';
 
 interface TransactionReceiptProps {
   isOpen: boolean;
@@ -18,9 +20,35 @@ interface TransactionReceiptProps {
  * - Stores transaction history
  */
 const TransactionReceipt = ({ isOpen, onClose, order, attendantName }: TransactionReceiptProps) => {
+  const waLinkRef = useRef<string | null>(null); // reuse WhatsApp link
+
   if (!isOpen) return null;
 
   const sendWhatsAppReceipt = () => {
+    if (!order.customerPhone) {
+      toast.error('Customer not on WhatsApp');
+      return;
+    }
+
+    // If link already generated, reuse
+    if (waLinkRef.current) {
+      window.location.href = waLinkRef.current;
+      return;
+    }
+
+    let digits = order.customerPhone.replace(/\D/g, '');
+
+    // Normalize Ghana numbers
+    if (digits.startsWith('00')) digits = digits.slice(2);
+    if (digits.startsWith('2330')) digits = '233' + digits.slice(4);
+    if (digits.startsWith('0')) digits = '233' + digits.slice(1);
+    if (digits.length === 9) digits = '233' + digits;
+
+    if (digits.length !== 12) {
+      toast.error('Customer not on WhatsApp');
+      return;
+    }
+
     const message = encodeURIComponent(
       `*WashLab Receipt*\n\n` +
       `📋 Order: ${order.code}\n` +
@@ -36,10 +64,9 @@ const TransactionReceipt = ({ isOpen, onClose, order, attendantName }: Transacti
       `Thank you for choosing WashLab! 🧺✨\n` +
       `Your laundry will be ready for pickup soon.`
     );
-    const phone = order.customerPhone.startsWith('0') 
-      ? `233${order.customerPhone.slice(1)}` 
-      : order.customerPhone;
-    window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
+
+    waLinkRef.current = `https://wa.me/${digits}?text=${message}`;
+    window.location.href = waLinkRef.current;
   };
 
   const printReceipt = () => {

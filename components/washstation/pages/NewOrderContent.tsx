@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useStationSession } from "@/hooks/useStationSession"
 import { useQuery, useMutation } from "convex/react"
-import { api } from "@jordan6699/washlab-backend/api"
-import { Id } from "@jordan6699/washlab-backend/dataModel"
+import { api } from "@devlider001/washlab-backend/api"
+import { Id } from "@devlider001/washlab-backend/dataModel"
 
 import {
   Phone,
@@ -48,7 +48,7 @@ export function NewOrderContent() {
   const { stationToken, isSessionValid, sessionData } = useStationSession()
 
   // ── Fetch global services (per-branch services coming in future update) ──
-  const branchServices = useQuery(api.admin.getBranchServicesPublic, sessionData?.branchId ? { branchId: sessionData.branchId } : "skip") ?? []
+  const branchServices = useQuery(api.services.getActive) ?? []
 
   const dbServices = branchServices.map((s: any) => ({
     _id: s._id,
@@ -448,7 +448,7 @@ export function NewOrderContent() {
           <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8'>
             <h2 className='text-xl sm:text-2xl font-bold text-foreground mb-2'>New Customer</h2>
             <p className='text-sm sm:text-base text-muted-foreground mb-4 sm:mb-6'>
-              Quick create profile for order processing.
+Create profile for order processing.
             </p>
             <div className='mb-4'>
               <label className='text-xs font-medium text-muted-foreground mb-2 block'>MOBILE NUMBER</label>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import WashStationSidebar from '@/components/washstation/WashStationSidebar';
@@ -35,6 +35,7 @@ function OrderCompleteContent() {
   );
 
   const [activeStaff, setActiveStaff] = useState<{ name: string; role: string } | null>(null);
+  const waLinkRef = useRef<string | null>(null); // store WhatsApp link for reuse
 
   const amountPaid = amountPaidParam > 0 ? amountPaidParam : (order?.finalPrice ?? 0);
   const orderNumber = order?.orderNumber || orderIdParam || '—';
@@ -42,9 +43,7 @@ function OrderCompleteContent() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
     const staffData = sessionStorage.getItem('washlab_active_staff');
-
     if (staffData) {
       try {
         const parsed = JSON.parse(staffData);
@@ -63,9 +62,27 @@ function OrderCompleteContent() {
   const handleWhatsAppReceipt = () => {
     const customerPhone = order?.customer?.phoneNumber || '';
     if (!customerPhone) {
-      toast.error('Customer phone not found');
+      toast.error('Customer not on WhatsApp');
       return;
     }
+
+    // Reuse existing link if already generated
+    if (waLinkRef.current) {
+      window.location.href = waLinkRef.current;
+      return;
+    }
+
+    let digits = customerPhone.replace(/\D/g, '');
+    if (digits.startsWith('00')) digits = digits.slice(2);
+    if (digits.startsWith('2330')) digits = '233' + digits.slice(4);
+    if (digits.startsWith('0')) digits = '233' + digits.slice(1);
+    if (digits.length === 9) digits = '233' + digits;
+
+    if (digits.length !== 12) {
+      toast.error('Customer not on WhatsApp');
+      return;
+    }
+
     const message = encodeURIComponent(
       `*WashLab Receipt*\n\n` +
         `📋 Order: ${orderNumber}\n` +
@@ -75,13 +92,12 @@ function OrderCompleteContent() {
         `━━━━━━━━━━━━━━━━━━━━━\n` +
         `💰 Amount: GH₵${amountPaid.toFixed(2)}\n` +
         `💳 Payment: ${paymentMethod === 'mobile_money' ? 'Mobile Money' : 'Cash'}\n` +
-        (paymentMethod === 'cash' && changeDue > 0 ? `💵 Change: GH₵${changeDue.toFixed(2)}\n` : '') +
         `Processed by: ${activeStaff?.name || 'Staff'}\n\n` +
         `Thank you for choosing WashLab! 🧺`
     );
-    const digits = customerPhone.replace(/\D/g, '');
-    const waNum = digits.startsWith('233') ? digits : `233${digits.replace(/^0/, '')}`;
-    window.open(`https://wa.me/${waNum}?text=${message}`, '_blank');
+
+    waLinkRef.current = `https://wa.me/${digits}?text=${message}`;
+    window.location.href = waLinkRef.current;
   };
 
   const getPaymentMethodLabel = (method: string) => {
@@ -94,7 +110,6 @@ function OrderCompleteContent() {
     return labels[method] || 'Card';
   };
 
-  // Build order summary lines from real order data
   const orderSummaryLines: { name: string; notes?: string; quantity: number; price: number }[] = [];
   if (order) {
     const serviceLabel = formatServiceType(order.serviceType);
@@ -114,7 +129,6 @@ function OrderCompleteContent() {
       });
     }
   }
-  // Fallback if no order loaded yet
   if (orderSummaryLines.length === 0) {
     orderSummaryLines.push({
       name: 'Order',
@@ -141,12 +155,7 @@ function OrderCompleteContent() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <WashStationSidebar
-        collapsed={false}
-        onToggle={function (): void {
-          throw new Error('Function not implemented.');
-        }}
-      />
+      <WashStationSidebar collapsed={false} onToggle={() => {}} />
 
       <main className="flex-1 ml-64">
         {/* Header */}
@@ -161,7 +170,6 @@ function OrderCompleteContent() {
             <CheckCircle className="w-12 h-12 text-success" />
           </div>
 
-          {/* Success Message */}
           <h1 className="text-3xl font-bold text-foreground mb-2">
             Order #{orderNumber} Confirmed
           </h1>
@@ -169,24 +177,16 @@ function OrderCompleteContent() {
             {isMobileMoneyPending ? (
               <>
                 Payment prompt sent for <span className="font-semibold">₵{amountPaid.toFixed(2)}</span> via{' '}
-                {getPaymentMethodLabel(paymentMethod)}. Order will be marked Paid when the customer completes payment on their phone.
+                {getPaymentMethodLabel(paymentMethod)}. Order will be marked Paid when the customer completes payment.
               </>
             ) : (
               <>
                 Payment of <span className="font-semibold">₵{amountPaid.toFixed(2)}</span> received via{' '}
                 {getPaymentMethodLabel(paymentMethod)}.
-                {changeDue > 0 && (
-                  <span className="block mt-1 text-sm">Change due: ₵{changeDue.toFixed(2)}</span>
-                )}
+                {changeDue > 0 && <span className="block mt-1 text-sm">Change due: ₵{changeDue.toFixed(2)}</span>}
               </>
             )}
           </p>
-          {isMobileMoneyPending && (
-            <p className="text-sm text-muted-foreground mb-6">
-              You can start a new order or view this order in the list; it will update when payment is confirmed.
-            </p>
-          )}
-          {!isMobileMoneyPending && <div className="mb-8" />}
 
           {/* Order Summary Card */}
           <div className="w-full max-w-md bg-card border border-border rounded-2xl overflow-hidden mb-8">
@@ -194,7 +194,6 @@ function OrderCompleteContent() {
               <h3 className="font-semibold text-foreground">ORDER SUMMARY</h3>
               <span className="text-sm text-muted-foreground">#{orderNumber} 🖨</span>
             </div>
-
             <div className="p-5 space-y-4">
               {orderSummaryLines.map((item, index) => (
                 <div key={index} className="flex justify-between">
@@ -205,14 +204,11 @@ function OrderCompleteContent() {
                       </span>
                       <span className="font-medium text-foreground">{item.name}</span>
                     </div>
-                    {item.notes && (
-                      <p className="text-sm text-muted-foreground ml-8">{item.notes}</p>
-                    )}
+                    {item.notes && <p className="text-sm text-muted-foreground ml-8">{item.notes}</p>}
                   </div>
                   <span className="font-semibold text-foreground">₵{item.price.toFixed(2)}</span>
                 </div>
               ))}
-
               <div className="pt-4 border-t border-border flex justify-between">
                 <span className="text-muted-foreground">Total Paid</span>
                 <span className="text-xl font-bold text-foreground">₵{amountPaid.toFixed(2)}</span>
@@ -220,7 +216,7 @@ function OrderCompleteContent() {
             </div>
           </div>
 
-          {/* WhatsApp Receipt Button - Full Width, Green */}
+          {/* WhatsApp Receipt Button */}
           <Button
             onClick={handleWhatsAppReceipt}
             className="w-full max-w-md h-14 bg-[#25D366] hover:bg-[#20BA5A] text-white rounded-xl text-lg font-semibold mb-4"
@@ -236,7 +232,6 @@ function OrderCompleteContent() {
           >
             <Plus className="w-5 h-5 mr-2" />
             Start New Order
-            <span className="ml-2 px-2 py-0.5 bg-primary-foreground/20 rounded text-xs">ENTER</span>
           </Button>
         </div>
       </main>
@@ -246,13 +241,15 @@ function OrderCompleteContent() {
 
 export default function OrderCompletePage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <p className="text-muted-foreground">Loading...</p>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="text-center">
+            <p className="text-muted-foreground">Loading...</p>
+          </div>
         </div>
-      </div>
-    }>
+      }
+    >
       <OrderCompleteContent />
     </Suspense>
   );
