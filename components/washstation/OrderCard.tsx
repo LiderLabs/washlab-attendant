@@ -12,7 +12,7 @@ import {
   MessageCircle,
 } from "lucide-react"
 import Link from "next/link"
-import { Id } from "@devlider001/washlab-backend/dataModel"
+import { Id } from "@jordan6699/washlab-backend/dataModel"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
 

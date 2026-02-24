@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery } from 'convex/react';
-import { api } from '@devlider001/washlab-backend/api';
+import { api } from '@jordan6699/washlab-backend/api';
 import { useStationSession } from '@/hooks/useStationSession';
 import { useStationAttendance } from '@/hooks/useStationAttendance';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

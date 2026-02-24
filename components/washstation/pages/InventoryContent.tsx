@@ -39,7 +39,7 @@ import {
 } from '@/hooks/useStationInventory';
 import { format } from 'date-fns';
 import { ActionVerification } from '@/components/washstation/ActionVerification';
-import { Id } from '@devlider001/washlab-backend/dataModel';
+import { Id } from '@jordan6699/washlab-backend/dataModel';
 
 export function InventoryContent() {
   const { stationToken } = useStationSession();

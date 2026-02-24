@@ -1,7 +1,7 @@
 'use client';
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Id } from '@devlider001/washlab-backend/dataModel';
+import { Id } from '@jordan6699/washlab-backend/dataModel';
 import {
   Clock,
   Package,

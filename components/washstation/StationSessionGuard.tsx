@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useQuery } from 'convex/react';
-import { api } from "@devlider001/washlab-backend/api";
+import { api } from "@jordan6699/washlab-backend/api";
 import { InactiveBranchScreen } from './InactiveBranchScreen';
 import { Loader2 } from 'lucide-react';
 

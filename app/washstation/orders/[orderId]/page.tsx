@@ -6,7 +6,7 @@ import { useStationSession } from '@/hooks/useStationSession';
 import { useStationOrder } from '@/hooks/useStationOrders';
 import { useStationOrderStatus } from '@/hooks/useStationOrderStatus';
 import { useQuery } from 'convex/react';
-import { api } from "@devlider001/washlab-backend/api";
+import { api } from "@jordan6699/washlab-backend/api";
 import { LoadingSpinner } from '@/components/washstation/LoadingSpinner';
 import { EmptyState } from '@/components/washstation/EmptyState';
 import { Button } from '@/components/ui/button';
@@ -36,7 +36,7 @@ import { format } from 'date-fns';
 import { useState, useEffect, useRef } from 'react';
 import { type OrderStatus } from '@/hooks/useStationOrders';
 import { ActionVerification } from '@/components/washstation/ActionVerification';
-import { Id } from "@devlider001/washlab-backend/dataModel";
+import { Id } from "@jordan6699/washlab-backend/dataModel";
 import { toast } from 'sonner';
 
 const WASH_STAGES = [

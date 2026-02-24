@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from 'convex/react';
-import { api } from "@devlider001/washlab-backend/api";
+import { api } from "@jordan6699/washlab-backend/api";
 
 export interface StationStats {
   totalOrders: number;

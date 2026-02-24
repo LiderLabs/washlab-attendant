@@ -1,8 +1,8 @@
 'use client';
 
 import { usePaginatedQuery, useQuery } from 'convex/react';
-import { api } from "@devlider001/washlab-backend/api";
-import { Id } from "@devlider001/washlab-backend/dataModel";
+import { api } from "@jordan6699/washlab-backend/api";
+import { Id } from "@jordan6699/washlab-backend/dataModel";
 
 export type OrderStatus = 
   | "pending_dropoff"

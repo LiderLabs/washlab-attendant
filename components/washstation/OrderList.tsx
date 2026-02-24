@@ -2,7 +2,7 @@
 
 import { OrderCard } from './OrderCard';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Id } from '@devlider001/washlab-backend/dataModel';
+import { Id } from '@jordan6699/washlab-backend/dataModel';
 import { OrderStatus } from './OrderStatusBadge';
 
 interface Order {

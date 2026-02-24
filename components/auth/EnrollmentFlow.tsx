@@ -2,8 +2,8 @@
 
 import { useState } from "react"
 import { useMutation } from "convex/react"
-import { api } from "@devlider001/washlab-backend/api"
-import { Id } from "@devlider001/washlab-backend/dataModel"
+import { api } from "@jordan6699/washlab-backend/api"
+import { Id } from "@jordan6699/washlab-backend/dataModel"
 import BiometricCapture from "./BiometricCapture"
 import { PINInput } from "@/components/washstation/PINInput"
 import { Button } from "@/components/ui/button"

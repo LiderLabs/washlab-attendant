@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from "react"
 import { useQuery } from "convex/react"
-import { api } from "@devlider001/washlab-backend/api"
+import { api } from "@jordan6699/washlab-backend/api"
 import { EnrollmentFlow } from "@/components/auth/EnrollmentFlow"
 import {
   Card,

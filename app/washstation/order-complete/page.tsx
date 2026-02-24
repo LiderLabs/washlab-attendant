@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import WashStationSidebar from '@/components/washstation/WashStationSidebar';
 import { useStationSession } from '@/hooks/useStationSession';
 import { useStationOrder } from '@/hooks/useStationOrders';
-import { Id } from '@devlider001/washlab-backend/dataModel';
+import { Id } from '@jordan6699/washlab-backend/dataModel';
 import {
   CheckCircle,
   Plus,

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
 import { useQuery } from "convex/react"
-import { api } from "@devlider001/washlab-backend/api"
+import { api } from "@jordan6699/washlab-backend/api"
 import { useStationSession } from "@/hooks/useStationSession"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"

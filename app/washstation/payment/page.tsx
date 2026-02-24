@@ -7,8 +7,8 @@ import { WashStationLayout } from "@/components/washstation/WashStationLayout";
 import { useStationSession } from "@/hooks/useStationSession";
 import { useStationOrder } from "@/hooks/useStationOrders";
 import { useMutation } from "convex/react";
-import { api } from "@devlider001/washlab-backend/api";
-import { Id } from "@devlider001/washlab-backend/dataModel";
+import { api } from "@jordan6699/washlab-backend/api";
+import { Id } from "@jordan6699/washlab-backend/dataModel";
 import { ActionVerification } from "@/components/washstation/ActionVerification";
 import {
   Banknote, Smartphone, CreditCard,
@@ -24,7 +24,7 @@ type Stage = "idle" | "verification" | "paystack" | "finalizing";
 // Paystack Ghana: 2% of transaction amount (capped at GH₵ 2,000 for local cards)
 // We gross-up the charge so YOU receive the full order amount after Paystack's cut.
 // Formula: chargeAmount = orderTotal / (1 - 0.02)
-// Example: ₵100 order → charge ₵102.04 → Paystack takes ₵2.04 (2%) → you net ₵100
+// Example: ₵140 order → charge ₵142.86 → Paystack takes ₵2.86 (2%) → you net ₵140
 const PAYSTACK_FEE_RATE = 0.02;
 
 function calcPaystackCharge(orderAmount: number): {
@@ -37,13 +37,21 @@ function calcPaystackCharge(orderAmount: number): {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ✅ Load Paystack v2 inline script
+// v1 (js.paystack.co/v1/inline.js) only has setup()+openIframe() which requires
+// a <form> element and throws an error in React. v2 exposes newTransaction()
+// which works without any form element.
 function usePaystackScript() {
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if ((window as any).PaystackPop) { setLoaded(true); return; }
+    // Already loaded with newTransaction support
+    if ((window as any).PaystackPop?.newTransaction) { setLoaded(true); return; }
+    // Remove any stale v1 script to avoid version conflicts
+    const existing = document.querySelector('script[src*="paystack"]');
+    if (existing) existing.remove();
     const script = document.createElement("script");
-    script.src = "https://js.paystack.co/v1/inline.js";
+    script.src = "https://js.paystack.co/v2/inline.js";
     script.async = true;
     script.onload = () => setLoaded(true);
     document.body.appendChild(script);
@@ -85,18 +93,25 @@ function PaymentContent() {
     isSessionValid
   );
 
-  const subtotal = order ? (order.basePrice || 0) + (order.deliveryFee || 0) : 0;
-  const totalDue = order?.finalPrice || order?.totalPrice || subtotal || 0;
+  // ✅ Price field priority fix:
+  // basePrice + deliveryFee is what the new-order flow calculates (e.g. ₵140).
+  // finalPrice / totalPrice may hold a stale or backend-overridden value (e.g. ₵100).
+  // We prefer basePrice + deliveryFee when available, and only fall back to
+  // finalPrice/totalPrice if basePrice is missing.
+  const deliveryFee = order?.deliveryFee || 0;
+  const basePrice = order?.basePrice || 0;
+  const subtotal = basePrice + deliveryFee;
+  const totalDue = subtotal > 0
+    ? subtotal
+    : order?.finalPrice || order?.totalPrice || 0;
 
   const effectivePaymentMethod: PaymentMethodType = paymentMethod;
 
   // ─── Paystack fee calculation ─────────────────────────────────────────────
-  // Only applied when paying by card or mobile_money (not cash)
   const isPaystackMethod = effectivePaymentMethod !== "cash";
   const { chargeAmount: paystackChargeAmount, fee: paystackFee } = isPaystackMethod
     ? calcPaystackCharge(totalDue)
     : { chargeAmount: totalDue, fee: 0 };
-  // The amount the customer actually pays (gross of fee)
   const customerFacingAmount = isPaystackMethod ? paystackChargeAmount : totalDue;
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -146,7 +161,7 @@ function PaymentContent() {
     }
   };
 
-  // ─── Step 3: Open Paystack iframe ────────────────────────────────────────────
+  // ─── Step 3: Open Paystack popup ─────────────────────────────────────────────
 
   const openPaystack = (
     method: "card" | "mobile_money",
@@ -165,13 +180,11 @@ function PaymentContent() {
     setStage("paystack");
     toast.info("Payment window opening for customer…");
 
-    // ✅ Use newTransaction instead of setup() + openIframe()
-    // setup() requires a <form> element which doesn't exist in React apps.
-    // newTransaction() works without a form and is the recommended approach.
+    // ✅ newTransaction() — Paystack v2 API, no <form> element required
     const handler = (window as any).PaystackPop.newTransaction({
       key: "pk_test_0bcc36edcd86cbe2439fc3274f5e6b6e501c4730",
       email: order.customer?.email || order.customerEmail || "customer@washlab.com",
-      // ✅ Grossed-up amount so after Paystack's 2% cut you net exactly totalDue
+      // ✅ Grossed-up amount — customer pays this, you net exactly totalDue after fee
       amount: Math.round(paystackChargeAmount * 100),
       currency: "GHS",
       ref,
@@ -369,12 +382,12 @@ function PaymentContent() {
       <div className="border-t border-border pt-4 space-y-2">
         <div className="flex justify-between text-sm">
           <span className="text-muted-foreground">Subtotal</span>
-          <span className="text-foreground">₵{subtotal.toFixed(2)}</span>
+          <span className="text-foreground">₵{basePrice.toFixed(2)}</span>
         </div>
-        {order.deliveryFee > 0 && (
+        {deliveryFee > 0 && (
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Delivery Fee</span>
-            <span className="text-foreground">₵{order.deliveryFee.toFixed(2)}</span>
+            <span className="text-foreground">₵{deliveryFee.toFixed(2)}</span>
           </div>
         )}
         <div className="flex justify-between text-sm">
@@ -382,7 +395,7 @@ function PaymentContent() {
           <span className="text-foreground">₵0.00</span>
         </div>
 
-        {/* ✅ Paystack fee line — only shown for card/mobile_money */}
+        {/* ✅ Paystack processing fee line */}
         {isPaystackMethod && (
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">
@@ -529,7 +542,6 @@ function PaymentContent() {
               <p className="text-muted-foreground text-xs sm:text-sm mb-2">
                 After you verify, a Paystack prompt opens for the customer to pay.
               </p>
-              {/* ✅ Show grossed-up amount with fee breakdown */}
               <p className="text-xl sm:text-2xl font-bold text-primary">₵{paystackChargeAmount.toFixed(2)}</p>
               <p className="text-xs text-muted-foreground mt-1">
                 Order total ₵{totalDue.toFixed(2)} + ₵{paystackFee.toFixed(2)} processing fee
@@ -545,7 +557,6 @@ function PaymentContent() {
               <p className="text-muted-foreground text-xs sm:text-sm mb-2">
                 After you verify, a secure Paystack popup opens for the customer to pay.
               </p>
-              {/* ✅ Show grossed-up amount with fee breakdown */}
               <p className="text-xl sm:text-2xl font-bold text-primary">₵{paystackChargeAmount.toFixed(2)}</p>
               <p className="text-xs text-muted-foreground mt-1">
                 Order total ₵{totalDue.toFixed(2)} + ₵{paystackFee.toFixed(2)} processing fee

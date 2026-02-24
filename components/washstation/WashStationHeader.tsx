@@ -18,7 +18,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { useStationSession } from '@/hooks/useStationSession';
 import { useMutation, useQuery } from 'convex/react';
-import { api } from '@devlider001/washlab-backend/api';
+import { api } from '@jordan6699/washlab-backend/api';
 import { useToast } from '@/hooks/use-toast';
 
 interface AttendanceInfo {

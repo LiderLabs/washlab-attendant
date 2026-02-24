@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
-import { api } from '@devlider001/washlab-backend/api';
-import { Id } from "@devlider001/washlab-backend/dataModel"
+import { api } from '@jordan6699/washlab-backend/api';
+import { Id } from "@jordan6699/washlab-backend/dataModel"
 import { WashStationLayout } from "@/components/washstation/WashStationLayout"
 import { useStationSession } from "@/hooks/useStationSession"
 import {

@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from 'convex/react';
-import { api } from "@devlider001/washlab-backend/api";
+import { api } from "@jordan6699/washlab-backend/api";
 import { EnrollmentFlow } from '@/components/auth/EnrollmentFlow';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';

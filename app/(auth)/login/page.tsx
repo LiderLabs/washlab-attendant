@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
-import { api } from "@devlider001/washlab-backend/api";
-import { Id } from "@devlider001/washlab-backend/dataModel";
+import { api } from "@jordan6699/washlab-backend/api";
+import { Id } from "@jordan6699/washlab-backend/dataModel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
