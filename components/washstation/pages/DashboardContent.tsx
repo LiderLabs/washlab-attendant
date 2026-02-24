@@ -87,33 +87,33 @@ export function DashboardContent() {
     <div className="space-y-6">
 
       {/* ── Top Stats Row ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-4">
-        <StatCard
-          title="Total Orders"
-          value={stats.totalOrders}
-          icon={ShoppingBag}
-          iconClassName="text-primary"
-        />
-        <StatCard
-          title="Pending"
-          value={totalPending}
-          icon={Clock}
-          iconClassName="text-orange-500"
-          subtitle={pendingOrders?.length ? `${pendingOrders.length} new` : undefined}
-        />
-        <StatCard
-          title="Revenue"
-          value={`₵${stats.totalRevenue.toFixed(2)}`}
-          icon={Banknote}
-          iconClassName="text-green-500"
-        />
-        <StatCard
-          title="In Progress"
-          value={stats.ordersByStatus.in_progress}
-          icon={Loader}
-          iconClassName="text-blue-500"
-        />
-      </div>
+<div className="grid grid-cols-4 gap-4">
+  <StatCard
+    title="Total Orders"
+    value={stats.totalOrders}
+    icon={ShoppingBag}
+    iconClassName="text-primary"
+  />
+  <StatCard
+    title="In Progress"
+    value={stats.ordersByStatus.in_progress}
+    icon={Loader}
+    iconClassName="text-blue-500"
+  />
+  <StatCard
+    title="Pending"
+    value={totalPending}
+    icon={Clock}
+    iconClassName="text-orange-500"
+    subtitle={pendingOrders?.length ? `${pendingOrders.length} new` : undefined}
+  />
+  <StatCard
+    title="Revenue"
+    value={`₵${stats.totalRevenue.toFixed(2)}`}
+    icon={Banknote}
+    iconClassName="text-green-500"
+  />
+</div>
 
       {/* ── Action Cards ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

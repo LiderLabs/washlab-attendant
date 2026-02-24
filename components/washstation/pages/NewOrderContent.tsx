@@ -751,9 +751,6 @@ Create profile for order processing.
                 >
                   Proceed to Payment <ArrowRight className='w-4 h-4 ml-2' />
                 </Button>
-                <button onClick={handleSaveAsDraft} className='w-full text-center text-xs sm:text-sm text-muted-foreground hover:text-foreground'>
-                  Save as Draft
-                </button>
               </div>
             </div>
           </div>

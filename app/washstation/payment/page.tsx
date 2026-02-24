@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { WashStationLayout } from "@/components/washstation/WashStationLayout";
 import { useStationSession } from "@/hooks/useStationSession";
 import { useStationOrder } from "@/hooks/useStationOrders";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@devlider001/washlab-backend/api";
 import { Id } from "@devlider001/washlab-backend/dataModel";
 import { ActionVerification } from "@/components/washstation/ActionVerification";
@@ -83,6 +83,13 @@ function PaymentContent() {
   const paystackHandlerRef = useRef<any>(null);
   const isPaying = useRef(false);
 
+  const [voucherCode, setVoucherCode] = useState("");
+  const [voucherResult, setVoucherResult] = useState<null | { valid: boolean; discountAmount?: number; finalPrice?: number; voucher?: { code: string; name?: string; discountType: string; discountValue: number } }>(null);
+  const applyVoucherMutation = useMutation((api as any).vouchers.applyToOrder);
+  const voucherValidation = useQuery(
+    (api as any).vouchers.validate,
+    voucherCode.length >= 3 ? { code: voucherCode.toUpperCase(), orderTotal: 1, branchId: "skip" as any } : "skip"
+  );
   const orderIdParam = searchParams?.get("orderId");
   const returnTo = searchParams?.get("return");
 
@@ -95,9 +102,9 @@ function PaymentContent() {
   const deliveryFee = order?.deliveryFee || 0;
   const basePrice = order?.basePrice || 0;
   const subtotal = basePrice + deliveryFee;
-  const totalDue = subtotal > 0
-    ? subtotal
-    : order?.finalPrice || order?.totalPrice || 0;
+  const baseTotalDue = order?.finalPrice || order?.totalPrice || (subtotal > 0 ? subtotal : 0);
+  const totalDue = (voucherResult?.valid && voucherResult?.finalPrice !== undefined) ? voucherResult.finalPrice : baseTotalDue;
+  const isFreeWash = voucherResult?.valid && totalDue === 0;
 
   const effectivePaymentMethod: PaymentMethodType = paymentMethod;
 
@@ -129,6 +136,7 @@ function PaymentContent() {
     verificationId: Id<"biometricVerifications">
   ) => {
     setShowVerification(false);
+    if (isFreeWash) { await handleConfirmVoucher(verificationId); return; }
     if (!order) { toast.error("Order not found"); setStage("idle"); return; }
 
     try {
@@ -153,6 +161,32 @@ function PaymentContent() {
       setStage("idle");
     }
   };
+  // --- Voucher logic ----------------------------------------------------------
+  const handleApplyVoucher = () => {
+    if (!voucherCode.trim() || !order) return;
+    if (voucherValidation === undefined) { toast.info("Checking voucher..."); return; }
+    if (voucherValidation?.valid) {
+      setVoucherResult(voucherValidation);
+      if (voucherValidation.voucher?.discountType === "free_wash") toast.success("Free wash voucher applied! No payment needed.");
+      else toast.success(`Voucher applied! You save GHS ${voucherValidation.discountAmount?.toFixed(2)}`);
+    } else {
+      toast.error(voucherValidation?.error || "Invalid voucher");
+    }
+  };
+
+  const handleConfirmVoucher = async (verificationId: Id<"biometricVerifications">) => {
+    if (!order || !voucherResult?.valid) return;
+    setStage("finalizing");
+    try {
+      await applyVoucherMutation({ voucherCode: voucherCode.trim().toUpperCase(), orderId: order._id });
+      toast.success("Voucher applied! Order marked as paid.");
+      router.push(`/washstation/order-complete?orderId=${order._id}`);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to apply voucher");
+      setStage("idle");
+    }
+  };
+
 
   // ─── Step 3: Open Paystack popup (v1 API) ────────────────────────────────
 
@@ -400,6 +434,24 @@ function PaymentContent() {
           </div>
         )}
 
+      {/* Voucher */}
+      <div className="pt-3 border-t border-border">
+        {voucherResult?.valid ? (
+          <div className="flex items-center justify-between p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+            <div>
+              <p className="text-sm font-semibold text-green-700 dark:text-green-400">{voucherResult.voucher?.code}</p>
+              <p className="text-xs text-muted-foreground">-{voucherResult.discountAmount?.toFixed(2)} discount</p>
+            </div>
+            <button onClick={() => { setVoucherResult(null); setVoucherCode(""); }} className="text-muted-foreground hover:text-foreground text-xs underline">Remove</button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <input type="text" value={voucherCode} onChange={(e) => setVoucherCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === "Enter" && handleApplyVoucher()} placeholder="Voucher code" disabled={isProcessing} className="flex-1 px-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 uppercase" />
+            <button onClick={handleApplyVoucher} disabled={!voucherCode.trim() || isProcessing} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40">Apply</button>
+
+          </div>
+        )}
+      </div>
         <div className="flex justify-between pt-2 border-t border-border items-center">
           <span className="font-semibold text-foreground">Total Due</span>
           <div className="text-right">
@@ -448,6 +500,16 @@ function PaymentContent() {
       <h2 className="text-lg sm:text-xl font-bold text-foreground mb-1">Select Payment Method</h2>
       <p className="text-muted-foreground text-sm mb-5">Choose how the customer would like to pay.</p>
 
+      {isFreeWash && (
+        <div className="mb-5 p-5 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-center">
+          <p className="text-lg font-bold text-green-700 dark:text-green-400 mb-1">Free Wash Applied!</p>
+          <p className="text-sm text-muted-foreground mb-4">No payment required. Click below to complete the order.</p>
+          <button onClick={() => { setStage("verification"); setShowVerification(true); }} disabled={isProcessing} className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+            {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Complete Order (Free)
+          </button>
+        </div>
+      )}
       <div className="grid grid-cols-3 gap-3 mb-5">
         {/* Mobile Money */}
         <button
@@ -680,3 +742,5 @@ export default function PaymentPage() {
     </Suspense>
   );
 }
+
+
