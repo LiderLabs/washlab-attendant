@@ -59,9 +59,7 @@ export default function BranchEntryPage() {
     <div className="min-h-screen bg-gradient-to-br from-primary via-primary/95 to-primary flex flex-col">
       {/* Header */}
       <header className="p-6">
-        <header className="p-6">
-       <Logo size="sm" className="h-10" />
-       </header>
+        <Logo size="sm" />
       </header>
 
       {/* Main Content */}

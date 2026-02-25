@@ -119,6 +119,8 @@ export function NewOrderContent() {
   const [orderNotes, setOrderNotes] = useState<string[]>([])
   const [customNote, setCustomNote] = useState("")
   const [bagCardNumber, setBagCardNumber] = useState("")
+  const [extraWashLoads, setExtraWashLoads] = useState(0)
+  const [extraDryLoads, setExtraDryLoads] = useState(0)
 
   const activeBagNumbers =
     useQuery(
@@ -232,10 +234,10 @@ export function NewOrderContent() {
         customerPhone: foundCustomer.phoneNumber || formatPhoneForBackend(phone),
         customerEmail: foundCustomer.email || newEmail,
         serviceType: serviceType as "wash_only" | "wash_and_dry" | "dry_only",
-        weight,
+        weight: weight + (extraWashLoads + extraDryLoads) * 8,
         itemCount: itemCount || 1,
         bagCardNumber,
-        notes: customNote || orderNotes.join(", ") || undefined,
+        notes: [customNote, ...orderNotes, extraWashLoads > 0 ? extraWashLoads + ' extra wash load(s)' : '', extraDryLoads > 0 ? extraDryLoads + ' extra dry load(s)' : ''].filter(Boolean).join(', ') || undefined,
         isDelivery: false,
       })
       toast.success(`Order created successfully! Bag #${result.bagCardNumber}`)
@@ -624,6 +626,38 @@ Create profile for order processing.
                   <button onClick={() => setWeight(weight + 5)} className='px-3 sm:px-4 py-2 bg-muted rounded-lg text-xs sm:text-sm hover:bg-muted/80'>+ 5kg</button>
                   <button onClick={() => setWeight(20)} className='px-3 sm:px-4 py-2 bg-muted rounded-lg text-xs sm:text-sm hover:bg-muted/80'>Max</button>
                 </div>
+
+              {/* Extra Loads */}
+              {serviceType && (
+                <div className='mt-4 p-4 bg-muted/50 rounded-xl border border-border'>
+                  <p className='text-xs font-semibold text-muted-foreground mb-3'>ADDITIONAL LOADS (attendant override)</p>
+                  <div className='grid grid-cols-2 gap-3'>
+                    {(serviceType === 'wash_and_dry' || serviceType === 'wash_only') && (
+                      <div className='flex items-center justify-between bg-card rounded-lg px-3 py-2 border border-border'>
+                        <span className='text-xs font-medium text-foreground'>Extra Wash</span>
+                        <div className='flex items-center gap-2'>
+                          <button onClick={() => setExtraWashLoads(Math.max(0, extraWashLoads - 1))} className='w-6 h-6 rounded bg-muted flex items-center justify-center text-sm font-bold hover:bg-muted/80'>−</button>
+                          <span className='text-sm font-bold w-4 text-center'>{extraWashLoads}</span>
+                          <button onClick={() => setExtraWashLoads(extraWashLoads + 1)} className='w-6 h-6 rounded bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold hover:bg-primary/90'>+</button>
+                        </div>
+                      </div>
+                    )}
+                    {(serviceType === 'wash_and_dry' || serviceType === 'dry_only') && (
+                      <div className='flex items-center justify-between bg-card rounded-lg px-3 py-2 border border-border'>
+                        <span className='text-xs font-medium text-foreground'>Extra Dry</span>
+                        <div className='flex items-center gap-2'>
+                          <button onClick={() => setExtraDryLoads(Math.max(0, extraDryLoads - 1))} className='w-6 h-6 rounded bg-muted flex items-center justify-center text-sm font-bold hover:bg-muted/80'>−</button>
+                          <span className='text-sm font-bold w-4 text-center'>{extraDryLoads}</span>
+                          <button onClick={() => setExtraDryLoads(extraDryLoads + 1)} className='w-6 h-6 rounded bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold hover:bg-primary/90'>+</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {(extraWashLoads > 0 || extraDryLoads > 0) && (
+                    <p className='text-xs text-primary mt-2'>+{extraWashLoads + extraDryLoads} extra load(s) added to price</p>
+                  )}
+                </div>
+              )}
               </div>
 
               {/* 3. Item Count */}

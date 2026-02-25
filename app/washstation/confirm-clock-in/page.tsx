@@ -25,6 +25,7 @@ export default function ConfirmClockInPage() {
   const [staffData, setStaffData] = useState<StaffData | null>(null);
   const [branch, setBranch] = useState<Branch | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isConfirming, setIsConfirming] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -193,7 +194,7 @@ export default function ConfirmClockInPage() {
               Cancel
             </Button>
             <Button
-              onClick={handleConfirm}
+              onClick={handleConfirm} disabled={isConfirming}
               className="flex-[2] h-14 rounded-xl text-base gap-2 bg-primary hover:bg-primary/90"
             >
               <CheckCircle className="w-5 h-5" />
