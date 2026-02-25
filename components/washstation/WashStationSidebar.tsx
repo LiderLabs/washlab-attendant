@@ -31,7 +31,8 @@ const WashStationSidebar = ({
   onToggle,
 }: SidebarProps) => {
   const pathname = usePathname();
-  const { stationToken } = useStationSession();
+  const { stationToken, sessionData } = useStationSession();
+  const branchName = (sessionData as any)?.branchName || sessionData?.branchName || sessionData?.branchCode || 'Branch';
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/washstation/dashboard' },
@@ -42,7 +43,7 @@ const WashStationSidebar = ({
     { id: 'transactions', label: 'Transactions', icon: CreditCard, path: '/washstation/transactions' },
     // { id: 'activity', label: 'Activity Log', icon: Activity, path: '/washstation/activity' },
     { id: 'inventory', label: 'Inventory', icon: Package, path: '/washstation/inventory' },
-    { id: 'report', label: 'Daily Report', icon: FileText, path: '/washstation/report' },
+    { id: 'reports', label: 'Daily Report', icon: FileText, path: '/washstation/reports' },
   ];
 
   const isActive = (path: string) =>
