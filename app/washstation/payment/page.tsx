@@ -195,7 +195,12 @@ function PaymentContent() {
     verificationId: Id<"biometricVerifications">
   ) => {
     if (!order || !paystackLoaded) return;
-    if (paystackHandlerRef.current) { toast.error("A payment popup is already open."); return; }
+    // Force-clear any stale handler from a previous failed attempt
+    if (paystackHandlerRef.current) {
+      try { clearTimeout(paystackHandlerRef.current._timeoutId); } catch {}
+      paystackHandlerRef.current = null;
+      isPaying.current = false;
+    }
 
     const ref = `washlab_${order._id}_${Date.now()}`;
     setPaystackRef(ref);
@@ -210,7 +215,9 @@ function PaymentContent() {
     // ✅ Paystack v1 API — setup() + openIframe()
     // The "form element" console warning from v1 is harmless in React;
     // openIframe() still works correctly without a <form>.
-    const handler = (window as any).PaystackPop.setup({
+    let handler: any;
+    try {
+      handler = (window as any).PaystackPop.setup({
       key: "pk_test_0bcc36edcd86cbe2439fc3274f5e6b6e501c4730",
       email: order.customer?.email || order.customerEmail || "customer@washlab.com",
       // ✅ Grossed-up amount — customer pays this, you net exactly totalDue after Paystack's 2% cut
@@ -239,8 +246,31 @@ function PaymentContent() {
       },
     });
 
+    } catch (setupErr) {
+      toast.error("Failed to open payment window. Please try again.");
+      setStage("idle");
+      isPaying.current = false;
+      return;
+    }
     paystackHandlerRef.current = handler;
     handler.openIframe();
+
+    // Safety net: if iframe never fires callback/onClose after 3 min, reset
+    const paystackTimeout = setTimeout(() => {
+      if (paystackHandlerRef.current) {
+        paystackHandlerRef.current = null;
+        pendingVerificationId.current = null;
+        setPaystackRef(null);
+        setStage("idle");
+        isPaying.current = false;
+        toast.error("Payment timed out. Please try again.");
+      }
+    }, 3 * 60 * 1000);
+
+    // Clear the timeout if callback or onClose fires first
+    const originalCallback = handler.callback;
+    const originalOnClose = handler.onClose;
+    paystackHandlerRef.current._timeoutId = paystackTimeout;
   };
 
   // ─── Step 4: Finalize payment on backend ─────────────────────────────────

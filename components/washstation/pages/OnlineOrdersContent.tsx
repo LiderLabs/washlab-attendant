@@ -189,6 +189,8 @@ export function OnlineOrdersContent() {
   }
 
   const handleProceedToPayment = async () => {
+    if (!weight || weight <= 0) { toast.error("Please enter the actual weight before proceeding to payment."); return; }
+    if (!weight || weight <= 0) { toast.error("Please enter the actual weight before proceeding to payment."); return; }
     if (!selectedOrder || !stationToken) { toast.error("Please select an order"); return }
     if (weight === 0 || weight < 0.1) { toast.error("Please enter a valid weight"); return }
     if (!bagCardNumber) { toast.error("Please select a bag card number"); return }
@@ -469,12 +471,9 @@ export function OnlineOrdersContent() {
                   <MessageSquare className="w-5 h-5 text-warning" />
                   CUSTOMER INSTRUCTIONS
                 </h3>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Add or edit customer instructions..."
-                  className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted border-0 rounded-xl text-foreground placeholder:text-muted-foreground resize-none h-20 sm:h-24 text-sm sm:text-base"
-                />
+                <div className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted/50 border border-border/50 rounded-xl text-foreground text-sm sm:text-base min-h-[5rem] whitespace-pre-wrap">
+                  {(selectedOrder as any).notes || (selectedOrder as any).customerNotes || (selectedOrder as any).specialInstructions || <span className="text-muted-foreground italic">No instructions from customer</span>}
+                </div>
               </div>
             </div>
 
@@ -587,121 +586,70 @@ export function OnlineOrdersContent() {
         </div>
       )}
 
-      {/* ── Right: Service Details ────────────────────────────────────────── */}
+      {/* Right: Order Summary */}
       {selectedOrder && (
         <div className="w-full lg:w-72 border-t lg:border-t-0 lg:border-l border-border bg-card p-4 overflow-y-auto flex-shrink-0">
-          <h3 className="font-semibold text-foreground mb-4">Service Details</h3>
-
-          <div className="space-y-4">
-            {/* Service type */}
-            <div>
-              <Label className="text-xs text-muted-foreground uppercase mb-2 block">SERVICE TYPE</Label>
-              <Select value={selectedOrder.serviceType || "wash_and_fold"} onValueChange={() => {}} disabled>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="wash_and_fold">Wash & Fold (Standard)</SelectItem>
-                  <SelectItem value="wash_and_dry">Wash & Dry</SelectItem>
-                  <SelectItem value="wash_only">Wash Only</SelectItem>
-                  <SelectItem value="dry_only">Dry Only</SelectItem>
-                </SelectContent>
-              </Select>
+          <h3 className="font-semibold text-foreground mb-4">Order Summary</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Service</span>
+              <span className="font-medium">{getServiceName(selectedOrder.serviceType || "wash_and_fold")}</span>
             </div>
-
-            {/* Detergent + Softener */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-xs text-muted-foreground uppercase mb-2 block">DETERGENT</Label>
-                <Select value={detergent} onValueChange={setDetergent}>
-                  <SelectTrigger className="w-full text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="standard">Tide (Standard)</SelectItem>
-                    <SelectItem value="sensitive">Sensitive</SelectItem>
-                    <SelectItem value="eco">Eco-Friendly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground uppercase mb-2 block">SOFTENER</Label>
-                <Select value={softener} onValueChange={setSoftener}>
-                  <SelectTrigger className="w-full text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="standard">Standard</SelectItem>
-                    <SelectItem value="fresh">Fresh Scent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Est. Weight</span>
+              <span className="font-medium">{selectedOrder.estimatedWeight?.toFixed(1) || "0.0"} kg</span>
             </div>
-
-            {/* ✅ Pricing breakdown — shows loads, whites, delivery */}
-            <div className="pt-4 border-t border-border space-y-2">
-
-              {weight > 0 ? (
-                <>
-                  {/* Loads row */}
+            {weight > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Actual Weight</span>
+                <span className="font-medium text-primary">{weight.toFixed(1)} kg</span>
+              </div>
+            )}
+            {weight > 0 ? (
+              <div className="pt-3 border-t border-border space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">{pricing.numberOfLoads} load{pricing.numberOfLoads !== 1 ? "s" : ""} @ GHS {pricing.pricePerLoad.toFixed(2)}</span>
+                  <span>GHS {(pricing.numberOfLoads * pricing.pricePerLoad).toFixed(2)}</span>
+                </div>
+                {pricing.whitesExtraLoad > 0 && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground flex items-center gap-1">
-                      <Layers className="w-3.5 h-3.5" />
-                      {pricing.numberOfLoads} load{pricing.numberOfLoads !== 1 ? "s" : ""} × ₵{pricing.pricePerLoad.toFixed(2)}
-                    </span>
-                    <span className="text-foreground">₵{(pricing.numberOfLoads * pricing.pricePerLoad).toFixed(2)}</span>
+                    <span className="text-muted-foreground">Whites (extra load)</span>
+                    <span>GHS {pricing.pricePerLoad.toFixed(2)}</span>
                   </div>
-
-                  {/* Whites extra load */}
-                  {pricing.whitesExtraLoad > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <Layers className="w-3.5 h-3.5 text-primary" />
-                        Whites (extra load) × ₵{pricing.pricePerLoad.toFixed(2)}
-                      </span>
-                      <span className="text-foreground">₵{(pricing.pricePerLoad).toFixed(2)}</span>
-                    </div>
-                  )}
-
-                  {/* Delivery fee */}
-                  {selectedOrder.isDelivery && pricing.deliveryFee > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Delivery Fee</span>
-                      <span className="text-foreground">₵{pricing.deliveryFee.toFixed(2)}</span>
-                    </div>
-                  )}
-
-                  {/* Total loads summary */}
-                  <div className="flex justify-between text-xs text-muted-foreground pt-1">
-                    <span>Total loads: {pricing.totalLoads}</span>
-                    <span>{weight.toFixed(1)} kg actual</span>
+                )}
+                {selectedOrder.isDelivery && pricing.deliveryFee > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Delivery Fee</span>
+                    <span>GHS {pricing.deliveryFee.toFixed(2)}</span>
                   </div>
-                </>
-              ) : (
-                <p className="text-xs text-muted-foreground italic">Enter weight to see price breakdown</p>
-              )}
-
-              {/* Total */}
-              <div className="flex justify-between pt-2 border-t border-border">
-                <span className="font-medium text-foreground">Estimated Total</span>
-                <span className="text-xl font-bold text-success">₵{pricing.total.toFixed(2)}</span>
+                )}
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Total loads: {pricing.totalLoads}</span>
+                  <span>{weight.toFixed(1)} kg actual</span>
+                </div>
               </div>
+            ) : (
+              <div className="pt-3 border-t border-border">
+                <p className="text-xs text-muted-foreground italic">Enter weight above to see breakdown</p>
+              </div>
+            )}
+            <div className="flex justify-between pt-3 border-t border-border">
+              <span className="font-semibold text-foreground">Estimated Total</span>
+              <span className="text-xl font-bold text-success">
+                GHS {weight > 0 ? pricing.total.toFixed(2) : ((selectedOrder as any).totalPrice || (selectedOrder as any).estimatedPrice || (selectedOrder as any).finalPrice || 0).toFixed(2)}
+              </span>
             </div>
-
-            <Button
-              variant="ghost"
-              className="w-full text-sm text-muted-foreground hover:text-foreground flex items-center justify-center gap-1"
-              onClick={() => router.push(`/washstation/orders/${selectedOrder._id}`)}
+            <button
+              className="w-full text-sm text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 mt-2 py-2"
+              onClick={() => router.push('/washstation/orders/' + selectedOrder._id)}
             >
-              <Clock className="w-4 h-4" />
               View Order History
-            </Button>
+            </button>
           </div>
         </div>
       )}
-
       {/* Reject Verification Modal */}
+
       <ActionVerification
         open={showRejectVerification}
         onCancel={() => setShowRejectVerification(false)}
