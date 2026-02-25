@@ -252,6 +252,14 @@ function PaymentContent() {
       isPaying.current = false;
       return;
     }
+    if (process.env.NODE_ENV !== 'production') console.log('[Paystack] About to open iframe', {
+      handlerExists: !!handler,
+      paystackPopExists: !!(window as any).PaystackPop,
+      amount: Math.round(paystackChargeAmount * 100),
+      email: order.customer?.email || order.customerEmail,
+      ref,
+      channels,
+    });
     paystackHandlerRef.current = handler;
     handler.openIframe();
 
