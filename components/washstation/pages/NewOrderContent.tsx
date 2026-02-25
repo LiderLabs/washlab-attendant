@@ -47,14 +47,19 @@ export function NewOrderContent() {
   const router = useRouter()
   const { stationToken, isSessionValid, sessionData } = useStationSession()
 
-  // ── Fetch global services (per-branch services coming in future update) ──
-  const branchServices = useQuery(api.services.getActive) ?? []
+  const branchId = (sessionData as any)?.branchId
+  const branchServicesRaw = useQuery(
+    (api as any).admin.getBranchServicesPublic,
+    branchId ? { branchId } : "skip"
+  ) ?? []
+  const globalServices = useQuery(api.services.getActive) ?? []
+  const branchServices = branchServicesRaw.length > 0 ? branchServicesRaw : globalServices
 
   const dbServices = branchServices.map((s: any) => ({
     _id: s._id,
     code: s.code,
     name: s.name,
-    basePrice: s.pricingPerKg ?? s.price ?? s.basePrice ?? 50,
+    basePrice: s.price ?? s.pricingPerKg ?? s.basePrice ?? 50,
     pricingType: s.pricingType ?? "per_load",
     imageUrl: s.imageUrl,
     isActive: s.isActive,
@@ -171,7 +176,6 @@ export function NewOrderContent() {
     }
   }, [])
 
-  // Default to first service once loaded
   useEffect(() => {
     if (dbServices.length > 0 && !serviceType) setServiceType(dbServices[0].code)
   }, [dbServices, serviceType])
@@ -262,7 +266,7 @@ export function NewOrderContent() {
 
   const calculatePrice = () => {
     if (!selectedService) return { basePrice: 0, subtotal: 0, total: 0, totalPrice: 0 }
-    const loads = Math.ceil(weight / 8)
+    const loads = Math.ceil((weight + (extraWashLoads + extraDryLoads) * 8) / 8)
     const basePrice = loads * selectedService.basePrice
     const total = Math.round(basePrice * 100) / 100
     return { basePrice: total, subtotal: total, total, totalPrice: total }
@@ -456,7 +460,7 @@ export function NewOrderContent() {
           <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8'>
             <h2 className='text-xl sm:text-2xl font-bold text-foreground mb-2'>New Customer</h2>
             <p className='text-sm sm:text-base text-muted-foreground mb-4 sm:mb-6'>
-Create profile for order processing.
+              Create profile for order processing.
             </p>
             <div className='mb-4'>
               <label className='text-xs font-medium text-muted-foreground mb-2 block'>MOBILE NUMBER</label>
@@ -626,38 +630,6 @@ Create profile for order processing.
                   <button onClick={() => setWeight(weight + 5)} className='px-3 sm:px-4 py-2 bg-muted rounded-lg text-xs sm:text-sm hover:bg-muted/80'>+ 5kg</button>
                   <button onClick={() => setWeight(20)} className='px-3 sm:px-4 py-2 bg-muted rounded-lg text-xs sm:text-sm hover:bg-muted/80'>Max</button>
                 </div>
-
-              {/* Extra Loads */}
-              {serviceType && (
-                <div className='mt-4 p-4 bg-muted/50 rounded-xl border border-border'>
-                  <p className='text-xs font-semibold text-muted-foreground mb-3'>ADDITIONAL LOADS (attendant override)</p>
-                  <div className='grid grid-cols-2 gap-3'>
-                    {(serviceType === 'wash_and_dry' || serviceType === 'wash_only') && (
-                      <div className='flex items-center justify-between bg-card rounded-lg px-3 py-2 border border-border'>
-                        <span className='text-xs font-medium text-foreground'>Extra Wash</span>
-                        <div className='flex items-center gap-2'>
-                          <button onClick={() => setExtraWashLoads(Math.max(0, extraWashLoads - 1))} className='w-6 h-6 rounded bg-muted flex items-center justify-center text-sm font-bold hover:bg-muted/80'>−</button>
-                          <span className='text-sm font-bold w-4 text-center'>{extraWashLoads}</span>
-                          <button onClick={() => setExtraWashLoads(extraWashLoads + 1)} className='w-6 h-6 rounded bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold hover:bg-primary/90'>+</button>
-                        </div>
-                      </div>
-                    )}
-                    {(serviceType === 'wash_and_dry' || serviceType === 'dry_only') && (
-                      <div className='flex items-center justify-between bg-card rounded-lg px-3 py-2 border border-border'>
-                        <span className='text-xs font-medium text-foreground'>Extra Dry</span>
-                        <div className='flex items-center gap-2'>
-                          <button onClick={() => setExtraDryLoads(Math.max(0, extraDryLoads - 1))} className='w-6 h-6 rounded bg-muted flex items-center justify-center text-sm font-bold hover:bg-muted/80'>−</button>
-                          <span className='text-sm font-bold w-4 text-center'>{extraDryLoads}</span>
-                          <button onClick={() => setExtraDryLoads(extraDryLoads + 1)} className='w-6 h-6 rounded bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold hover:bg-primary/90'>+</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {(extraWashLoads > 0 || extraDryLoads > 0) && (
-                    <p className='text-xs text-primary mt-2'>+{extraWashLoads + extraDryLoads} extra load(s) added to price</p>
-                  )}
-                </div>
-              )}
               </div>
 
               {/* 3. Item Count */}
@@ -745,53 +717,86 @@ Create profile for order processing.
               </div>
             </div>
 
-            {/* Right - Order Summary */}
-            <div className='flex flex-col lg:flex-row gap-4 sm:gap-6 items-start'>
-              <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 fixed top-24 right-6 w-[20rem]'>
-                <h3 className='font-semibold text-foreground mb-4 text-sm sm:text-base'>Order Summary</h3>
-                <div className='space-y-3 pb-4 border-b border-border'>
-                  <div className='flex justify-between items-start gap-2'>
-                    <span className='text-foreground text-sm sm:text-base truncate'>
-                      {selectedService?.name || services.find((s) => s.id === serviceType)?.name || "No service selected"}
-                    </span>
-                    <span className='font-semibold text-foreground text-sm sm:text-base flex-shrink-0'>₵{(pricing?.totalPrice || 0).toFixed(2)}</span>
+            {/* Right - Order Summary (fixed sidebar) */}
+            <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 fixed top-24 right-6 w-[20rem]'>
+              <h3 className='font-semibold text-foreground mb-4 text-sm sm:text-base'>Order Summary</h3>
+
+              {/* Extra Loads Controls */}
+              {serviceType && (
+                <div className='mb-4 p-3 bg-muted/50 rounded-xl border border-border'>
+                  <p className='text-xs font-semibold text-muted-foreground mb-2'>EXTRA LOADS</p>
+                  <div className='space-y-2'>
+                    {(serviceType === 'wash_and_dry' || serviceType === 'wash_only') && (
+                      <div className='flex items-center justify-between'>
+                        <span className='text-xs text-foreground'>Extra Wash</span>
+                        <div className='flex items-center gap-1'>
+                          <button onClick={() => setExtraWashLoads(Math.max(0, extraWashLoads - 1))} className='w-5 h-5 rounded bg-muted flex items-center justify-center text-xs font-bold hover:bg-muted/80'>−</button>
+                          <span className='text-xs font-bold w-4 text-center'>{extraWashLoads}</span>
+                          <button onClick={() => setExtraWashLoads(extraWashLoads + 1)} className='w-5 h-5 rounded bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold'>+</button>
+                        </div>
+                      </div>
+                    )}
+                    {(serviceType === 'wash_and_dry' || serviceType === 'dry_only') && (
+                      <div className='flex items-center justify-between'>
+                        <span className='text-xs text-foreground'>Extra Dry</span>
+                        <div className='flex items-center gap-1'>
+                          <button onClick={() => setExtraDryLoads(Math.max(0, extraDryLoads - 1))} className='w-5 h-5 rounded bg-muted flex items-center justify-center text-xs font-bold hover:bg-muted/80'>−</button>
+                          <span className='text-xs font-bold w-4 text-center'>{extraDryLoads}</span>
+                          <button onClick={() => setExtraDryLoads(extraDryLoads + 1)} className='w-5 h-5 rounded bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold'>+</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {selectedService && (
-                    <div className='text-xs sm:text-sm text-muted-foreground pl-2'>
-                      {Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedService.basePrice.toFixed(2)}
-                    </div>
-                  )}
-                  {orderNotes.includes("Rush Service") && (
-                    <div className='flex justify-between'>
-                      <span className='text-foreground flex items-center gap-1 text-sm sm:text-base'>Rush Fee <Clock className='w-3 h-3 sm:w-4 sm:h-4' /></span>
-                      <span className='text-foreground text-sm sm:text-base'>₵{rushFee.toFixed(2)}</span>
-                    </div>
-                  )}
                 </div>
-                {rushFee > 0 && (
-                  <div className='py-4 border-b border-border'>
-                    <div className='flex justify-between text-xs sm:text-sm'>
-                      <span className='text-muted-foreground'>Service Subtotal</span>
-                      <span className='text-foreground'>₵{(pricing?.subtotal || 0).toFixed(2)}</span>
-                    </div>
-                    <div className='flex justify-between text-xs sm:text-sm mt-1'>
-                      <span className='text-muted-foreground'>Rush Fee</span>
-                      <span className='text-foreground'>₵{rushFee.toFixed(2)}</span>
-                    </div>
+              )}
+
+              <div className='space-y-3 pb-4 border-b border-border'>
+                <div className='flex justify-between items-start gap-2'>
+                  <span className='text-foreground text-sm sm:text-base truncate'>
+                    {selectedService?.name || services.find((s) => s.id === serviceType)?.name || "No service selected"}
+                  </span>
+                  <span className='font-semibold text-foreground text-sm sm:text-base flex-shrink-0'>₵{(pricing?.totalPrice || 0).toFixed(2)}</span>
+                </div>
+                {selectedService && (
+                  <div className='text-xs sm:text-sm text-muted-foreground pl-2'>
+                    {Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedService.basePrice.toFixed(2)}
+                    {(extraWashLoads > 0 || extraDryLoads > 0) && (
+                      <span className='block text-primary'>
+                        +{extraWashLoads + extraDryLoads} extra load(s) × ₵{selectedService.basePrice.toFixed(2)}
+                      </span>
+                    )}
                   </div>
                 )}
-                <div className='flex justify-between items-center py-4'>
-                  <span className='font-medium text-foreground text-sm sm:text-base'>Total</span>
-                  <span className='text-2xl sm:text-3xl font-bold text-primary'>₵{finalTotal.toFixed(2)}</span>
-                </div>
-                <Button
-                  onClick={handleProceedToPayment}
-                  disabled={weight < 0.1 || itemCount < 1 || !bagCardNumber.trim()}
-                  className='w-full h-11 sm:h-12 bg-primary text-primary-foreground rounded-xl font-semibold mb-3 text-sm sm:text-base disabled:opacity-50 disabled:pointer-events-none'
-                >
-                  Proceed to Payment <ArrowRight className='w-4 h-4 ml-2' />
-                </Button>
+                {orderNotes.includes("Rush Service") && (
+                  <div className='flex justify-between'>
+                    <span className='text-foreground flex items-center gap-1 text-sm sm:text-base'>Rush Fee <Clock className='w-3 h-3 sm:w-4 sm:h-4' /></span>
+                    <span className='text-foreground text-sm sm:text-base'>₵{rushFee.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
+              {rushFee > 0 && (
+                <div className='py-4 border-b border-border'>
+                  <div className='flex justify-between text-xs sm:text-sm'>
+                    <span className='text-muted-foreground'>Service Subtotal</span>
+                    <span className='text-foreground'>₵{(pricing?.subtotal || 0).toFixed(2)}</span>
+                  </div>
+                  <div className='flex justify-between text-xs sm:text-sm mt-1'>
+                    <span className='text-muted-foreground'>Rush Fee</span>
+                    <span className='text-foreground'>₵{rushFee.toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+              <div className='flex justify-between items-center py-4'>
+                <span className='font-medium text-foreground text-sm sm:text-base'>Total</span>
+                <span className='text-2xl sm:text-3xl font-bold text-primary'>₵{finalTotal.toFixed(2)}</span>
+              </div>
+              <Button
+                onClick={handleProceedToPayment}
+                disabled={weight < 0.1 || itemCount < 1 || !bagCardNumber.trim()}
+                className='w-full h-11 sm:h-12 bg-primary text-primary-foreground rounded-xl font-semibold mb-3 text-sm sm:text-base disabled:opacity-50 disabled:pointer-events-none'
+              >
+                Proceed to Payment <ArrowRight className='w-4 h-4 ml-2' />
+              </Button>
             </div>
           </div>
         </div>

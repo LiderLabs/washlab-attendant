@@ -38,7 +38,7 @@ function OrderCompleteContent() {
   const waLinkRef = useRef<string | null>(null); // store WhatsApp link for reuse
 
   const amountPaid = amountPaidParam > 0 ? amountPaidParam : (order?.finalPrice ?? 0);
-  const orderNumber = order?.orderNumber || orderIdParam || '—';
+  const orderNumber = order?.orderNumber || '—';
   const isMobileMoneyPending = paymentMethod === 'mobile_money';
 
   useEffect(() => {
@@ -61,43 +61,17 @@ function OrderCompleteContent() {
 
   const handleWhatsAppReceipt = () => {
     const customerPhone = order?.customer?.phoneNumber || order?.customerPhoneNumber || '';
-    if (!customerPhone) {
-      toast.error('Customer not on WhatsApp');
-      return;
-    }
-
-    // Reuse existing link if already generated
-    if (waLinkRef.current) {
-      window.location.href = waLinkRef.current;
-      return;
-    }
-
-    let digits = customerPhone.replace(/\D/g, '');
-    if (digits.startsWith('00')) digits = digits.slice(2);
-    if (digits.startsWith('2330')) digits = '233' + digits.slice(4);
-    if (digits.startsWith('0')) digits = '233' + digits.slice(1);
-    if (digits.length === 9) digits = '233' + digits;
-
-    if (digits.length !== 12) {
-      toast.error('Customer not on WhatsApp');
-      return;
-    }
-
-    const message = encodeURIComponent(
-      `*WashLab Receipt*\n\n` +
-        `📋 Order: ${orderNumber}\n` +
-        (order?.bagCardNumber ? `👜 Bag #: ${order.bagCardNumber}\n` : '') +
-        `👤 Customer: ${order?.customer?.name || 'N/A'}\n` +
-        `📱 Phone: ${customerPhone}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━\n` +
-        `💰 Amount: GH₵${amountPaid.toFixed(2)}\n` +
-        `💳 Payment: ${paymentMethod === 'mobile_money' ? 'Mobile Money' : 'Cash'}\n` +
-        `Processed by: ${activeStaff?.name || 'Staff'}\n\n` +
-        `Thank you for choosing WashLab! 🧺`
+    if (!customerPhone) { toast.error('No phone number on file'); return; }
+    const phone = customerPhone.replace(/\D/g, '');
+    const orderNum = order?.orderNumber || '—';
+    const name = order?.customer?.name || 'Customer';
+    const price = order?.finalPrice?.toFixed(2) || '0.00';
+    const msg = encodeURIComponent(
+      'Your laundry order #' + orderNum + ' is ready for pickup.' +
+      ' Total: GHS ' + price + '. Please bring your bag card. Thank you - WashLab'
     );
-
-    waLinkRef.current = `https://wa.me/${digits}?text=${message}`;
-    window.location.href = waLinkRef.current;
+    window.open('https://wa.me/' + phone + '?text=' + msg, '_blank');
+    toast.success('WhatsApp receipt sent!');
   };
 
   const getPaymentMethodLabel = (method: string) => {

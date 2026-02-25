@@ -88,7 +88,7 @@ function PaymentContent() {
   const applyVoucherMutation = useMutation((api as any).vouchers.applyToOrder);
   const voucherValidation = useQuery(
     (api as any).vouchers.validate,
-    voucherCode.length >= 3 ? { code: voucherCode.toUpperCase(), orderTotal: 1, branchId: "skip" as any } : "skip"
+    voucherCode.length >= 6 ? { code: voucherCode.toUpperCase(), orderTotal: 1 } : "skip"
   );
   const orderIdParam = searchParams?.get("orderId");
   const returnTo = searchParams?.get("return");
