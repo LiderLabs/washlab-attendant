@@ -238,7 +238,7 @@ export function NewOrderContent() {
         customerPhone: foundCustomer.phoneNumber || formatPhoneForBackend(phone),
         customerEmail: foundCustomer.email || newEmail,
         serviceType: serviceType as "wash_only" | "wash_and_dry" | "dry_only",
-        weight: weight + (extraWashLoads + extraDryLoads) * 8,
+        weight: weight,
         itemCount: itemCount || 1,
         bagCardNumber,
         notes: [customNote, ...orderNotes, extraWashLoads > 0 ? extraWashLoads + ' extra wash load(s)' : '', extraDryLoads > 0 ? extraDryLoads + ' extra dry load(s)' : ''].filter(Boolean).join(', ') || undefined,
@@ -264,15 +264,22 @@ export function NewOrderContent() {
 
   const selectedService = dbServices.find((s) => s.code === serviceType)
 
+  const washService = dbServices.find((s) => s.code === "wash_only")
+  const dryService = dbServices.find((s) => s.code === "dry_only")
+  const washPrice = washService?.basePrice ?? selectedService?.basePrice ?? 0
+  const dryPrice = dryService?.basePrice ?? selectedService?.basePrice ?? 0
+
   const calculatePrice = () => {
     if (!selectedService) return { basePrice: 0, subtotal: 0, total: 0, totalPrice: 0 }
-    const loads = Math.ceil((weight + (extraWashLoads + extraDryLoads) * 8) / 8)
+    const loads = Math.ceil(weight / 8)
     const basePrice = loads * selectedService.basePrice
-    const total = Math.round(basePrice * 100) / 100
+    const extraWashCost = extraWashLoads * washPrice
+    const extraDryCost = extraDryLoads * dryPrice
+    const total = Math.round((basePrice + extraWashCost + extraDryCost) * 100) / 100
     return { basePrice: total, subtotal: total, total, totalPrice: total }
   }
 
-  const pricing = calculatePrice()
+    const pricing = calculatePrice()
   const rushFee = orderNotes.includes("Rush Service") ? 5 : 0
   const finalTotal = pricing.total + rushFee
 
@@ -550,7 +557,7 @@ export function NewOrderContent() {
           </button>
 
           <div className='flex flex-col lg:flex-row gap-4 sm:gap-6'>
-            <div className='flex-1 space-y-4 sm:space-y-6 min-w-0 pr-[22rem]'>
+            <div className='flex-1 space-y-4 sm:space-y-6 min-w-0'>
 
               <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0'>
                 <div className='min-w-0 flex-1'>
