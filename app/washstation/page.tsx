@@ -22,7 +22,6 @@ export default function BranchEntryPage() {
   const router = useRouter();
   const [branchCode, setBranchCode] = useState('');
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
-  const activeBranches = getActiveBranches();
 
   // Redirect to dashboard if already logged in
   useEffect(() => {
@@ -110,14 +109,12 @@ export default function BranchEntryPage() {
                 variant="outline"
                 className="w-full h-12 text-base rounded-xl gap-2"
               >
-                Skip to Dashboard
                 <ArrowRight className="w-4 h-4" />
               </Button>
             </div>
 
             <div className="mt-6 pt-6 border-t border-border">
               <p className="text-xs text-center text-muted-foreground">
-                Available codes: {activeBranches.map(b => `${b.code} (${b.name})`).join(', ')}
               </p>
             </div>
           </div>

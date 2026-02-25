@@ -14,7 +14,7 @@ import {
   CreditCard,
   // Activity,
   Bell,
-} from 'lucide-react';
+  FileText} from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -30,7 +30,9 @@ interface MobileSidebarProps {
   branchName?: string;
 }
 
-export function MobileSidebar({ open, onOpenChange, branchName = 'Central Branch' }: MobileSidebarProps) {
+export function MobileSidebar({ open, onOpenChange, branchName }: MobileSidebarProps) {
+  const { sessionData } = useStationSession();
+  const resolvedBranchName = branchName || (sessionData as any)?.branchName || sessionData?.branchCode || 'Branch';
   const pathname = usePathname();
   const { stationToken } = useStationSession();
   
@@ -48,6 +50,7 @@ export function MobileSidebar({ open, onOpenChange, branchName = 'Central Branch
     { id: 'transactions',  label: 'Transactions',  icon: CreditCard,      path: '/washstation/transactions' },
     // { id: 'activity',      label: 'Activity Log',  icon: Activity,        path: '/washstation/activity' },
     { id: 'inventory',     label: 'Inventory',     icon: Package,         path: '/washstation/inventory' },
+    { id: 'reports',       label: 'Daily Report',  icon: FileText,        path: '/washstation/reports' },
   ];
 
   const isActive = (path: string) =>
@@ -123,11 +126,11 @@ export function MobileSidebar({ open, onOpenChange, branchName = 'Central Branch
             className="flex items-center gap-3 hover:bg-muted/50 p-2 -m-2 rounded-xl transition-colors"
           >
             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold border-2 border-primary">
-              {branchName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+              {resolvedBranchName.split(' ').map(n => n[0]).join('').slice(0, 2)}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs text-muted-foreground">Branch</p>
-              <p className="font-medium text-foreground text-sm truncate">{branchName}</p>
+              <p className="font-medium text-foreground text-sm truncate">{resolvedBranchName}</p>
             </div>
           </Link>
         </div>
