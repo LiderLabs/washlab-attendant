@@ -60,7 +60,7 @@ function OrderCompleteContent() {
   };
 
   const handleWhatsAppReceipt = () => {
-    const customerPhone = order?.customer?.phoneNumber || '';
+    const customerPhone = order?.customer?.phoneNumber || order?.customerPhoneNumber || '';
     if (!customerPhone) {
       toast.error('Customer not on WhatsApp');
       return;

@@ -59,6 +59,12 @@ export function NewOrderContent() {
     imageUrl: s.imageUrl,
     isActive: s.isActive,
   }))
+  const serviceOrder = ['wash_and_dry', 'dry_only', 'wash_only'];
+  dbServices.sort((a: any, b: any) => {
+    const ai = serviceOrder.indexOf(a.code) === -1 ? 99 : serviceOrder.indexOf(a.code);
+    const bi = serviceOrder.indexOf(b.code) === -1 ? 99 : serviceOrder.indexOf(b.code);
+    return ai - bi;
+  });
 
   const formatPhoneForBackend = (phone: string): string => {
     const clean = phone.replace(/\D/g, '')
