@@ -1,17 +1,13 @@
-'use client';
+﻿'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import WashStationSidebar from '@/components/washstation/WashStationSidebar';
 import { useStationSession } from '@/hooks/useStationSession';
 import { useStationOrder } from '@/hooks/useStationOrders';
 import { Id } from '@jordan6699/washlab-backend/dataModel';
-import {
-  CheckCircle,
-  Plus,
-  MessageSquare,
-} from 'lucide-react';
+import { CheckCircle, Plus, MessageSquare, LayoutDashboard, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 function formatServiceType(code: string | undefined): string {
@@ -23,6 +19,7 @@ function OrderCompleteContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { stationToken, isSessionValid } = useStationSession();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const orderIdParam = searchParams?.get('orderId');
   const paymentMethod = searchParams?.get('paymentMethod') || 'cash';
@@ -34,54 +31,41 @@ function OrderCompleteContent() {
     orderIdParam ? (orderIdParam as Id<'orders'>) : null
   );
 
-  const [activeStaff, setActiveStaff] = useState<{ name: string; role: string } | null>(null);
-  const waLinkRef = useRef<string | null>(null); // store WhatsApp link for reuse
-
   const amountPaid = amountPaidParam > 0 ? amountPaidParam : (order?.finalPrice ?? 0);
-  const orderNumber = order?.orderNumber || '—';
+  const orderNumber = order?.orderNumber ?? '';
   const isMobileMoneyPending = paymentMethod === 'mobile_money';
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const staffData = sessionStorage.getItem('washlab_active_staff');
-    if (staffData) {
-      try {
-        const parsed = JSON.parse(staffData);
-        const staff = Array.isArray(parsed) ? parsed[0] : parsed;
-        setActiveStaff({ name: staff.name || 'Staff', role: staff.role || 'Attendant' });
-      } catch {
-        // ignore
-      }
-    }
-  }, []);
-
-  const handleStartNewOrder = () => {
-    router.push('/washstation/new-order');
+  const getPaymentMethodLabel = (method: string) => {
+    const labels: Record<string, string> = {
+      cash: 'Cash', card: 'Credit Card',
+      mobile_money: 'Mobile Money', momo: 'Mobile Money',
+    };
+    return labels[method] || 'Card';
   };
 
   const handleWhatsAppReceipt = () => {
     const customerPhone = order?.customer?.phoneNumber || order?.customerPhoneNumber || '';
     if (!customerPhone) { toast.error('No phone number on file'); return; }
     const phone = customerPhone.replace(/\D/g, '');
-    const orderNum = order?.orderNumber || '—';
+    if (!phone) { toast.error('Invalid phone number'); return; }
     const name = order?.customer?.name || 'Customer';
-    const price = order?.finalPrice?.toFixed(2) || '0.00';
-    const msg = encodeURIComponent(
-      'Your laundry order #' + orderNum + ' is ready for pickup.' +
-      ' Total: GHS ' + price + '. Please bring your bag card. Thank you - WashLab'
-    );
-    window.open('https://wa.me/' + phone + '?text=' + msg, '_blank');
-    toast.success('WhatsApp receipt sent!');
-  };
-
-  const getPaymentMethodLabel = (method: string) => {
-    const labels: Record<string, string> = {
-      cash: 'Cash',
-      card: 'Credit Card',
-      mobile_money: 'Mobile Money',
-      momo: 'Mobile Money',
-    };
-    return labels[method] || 'Card';
+    const num = order?.orderNumber || orderIdParam || '';
+    const price = (order?.finalPrice ?? amountPaid).toFixed(2);
+    const service = formatServiceType(order?.serviceType);
+    const weight = order?.estimatedWeight ?? order?.actualWeight ?? 0;
+    const serviceDesc = weight > 0 ? `${service} (${weight.toFixed(1)}kg)` : service;
+    const msg =
+      `🧺 WashLab Receipt\n\n` +
+      `Hi ${name},\n` +
+      `Thank you for using WashLab!\n\n` +
+      `Order: *#${num}*\n` +
+      `Service: ${serviceDesc}\n` +
+      `Amount Paid: *GHS ${price}*\n` +
+      `Payment: ${getPaymentMethodLabel(paymentMethod)}\n\n` +
+      `Please bring your bag card when collecting your laundry.\n` +
+      `We appreciate your business! 🙏`;
+    window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(msg), '_blank');
+    toast.success('WhatsApp receipt opened!');
   };
 
   const orderSummaryLines: { name: string; notes?: string; quantity: number; price: number }[] = [];
@@ -89,26 +73,13 @@ function OrderCompleteContent() {
     const serviceLabel = formatServiceType(order.serviceType);
     const weight = order.estimatedWeight ?? order.actualWeight ?? 0;
     const serviceName = weight > 0 ? `${serviceLabel} (${weight.toFixed(1)} kg)` : serviceLabel;
-    orderSummaryLines.push({
-      name: serviceName,
-      notes: order.notes || undefined,
-      quantity: 1,
-      price: order.basePrice ?? order.finalPrice ?? 0,
-    });
+    orderSummaryLines.push({ name: serviceName, notes: order.notes || undefined, quantity: 1, price: order.basePrice ?? order.finalPrice ?? 0 });
     if (order.deliveryFee && order.deliveryFee > 0) {
-      orderSummaryLines.push({
-        name: 'Delivery',
-        quantity: 1,
-        price: order.deliveryFee,
-      });
+      orderSummaryLines.push({ name: 'Delivery', quantity: 1, price: order.deliveryFee });
     }
   }
   if (orderSummaryLines.length === 0) {
-    orderSummaryLines.push({
-      name: 'Order',
-      quantity: 1,
-      price: amountPaid,
-    });
+    orderSummaryLines.push({ name: 'Order', quantity: 1, price: amountPaid });
   }
 
   if (!isSessionValid) {
@@ -119,20 +90,10 @@ function OrderCompleteContent() {
     );
   }
 
-  if (orderIdParam && isLoading && !order) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading order...</p>
-      </div>
-    );
-  }
-
   return (
     <div className="flex min-h-screen bg-background">
-      <WashStationSidebar collapsed={false} onToggle={() => {}} />
-
-      <main className="flex-1 ml-64">
-        {/* Header */}
+      <WashStationSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(c => !c)} />
+      <main className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
         <header className="bg-card border-b border-border px-6 py-4 flex items-center gap-3">
           <CheckCircle className="w-5 h-5 text-success" />
           <span className="font-medium text-foreground">Order Completion</span>
@@ -144,38 +105,38 @@ function OrderCompleteContent() {
             <CheckCircle className="w-12 h-12 text-success" />
           </div>
 
-          <h1 className="text-3xl font-bold text-foreground mb-2">
-            Order #{orderNumber} Confirmed
-          </h1>
-          <p className="text-muted-foreground mb-2">
+          {/* Title - show spinner until order loads */}
+          {isLoading && !order ? (
+            <div className="flex items-center gap-2 mb-2">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              <span className="text-muted-foreground">Loading order...</span>
+            </div>
+          ) : (
+            <h1 className="text-3xl font-bold text-foreground mb-2">
+              Order #{orderNumber} Confirmed
+            </h1>
+          )}
+
+          <p className="text-muted-foreground mb-8 text-center max-w-md">
             {isMobileMoneyPending ? (
-              <>
-                Payment prompt sent for <span className="font-semibold">₵{amountPaid.toFixed(2)}</span> via{' '}
-                {getPaymentMethodLabel(paymentMethod)}. Order will be marked Paid when the customer completes payment.
-              </>
+              <>Payment prompt sent for <span className="font-semibold">₵{amountPaid.toFixed(2)}</span> via {getPaymentMethodLabel(paymentMethod)}. Order will be marked Paid when the customer completes payment.</>
             ) : (
-              <>
-                Payment of <span className="font-semibold">₵{amountPaid.toFixed(2)}</span> received via{' '}
-                {getPaymentMethodLabel(paymentMethod)}.
-                {changeDue > 0 && <span className="block mt-1 text-sm">Change due: ₵{changeDue.toFixed(2)}</span>}
-              </>
+              <>Payment of <span className="font-semibold">₵{amountPaid.toFixed(2)}</span> received via {getPaymentMethodLabel(paymentMethod)}.{changeDue > 0 && <span className="block mt-1 text-sm">Change due: ₵{changeDue.toFixed(2)}</span>}</>
             )}
           </p>
 
           {/* Order Summary Card */}
-          <div className="w-full max-w-md bg-card border border-border rounded-2xl overflow-hidden mb-8">
+          <div className="w-full max-w-md bg-card border border-border rounded-2xl overflow-hidden mb-6">
             <div className="p-5 border-b border-border flex items-center justify-between">
               <h3 className="font-semibold text-foreground">ORDER SUMMARY</h3>
-              <span className="text-sm text-muted-foreground">#{orderNumber} 🖨</span>
+              {orderNumber && <span className="text-sm text-muted-foreground font-medium">#{orderNumber}</span>}
             </div>
             <div className="p-5 space-y-4">
               {orderSummaryLines.map((item, index) => (
                 <div key={index} className="flex justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="w-6 h-6 rounded bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground">
-                        {item.quantity}
-                      </span>
+                      <span className="w-6 h-6 rounded bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground">{item.quantity}</span>
                       <span className="font-medium text-foreground">{item.name}</span>
                     </div>
                     {item.notes && <p className="text-sm text-muted-foreground ml-8">{item.notes}</p>}
@@ -190,10 +151,10 @@ function OrderCompleteContent() {
             </div>
           </div>
 
-          {/* WhatsApp Receipt Button */}
+          {/* WhatsApp Receipt */}
           <Button
             onClick={handleWhatsAppReceipt}
-            className="w-full max-w-md h-14 bg-[#25D366] hover:bg-[#20BA5A] text-white rounded-xl text-lg font-semibold mb-4"
+            className="w-full max-w-md h-14 bg-[#25D366] hover:bg-[#20BA5A] text-white rounded-xl text-lg font-semibold mb-3"
           >
             <MessageSquare className="w-5 h-5 mr-2" />
             Send Receipt via WhatsApp
@@ -201,11 +162,21 @@ function OrderCompleteContent() {
 
           {/* Start New Order */}
           <Button
-            onClick={handleStartNewOrder}
-            className="w-full max-w-md h-14 bg-primary text-primary-foreground rounded-xl text-lg font-semibold"
+            onClick={() => router.push('/washstation/new-order')}
+            className="w-full max-w-md h-14 bg-primary text-primary-foreground rounded-xl text-lg font-semibold mb-3"
           >
             <Plus className="w-5 h-5 mr-2" />
             Start New Order
+          </Button>
+
+          {/* Back to Dashboard */}
+          <Button
+            onClick={() => router.push('/washstation')}
+            variant="outline"
+            className="w-full max-w-md h-12 rounded-xl text-base font-medium"
+          >
+            <LayoutDashboard className="w-4 h-4 mr-2" />
+            Back to Dashboard
           </Button>
         </div>
       </main>
@@ -215,15 +186,7 @@ function OrderCompleteContent() {
 
 export default function OrderCompletePage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center">
-          <div className="text-center">
-            <p className="text-muted-foreground">Loading...</p>
-          </div>
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>}>
       <OrderCompleteContent />
     </Suspense>
   );

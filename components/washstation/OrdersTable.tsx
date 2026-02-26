@@ -1,35 +1,15 @@
-'use client';
+﻿'use client';
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Id } from '@jordan6699/washlab-backend/dataModel';
-import {
-  Clock,
-  Package,
-  CheckCircle,
-  Truck,
-  Eye,
-  CreditCard,
-  type LucideIcon,
-} from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { Button } from '@/components/ui/button';
+import { Clock, Package, CheckCircle, Truck, type LucideIcon } from 'lucide-react';
 import { useMemo } from 'react';
 import { OrderRowExpander } from './OrderRowExpander';
 
 export type OrderStatus =
-  | 'pending_dropoff'
-  | 'checked_in'
-  | 'sorting'
-  | 'washing'
-  | 'drying'
-  | 'folding'
-  | 'ready'
-  | 'completed'
-  | 'cancelled'
-  | 'pending'
-  | 'in_progress'
-  | 'ready_for_pickup'
-  | 'delivered';
+  | 'pending_dropoff' | 'checked_in' | 'sorting' | 'washing' | 'drying'
+  | 'folding' | 'ready' | 'completed' | 'cancelled' | 'pending'
+  | 'in_progress' | 'ready_for_pickup' | 'delivered';
 
 interface OrdersTableProps {
   orders: Order[];
@@ -53,16 +33,6 @@ interface Order {
   customer?: { name: string; phoneNumber: string; email?: string } | null;
 }
 
-function getPaymentMethodLabel(method: string | undefined): string {
-  if (!method) return '—';
-  const labels: Record<string, string> = {
-    cash: 'Cash',
-    mobile_money: 'Mobile Money',
-    card: 'Card',
-  };
-  return labels[method] || method;
-}
-
 const getStatusBadge = (status: OrderStatus) => {
   const statusConfig: Record<string, { label: string; className: string; icon: LucideIcon }> = {
     pending_dropoff: { label: 'New Order', className: 'bg-primary/10 text-primary', icon: Clock },
@@ -82,37 +52,27 @@ const getStatusBadge = (status: OrderStatus) => {
   return statusConfig[status] || statusConfig.pending_dropoff;
 };
 
-// NEW: cleanly format service type
 function formatServiceType(serviceType?: string): string {
   if (!serviceType) return 'Wash & Fold';
   const s = serviceType.toLowerCase();
   if (s.includes('wash') && s.includes('dry')) return 'Wash & Dry';
   if (s.includes('wash')) return 'Wash Only';
   if (s.includes('dry')) return 'Dry Only';
-  // fallback
   return serviceType.replace(/_/g, ' ').replace(/\band\b/gi, '&').replace(/\s+&\s+/g, ' & ');
 }
 
-export function OrdersTable({ orders, stationToken, onOrderClick, onCollectPayment }: OrdersTableProps) {
-  if (orders.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">No orders found</p>
-      </div>
-    );
-  }
-
+export function OrdersTable({ orders, stationToken, onCollectPayment }: OrdersTableProps) {
   const tableRows = useMemo(
     () =>
       orders.map((order) => {
-        const status = getStatusBadge(order.status);
-        const StatusIcon = status.icon;
         const weight = order.actualWeight || order.estimatedWeight || 0;
         const serviceType = formatServiceType(order.serviceType);
         const unpaid = order.paymentStatus !== 'paid';
-
         return (
           <TableRow key={order._id} className="hover:bg-muted/30 transition-colors">
+            <TableCell className="whitespace-nowrap" onClick={e => e.stopPropagation()}>
+              <OrderRowExpander order={order} stationToken={stationToken ?? null} unpaid={unpaid} onCollectPayment={() => onCollectPayment?.(order._id)} />
+            </TableCell>
             <TableCell className="whitespace-nowrap font-semibold text-foreground">{order.orderNumber}</TableCell>
             <TableCell className="whitespace-nowrap">
               <div className="flex items-center gap-3">
@@ -123,30 +83,25 @@ export function OrdersTable({ orders, stationToken, onOrderClick, onCollectPayme
               </div>
             </TableCell>
             <TableCell className="text-muted-foreground whitespace-nowrap">{serviceType} ({weight.toFixed(1)}kg)</TableCell>
-            <TableCell className="whitespace-nowrap">
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${status.className}`}>
-                <StatusIcon className="w-3.5 h-3.5" />
-                {status.label}
-              </span>
-            </TableCell>
-            <TableCell className="whitespace-nowrap" onClick={e => e.stopPropagation()}>
-              <OrderRowExpander order={order} stationToken={stationToken ?? null} unpaid={unpaid} onCollectPayment={() => onCollectPayment?.(order._id)} />
-            </TableCell>
           </TableRow>
         );
       }),
-    [orders, onCollectPayment, onOrderClick]
+    [orders, onCollectPayment]
   );
+
+  if (orders.length === 0) {
+    return <div className="text-center py-12"><p className="text-muted-foreground">No orders found</p></div>;
+  }
 
   return (
     <div className="overflow-x-auto overflow-y-auto rounded-xl border border-border bg-card max-h-[70vh]">
-      <Table className="w-full">{/* Ensure table is wider than container for horizontal scroll */}
+      <Table className="w-full">
         <TableHeader>
           <TableRow className="bg-muted/50">
+            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Actions</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Order ID</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Customer</TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Status</TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Action</TableHead>
+            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Services</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>{tableRows}</TableBody>
