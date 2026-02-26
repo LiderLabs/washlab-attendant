@@ -15,13 +15,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 
 const statusOptions: {
-  value: OrderStatus | "all" | "processing"
+  value: OrderStatus | "all" | "processing" | "cancelled"
   label: string
 }[] = [
   { value: "all", label: "All" },
   { value: "processing", label: "Processing" },
   { value: "ready", label: "Ready" },
   { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
 ]
 
 export default function OrdersPage() {
@@ -69,7 +70,7 @@ export default function OrdersPage() {
         ...processingStatuses,
         ...legacyProcessingStatuses,
       ]
-      if (!allProcessingStatuses.includes(order.status)) {
+      if (!allProcessingStatuses.includes(order.status) && order.status !== "cancelled") {
         return false // Hide online orders that haven't been checked in yet
       }
     }

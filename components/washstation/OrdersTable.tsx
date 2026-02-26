@@ -14,6 +14,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { useMemo } from 'react';
+import { OrderRowExpander } from './OrderRowExpander';
 
 export type OrderStatus =
   | 'pending_dropoff'
@@ -29,6 +30,13 @@ export type OrderStatus =
   | 'in_progress'
   | 'ready_for_pickup'
   | 'delivered';
+
+interface OrdersTableProps {
+  orders: Order[];
+  stationToken?: string | null;
+  onOrderClick?: (orderId: Id<'orders'>) => void;
+  onCollectPayment?: (orderId: Id<'orders'>) => void;
+}
 
 interface Order {
   _id: Id<'orders'>;
@@ -85,13 +93,7 @@ function formatServiceType(serviceType?: string): string {
   return serviceType.replace(/_/g, ' ').replace(/\band\b/gi, '&').replace(/\s+&\s+/g, ' & ');
 }
 
-interface OrdersTableProps {
-  orders: Order[];
-  onOrderClick?: (orderId: Id<'orders'>) => void;
-  onCollectPayment?: (orderId: Id<'orders'>) => void;
-}
-
-export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTableProps) {
+export function OrdersTable({ orders, stationToken, onOrderClick, onCollectPayment }: OrdersTableProps) {
   if (orders.length === 0) {
     return (
       <div className="text-center py-12">
@@ -120,7 +122,6 @@ export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTa
                 <span className="font-medium text-foreground">{order.customer?.name || 'Unknown'}</span>
               </div>
             </TableCell>
-            <TableCell className="text-muted-foreground whitespace-nowrap">{order.orderType === 'walk_in' ? 'Walk-in' : 'Online'}</TableCell>
             <TableCell className="text-muted-foreground whitespace-nowrap">{serviceType} ({weight.toFixed(1)}kg)</TableCell>
             <TableCell className="whitespace-nowrap">
               <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${status.className}`}>
@@ -128,46 +129,8 @@ export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTa
                 {status.label}
               </span>
             </TableCell>
-            <TableCell className="whitespace-nowrap">
-              {unpaid ? (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-warning/10 text-warning">
-                  Pending
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-success/10 text-success">
-                  Paid
-                </span>
-              )}
-            </TableCell>
-            <TableCell className="text-muted-foreground text-sm whitespace-nowrap">{getPaymentMethodLabel(order.paymentMethod)}</TableCell>
-            <TableCell className="text-sm font-medium whitespace-nowrap">{unpaid ? '—' : `₵${order.finalPrice.toFixed(2)}`}</TableCell>
-            <TableCell className="text-muted-foreground text-sm whitespace-nowrap">{formatDistanceToNow(new Date(order.createdAt), { addSuffix: true })}</TableCell>
-            <TableCell className="whitespace-nowrap">
-              <div className="flex items-center gap-2">
-                {unpaid && order.status !== 'cancelled' && (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="bg-success hover:bg-success/90 text-white"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onCollectPayment?.(order._id);
-                    }}
-                  >
-                    <CreditCard className="w-4 h-4 mr-1" />
-                    Pay
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-primary hover:text-primary/80"
-                  onClick={() => onOrderClick?.(order._id)}
-                >
-                  <Eye className="w-4 h-4 mr-1" />
-                  View
-                </Button>
-              </div>
+            <TableCell className="whitespace-nowrap" onClick={e => e.stopPropagation()}>
+              <OrderRowExpander order={order} stationToken={stationToken ?? null} unpaid={unpaid} onCollectPayment={() => onCollectPayment?.(order._id)} />
             </TableCell>
           </TableRow>
         );
@@ -176,19 +139,13 @@ export function OrdersTable({ orders, onOrderClick, onCollectPayment }: OrdersTa
   );
 
   return (
-    <div className="overflow-x-auto overflow-y-auto rounded-xl border border-border bg-card max-h-[400px]">
-      <Table className="min-w-[900px]">{/* Ensure table is wider than container for horizontal scroll */}
+    <div className="overflow-x-auto overflow-y-auto rounded-xl border border-border bg-card max-h-[70vh]">
+      <Table className="w-full">{/* Ensure table is wider than container for horizontal scroll */}
         <TableHeader>
           <TableRow className="bg-muted/50">
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Order ID</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Customer</TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Order Type</TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Service Type</TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Status</TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Payment</TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Payment Method</TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Amount Paid</TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Time</TableHead>
+            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Status</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Action</TableHead>
           </TableRow>
         </TableHeader>

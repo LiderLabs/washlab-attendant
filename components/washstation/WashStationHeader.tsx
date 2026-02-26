@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { Bell, User, Menu, LogOut, Clock, Timer, Users } from 'lucide-react';
+import { Bell, User, Menu, LogOut, Clock, Timer, Users, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeSwitcher } from '@/components/theme-switcher';
 import { Badge } from '@/components/ui/badge';
@@ -49,6 +49,8 @@ const WashStationHeader = ({
   onMenuClick
 }: HeaderProps) => {
   const router = useRouter();
+  const pathname = usePathname();
+  const isNewOrderPage = pathname === '/washstation/new-order';
   const { stationToken, clearSession } = useStationSession();
   const logoutStation = useMutation(api.stations.logoutStation);
   const { toast } = useToast();
@@ -117,6 +119,13 @@ const WashStationHeader = ({
       </div>
       
       <div className="flex items-center gap-2 md:gap-3">
+        {!isNewOrderPage && (
+          <Button onClick={() => router.push('/washstation/new-order')} size="sm" className="h-8 md:h-9 px-3 md:px-4 bg-primary text-primary-foreground rounded-lg font-medium text-xs md:text-sm flex items-center gap-1.5 shadow-sm">
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Start Order</span>
+            <span className="sm:hidden">Order</span>
+          </Button>
+        )}
         {/* Attendance Status Dropdown - shows all active attendants */}
         {activeAttendances.length > 0 ? (
           <DropdownMenu>

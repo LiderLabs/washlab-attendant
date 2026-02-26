@@ -625,7 +625,7 @@ export function NewOrderContent() {
                     <Minus className='w-5 h-5 sm:w-6 sm:h-6' />
                   </button>
                   <div className='flex-1 text-center min-w-0'>
-                    <Input type="number" step={0.1} min={0.5} value={weight} onChange={(e) => setWeight(parseFloat(e.target.value) || 0)} className='text-4xl sm:text-5xl font-bold text-foreground text-center border-0 bg-transparent focus:ring-0' />
+                    <Input type="number" step={0.1} min={0.5} value={weight === 0 ? "" : weight} onChange={(e) => setWeight(parseFloat(e.target.value) || 0)} className='text-4xl sm:text-5xl font-bold text-foreground text-center border-0 bg-transparent focus:ring-0' />
                     <p className='text-xs sm:text-sm text-muted-foreground'>KILOGRAMS</p>
                   </div>
                   <button onClick={() => setWeight(weight + 0.5)} className='w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 flex-shrink-0'>
@@ -650,7 +650,7 @@ export function NewOrderContent() {
                     <Minus className='w-4 h-4 sm:w-5 sm:h-5' />
                   </button>
                   <div className='flex-1 text-center min-w-0'>
-                    <Input type="number" min={0} step={1} value={itemCount} onChange={(e) => setItemCount(parseInt(e.target.value) || 0)} className='text-2xl sm:text-3xl font-bold text-foreground text-center border-0 bg-transparent focus:ring-0' />
+                    <Input type="number" min={0} step={1} value={itemCount === 0 ? "" : itemCount} onChange={(e) => setItemCount(parseInt(e.target.value) || 0)} className='text-2xl sm:text-3xl font-bold text-foreground text-center border-0 bg-transparent focus:ring-0' />
                     <p className='text-xs text-muted-foreground'>PIECES</p>
                   </div>
                   <button onClick={() => setItemCount(itemCount + 1)} className='w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-muted flex items-center justify-center hover:bg-muted/80 flex-shrink-0'>
@@ -671,7 +671,7 @@ export function NewOrderContent() {
                   const taken = new Set(activeBagNumbers)
                   const available: string[] = []
                   let n = 1
-                  while (available.length < 10) {
+                  while (available.length < 5) {
                     const bn = n.toString().padStart(3, "0")
                     if (!taken.has(bn)) available.push(bn)
                     n++
@@ -715,17 +715,11 @@ export function NewOrderContent() {
                     </button>
                   ))}
                 </div>
-                <textarea
-                  value={customNote}
-                  onChange={(e) => setCustomNote(e.target.value)}
-                  placeholder='Add any specific instructions here...'
-                  className='w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted border-0 rounded-xl text-foreground placeholder:text-muted-foreground resize-none h-20 sm:h-24 text-sm sm:text-base'
-                />
               </div>
             </div>
 
             {/* Right - Order Summary (fixed sidebar) */}
-            <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 fixed top-24 right-6 w-[20rem]'>
+            <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 w-full lg:w-80 lg:flex-shrink-0'>
               <h3 className='font-semibold text-foreground mb-4 text-sm sm:text-base'>Order Summary</h3>
 
               {/* Extra Loads Controls */}
