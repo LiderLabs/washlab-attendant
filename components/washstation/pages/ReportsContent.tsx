@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@jordan6699/washlab-backend/api';
-import { WashStationLayout } from '@/components/washstation/WashStationLayout';
 import { useStationSession } from '@/hooks/useStationSession';
 import { ActionVerification } from '@/components/washstation/ActionVerification';
 import { Input } from '@/components/ui/input';
@@ -16,12 +15,13 @@ function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-GB', { d
 function fmt(n: number) { return `GHS ${n.toFixed(2)}`; }
 
 export default function DailyReportPage() {
-  const { stationToken, valid, branchId, branchName } = useStationSession() as any;
-  const isSessionValid = valid;
+  const { stationToken, sessionData, isSessionValid } = useStationSession() as any;
+  const branchId = sessionData?.branchId;
+  const branchName = sessionData?.branchName;
 
   const autoData = useQuery(
     (api as any).dailyReports.getAutoData,
-    branchId ? { branchId, date: today() } : 'skip'
+    branchId ? { branchId, date: today(), stationToken: stationToken || undefined } : 'skip'
   );
   // Always sync system data
   useEffect(() => {
@@ -38,10 +38,7 @@ export default function DailyReportPage() {
     (api as any).dailyReports.getDraft,
     branchId ? { branchId, date: today() } : 'skip'
   );
-  const clockedInStaff = useQuery(
-    (api as any).attendance?.getClockedIn ?? 'skip',
-    branchId ? { branchId } : 'skip'
-  );
+  const clockedInStaff = null;
   // Also try via station token (same as ActionVerification does)
   const activeAttendances = useQuery(
     api.stations.getActiveStationAttendances,
@@ -165,7 +162,7 @@ export default function DailyReportPage() {
   const isSubmitted = existingDraft?.status === 'submitted';
 
   return (
-    <WashStationLayout title="Daily Report">
+    <>
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
 
         {/* Header */}
@@ -371,6 +368,6 @@ export default function DailyReportPage() {
           />
         )}
       </div>
-    </WashStationLayout>
+    </>
   );
 }

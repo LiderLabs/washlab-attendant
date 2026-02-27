@@ -1,10 +1,10 @@
-﻿const fs = require('fs');
-let src = fs.readFileSync('app/washstation/orders/page.tsx', 'utf8');
+﻿const fs = require("fs");
+let src = fs.readFileSync("components/washstation/pages/ReportsContent.tsx", "utf8");
 
 src = src.replace(
-  '<OrdersTable\n                orders={filteredOrders}',
-  '<OrdersTable\n                orders={filteredOrders}\n                stationToken={stationToken}'
+  "branchId ? { branchId, date: today() } : 'skip'\n  );",
+  "branchId ? { branchId, date: today(), stationToken: stationToken || undefined } : 'skip'\n  );"
 );
 
-fs.writeFileSync('app/washstation/orders/page.tsx', src, 'utf8');
-console.log('Done');
+fs.writeFileSync("components/washstation/pages/ReportsContent.tsx", src, "utf8");
+console.log("Fixed:", src.includes("stationToken: stationToken"));

@@ -1,16 +1,23 @@
 ﻿const fs = require("fs");
-let src = fs.readFileSync("components/washstation/OrdersTable.tsx", "utf8");
+let src = fs.readFileSync("components/washstation/pages/ReportsContent.tsx", "utf8");
 
-// Remove the duplicate closing block
+// Remove WashStationLayout import
 src = src.replace(
-  `    [orders, onCollectPayment]
-  );
-      }),
-    [orders, onCollectPayment, onOrderClick]
-  );`,
-  `    [orders, onCollectPayment]
-  );`
+  "import { WashStationLayout } from '@/components/washstation/WashStationLayout';\n",
+  ""
 );
 
-fs.writeFileSync("components/washstation/OrdersTable.tsx", src, "utf8");
-console.log("Done");
+// Remove WashStationLayout wrapper - replace opening tag
+src = src.replace(
+  /return \(\s*<WashStationLayout[^>]*>/,
+  "return (\n    <>"
+);
+
+// Replace closing tag
+src = src.replace(
+  /<\/WashStationLayout>\s*\);?\s*\}?\s*$/,
+  "</>\n  );\n}"
+);
+
+fs.writeFileSync("components/washstation/pages/ReportsContent.tsx", src, "utf8");
+console.log("Fixed:", !src.includes("WashStationLayout"));
