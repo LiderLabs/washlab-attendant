@@ -184,22 +184,13 @@ export function CustomersContent() {
 
           {/* Customer Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 border-b border-border">
-            <div className="p-5 border-r border-border">
-              <p className="text-sm text-muted-foreground">Store Credit</p>
-              <p className="text-2xl font-bold text-success mt-1">
-                ${(selectedCustomer.storeCredit || 24.50).toFixed(2)}
-              </p>
-            </div>
-            <div className="p-5 border-r border-border">
-              <p className="text-sm text-muted-foreground">Total Orders</p>
-              <p className="text-2xl font-bold text-foreground mt-1">
-                {selectedCustomer.totalOrders || selectedCustomer.orderCount || 14}
-              </p>
-            </div>
+            
             <div className="p-5 border-r border-border">
               <p className="text-sm text-muted-foreground">Last Visit</p>
               <p className="text-lg font-bold text-foreground mt-1">
-                {selectedCustomer.lastVisit || 'Oct 12, 2023'}
+                {selectedCustomer.lastVisit || selectedCustomer.lastOrderDate
+                    ? new Date(selectedCustomer.lastVisit || selectedCustomer.lastOrderDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                    : 'No visits yet'}
               </p>
             </div>
             <div className="p-5">

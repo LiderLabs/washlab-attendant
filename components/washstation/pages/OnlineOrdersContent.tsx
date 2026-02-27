@@ -244,22 +244,9 @@ export function OnlineOrdersContent() {
   // ── Queue Panel ──────────────────────────────────────────────────────────
   const QueuePanel = (
     <div className={`
-      ${mobileView === "queue" ? "flex" : "hidden"} 
+      ${mobileView === "queue" ? "flex" : "hidden"}
       lg:flex w-full lg:w-72 border-r border-border bg-card flex-col flex-shrink-0 h-full
     `}>
-      <div className="p-4 border-b border-border">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-foreground">Intake Queue</h2>
-          <span className="px-2 py-1 bg-primary/10 text-primary text-xs font-medium rounded-full">
-            {pendingOrders.length} Pending
-          </span>
-        </div>
-        <div className="text-sm">
-          <p className="text-muted-foreground text-xs uppercase tracking-wide">Estimated Volume</p>
-          <p className="text-xl font-bold text-foreground">{totalVolume.toFixed(1)} kg</p>
-        </div>
-      </div>
-
       <div className="p-3 border-b border-border">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -316,7 +303,7 @@ export function OnlineOrdersContent() {
     </div>
   )
 
-  // ── Detail Panel ─────────────────────────────────────────────────────────
+    // ── Detail Panel ─────────────────────────────────────────────────────────
   const DetailPanel = selectedOrder ? (
     <div className={`
       ${mobileView === "detail" ? "flex" : "hidden"}

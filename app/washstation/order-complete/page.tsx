@@ -28,7 +28,8 @@ function OrderCompleteContent() {
 
   const { order, isLoading } = useStationOrder(
     stationToken,
-    orderIdParam ? (orderIdParam as Id<'orders'>) : null
+    orderIdParam ? (orderIdParam as Id<'orders'>) : null,
+    isSessionValid
   );
 
   const amountPaid = amountPaidParam > 0 ? amountPaidParam : (order?.finalPrice ?? 0);
@@ -44,16 +45,18 @@ function OrderCompleteContent() {
   };
 
   const handleWhatsAppReceipt = () => {
-    const customerPhone = order?.customer?.phoneNumber || order?.customerPhoneNumber || '';
-    if (!customerPhone) { toast.error('No phone number on file'); return; }
-    const phone = customerPhone.replace(/\D/g, '');
+    const rawPhone = order?.customer?.phoneNumber || (order as any)?.customerPhoneNumber || (order as any)?.customerPhone || '';
+    if (!rawPhone) { toast.error('No phone number on file'); return; }
+    const phone = rawPhone.replace(/[\s\-]/g, '').replace(/^\+/, '').replace(/^0/, '233');
     if (!phone) { toast.error('Invalid phone number'); return; }
+    const customerPhone = rawPhone;
     const name = order?.customer?.name || 'Customer';
     const num = order?.orderNumber || orderIdParam || '';
     const price = (order?.finalPrice ?? amountPaid).toFixed(2);
     const service = formatServiceType(order?.serviceType);
     const weight = order?.estimatedWeight ?? order?.actualWeight ?? 0;
     const serviceDesc = weight > 0 ? `${service} (${weight.toFixed(1)}kg)` : service;
+    const bagCard = order?.bagCardNumber ? `Bag Card: *#${order.bagCardNumber}*\n` : '';
     const msg =
       `🧺 WashLab Receipt\n\n` +
       `Hi ${name},\n` +
@@ -61,7 +64,9 @@ function OrderCompleteContent() {
       `Order: *#${num}*\n` +
       `Service: ${serviceDesc}\n` +
       `Amount Paid: *GHS ${price}*\n` +
-      `Payment: ${getPaymentMethodLabel(paymentMethod)}\n\n` +
+      `Payment: ${getPaymentMethodLabel(paymentMethod)}\n` +
+      bagCard +
+      `Phone: ${customerPhone}\n\n` +
       `Please bring your bag card when collecting your laundry.\n` +
       `We appreciate your business! 🙏`;
     window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(msg), '_blank');
@@ -93,7 +98,7 @@ function OrderCompleteContent() {
   return (
     <div className="flex min-h-screen bg-background">
       <WashStationSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(c => !c)} />
-      <main className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
+      <main className={`flex-1 transition-all duration-300 lg:${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
         <header className="bg-card border-b border-border px-6 py-4 flex items-center gap-3">
           <CheckCircle className="w-5 h-5 text-success" />
           <span className="font-medium text-foreground">Order Completion</span>
@@ -113,17 +118,11 @@ function OrderCompleteContent() {
             </div>
           ) : (
             <h1 className="text-3xl font-bold text-foreground mb-2">
-              Order #{orderNumber} Confirmed
+              Order #{orderNumber || orderIdParam?.slice(-6).toUpperCase()} Confirmed
             </h1>
           )}
 
-          <p className="text-muted-foreground mb-8 text-center max-w-md">
-            {isMobileMoneyPending ? (
-              <>Payment prompt sent for <span className="font-semibold">₵{amountPaid.toFixed(2)}</span> via {getPaymentMethodLabel(paymentMethod)}. Order will be marked Paid when the customer completes payment.</>
-            ) : (
-              <>Payment of <span className="font-semibold">₵{amountPaid.toFixed(2)}</span> received via {getPaymentMethodLabel(paymentMethod)}.{changeDue > 0 && <span className="block mt-1 text-sm">Change due: ₵{changeDue.toFixed(2)}</span>}</>
-            )}
-          </p>
+
 
           {/* Order Summary Card */}
           <div className="w-full max-w-md bg-card border border-border rounded-2xl overflow-hidden mb-6">
@@ -171,7 +170,7 @@ function OrderCompleteContent() {
 
           {/* Back to Dashboard */}
           <Button
-            onClick={() => router.push('/washstation')}
+            onClick={() => router.push('/washstation/dashboard')}
             variant="outline"
             className="w-full max-w-md h-12 rounded-xl text-base font-medium"
           >

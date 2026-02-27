@@ -682,7 +682,7 @@ function PaymentContent() {
 
         <Button
           onClick={handleCompletePayment}
-          disabled={isProcessing || effectivePaymentMethod === "cash"}
+          disabled={isProcessing}
           className={`flex-1 h-12 sm:h-14 rounded-xl text-sm sm:text-base font-semibold transition-all ${
             isProcessing || effectivePaymentMethod === "cash"
               ? "bg-muted text-muted-foreground cursor-not-allowed"
