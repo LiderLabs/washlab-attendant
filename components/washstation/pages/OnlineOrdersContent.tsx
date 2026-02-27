@@ -462,33 +462,6 @@ export function OnlineOrdersContent() {
           )}
         </div>
 
-        {/* Items Verification */}
-        <div>
-          <h3 className="font-semibold text-foreground flex items-center gap-2 mb-3 text-sm">
-            <ShoppingBag className="w-4 h-4" /> Items Verification
-          </h3>
-          <div className="flex items-center justify-between p-3 bg-card border border-border rounded-xl max-w-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
-                <Package className="w-4 h-4 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="font-medium text-sm text-foreground">Laundry Bags</p>
-                <p className="text-xs text-muted-foreground">Standard WashLab Bag</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button onClick={() => setLaundryBags(Math.max(0, laundryBags - 1))} className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center">
-                <Minus className="w-3.5 h-3.5" />
-              </button>
-              <span className="w-6 text-center font-semibold text-sm">{laundryBags}</span>
-              <button onClick={() => setLaundryBags(laundryBags + 1)} className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center">
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Order Summary — bottom of page */}
         <div className="bg-card border border-border rounded-xl p-4">
           <h3 className="font-semibold text-foreground mb-3">Order Summary</h3>
@@ -534,7 +507,7 @@ export function OnlineOrdersContent() {
                   )}
                 </div>
                 <div className="flex justify-between border-t border-border pt-2">
-                  <span className="font-semibold text-foreground">Estimated Total</span>
+                  <span className="font-semibold text-foreground">Total</span>
                   <span className="text-xl font-bold text-green-600">GHS {pricing.total.toFixed(2)}</span>
                 </div>
               </>
