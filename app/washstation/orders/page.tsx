@@ -63,7 +63,7 @@ export default function OrdersPage() {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input placeholder="Search by order number, customer..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 w-full md:w-64" />
                 </div>
-                <Button variant="outline" size="icon"><RefreshCw className="w-4 h-4" /></Button>
+                <Button variant="outline" size="icon" onClick={() => window.location.reload()}><RefreshCw className="w-4 h-4" /></Button>
               </div>
             </div>
           </CardHeader>

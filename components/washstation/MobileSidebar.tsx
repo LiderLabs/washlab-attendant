@@ -35,18 +35,12 @@ export function MobileSidebar({ open, onOpenChange, branchName }: MobileSidebarP
   const resolvedBranchName = branchName || (sessionData as any)?.branchName || sessionData?.branchCode || 'Branch';
   const pathname = usePathname();
   const { stationToken } = useStationSession();
-  
-  const unreadCount = useQuery(
-    api.stations.getStationUnreadCount,
-    stationToken ? { stationToken } : 'skip'
-  ) ?? 0;
 
   const navItems = [
     { id: 'dashboard',     label: 'Dashboard',    icon: LayoutDashboard, path: '/washstation/dashboard' },
     { id: 'orders',        label: 'Orders',        icon: ClipboardList,   path: '/washstation/orders' },
     { id: 'clock-in',      label: 'Clock In/Out',  icon: Clock,           path: '/washstation/clock-in' },
     { id: 'attendance',    label: 'Attendance',    icon: Clock,           path: '/washstation/attendance' },
-    { id: 'notifications', label: 'Notifications', icon: Bell,            path: '/washstation/notifications', showBadge: true },
     { id: 'transactions',  label: 'Transactions',  icon: CreditCard,      path: '/washstation/transactions' },
     // { id: 'activity',      label: 'Activity Log',  icon: Activity,        path: '/washstation/activity' },
     { id: 'inventory',     label: 'Inventory',     icon: Package,         path: '/washstation/inventory' },
@@ -70,7 +64,7 @@ export function MobileSidebar({ open, onOpenChange, branchName }: MobileSidebarP
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
-            const badgeCount = item.showBadge && item.id === 'notifications' ? unreadCount : 0;
+            const badgeCount = 0;
             
             return (
               <Link
@@ -120,19 +114,7 @@ export function MobileSidebar({ open, onOpenChange, branchName }: MobileSidebarP
 
         {/* Branch Info */}
         <div className="p-4 border-t border-border">
-          <Link 
-            href="/washstation/shift"
-            onClick={() => onOpenChange(false)}
-            className="flex items-center gap-3 hover:bg-muted/50 p-2 -m-2 rounded-xl transition-colors"
-          >
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold border-2 border-primary">
-              {resolvedBranchName.split(' ').map(n => n[0]).join('').slice(0, 2)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-muted-foreground">Branch</p>
-              <p className="font-medium text-foreground text-sm truncate">{resolvedBranchName}</p>
-            </div>
-          </Link>
+          
         </div>
       </SheetContent>
     </Sheet>

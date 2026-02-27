@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useStationSession } from '@/hooks/useStationSession';
 import { useStationStats } from '@/hooks/useStationStats';
+import { startOfToday, endOfToday } from 'date-fns';
 import { useStationOrders } from '@/hooks/useStationOrders';
 import { StatCard } from '../StatCard';
 import { OrderList } from '../OrderList';
@@ -29,7 +30,9 @@ export function DashboardContent() {
   const { stationToken, sessionData, isLoading: sessionLoading } = useStationSession();
   const isSessionValid = sessionData?.valid ?? false;
 
-  const { stats, isLoading: statsLoading } = useStationStats(stationToken);
+  const todayStart = startOfToday().getTime();
+  const todayEnd = endOfToday().getTime();
+  const { stats, isLoading: statsLoading } = useStationStats(stationToken, todayStart, todayEnd);
 
   const { orders: pendingOrders, isLoading: ordersLoading } = useStationOrders(
     stationToken,

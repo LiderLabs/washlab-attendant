@@ -4,7 +4,7 @@ import { useStationOrderStatus, type OrderStatus } from "@/hooks/useStationOrder
 import { ActionVerification } from "./ActionVerification"
 import { Id } from "@jordan6699/washlab-backend/dataModel"
 import { toast } from "sonner"
-import { Play, CheckCircle, MessageCircle, Loader2, CreditCard } from "lucide-react"
+import { Play, CheckCircle, Loader2, CreditCard } from "lucide-react"
 
 interface OrderExpanderProps {
   order: {
@@ -72,11 +72,7 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
     }
   }
 
-  const handleReady = () => {
-    moveToStatus("ready" as OrderStatus)
-  }
-
-  const handleDone = () => {
+const handleDone = () => {
     setVerifyOpen(true)
   }
 
@@ -112,35 +108,15 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
         </button>
       )}
 
-      {isInProgress && (
+      {(isInProgress || isReady) && (
         <button
-          onClick={(e) => { e.stopPropagation(); handleReady() }}
+          onClick={(e) => { e.stopPropagation(); handleDone() }}
           disabled={isMoving}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 transition-colors disabled:opacity-50"
         >
           {isMoving ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
-          Ready
+          Done
         </button>
-      )}
-
-      {isReady && (
-        <>
-          <button
-            onClick={(e) => { e.stopPropagation(); handleWhatsApp() }}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-green-500 text-green-600 text-xs font-semibold hover:bg-green-50 dark:hover:bg-green-950/30 transition-colors"
-          >
-            <MessageCircle className="w-3 h-3" />
-            Notify
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); handleDone() }}
-            disabled={isMoving}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 transition-colors disabled:opacity-50"
-          >
-            {isMoving ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
-            Done
-          </button>
-        </>
       )}
 
       {isTerminal && (
