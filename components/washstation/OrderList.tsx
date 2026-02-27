@@ -11,6 +11,10 @@ interface Order {
   status: OrderStatus;
   finalPrice: number;
   createdAt: number;
+  serviceType?: string;
+  estimatedLoads?: number;
+  whitesSeparate?: boolean;
+  totalPrice?: number;
   customer?: {
     name: string;
     phoneNumber: string;

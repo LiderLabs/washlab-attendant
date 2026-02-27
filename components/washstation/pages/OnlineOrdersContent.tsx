@@ -459,6 +459,12 @@ export function OnlineOrdersContent() {
               <span className="text-muted-foreground">Service</span>
               <span className="font-medium">{getServiceName(selectedOrder.serviceType || "wash_and_fold")}</span>
             </div>
+            {selectedOrder.whitesSeparate && (
+              <div className="flex justify-between items-center bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
+                <span className="text-yellow-800 font-medium text-sm">⚠️ Whites Separate</span>
+                <span className="text-yellow-800 font-medium text-sm">+1 extra load</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Est. Weight</span>
               <span className="font-medium">{selectedOrder.estimatedWeight?.toFixed(1) || "0.0"} kg</span>

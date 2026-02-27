@@ -23,6 +23,10 @@ interface OrderCardProps {
     status: OrderStatus
     finalPrice: number
     createdAt: number
+    serviceType?: string
+    estimatedLoads?: number
+    whitesSeparate?: boolean
+    totalPrice?: number
     customer?: {
       name: string
       phoneNumber: string
@@ -120,6 +124,19 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
           </div>
           <OrderStatusBadge status={order.status} />
         </div>
+        {order.serviceType && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
+              {order.serviceType === 'wash_and_dry' ? 'Wash & Dry' : order.serviceType === 'wash_only' ? 'Wash Only' : 'Dry Only'}
+              {order.estimatedLoads ? ` · ${order.estimatedLoads} load${order.estimatedLoads > 1 ? 's' : ''}` : ''}
+            </span>
+            {order.whitesSeparate && (
+              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full font-medium">
+                ⚠️ Whites Separate (+1 load)
+              </span>
+            )}
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-3">
