@@ -186,13 +186,15 @@ export function OnlineOrdersContent() {
     const orderId = selectedOrder._id
     try {
       if (selectedOrder.status !== "checked_in") {
-        await checkInOrder({
+        await (checkInOrder as any)({
           stationToken,
           orderId,
           actualWeight: numWeight,
           itemCount: laundryBags || 1,
           bagCardNumber,
           notes: notes || undefined,
+          extraWashLoads: extraWashLoads > 0 ? extraWashLoads : undefined,
+          extraDryLoads: extraDryLoads > 0 ? extraDryLoads : undefined,
         } as Parameters<typeof checkInOrder>[0])
       }
       toast.success("Proceeding to payment.")

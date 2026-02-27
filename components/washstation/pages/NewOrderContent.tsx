@@ -231,7 +231,7 @@ export function NewOrderContent() {
     if (weight <= 0.1) { toast.error("Please enter a valid weight"); return }
     if (!bagCardNumber) { toast.error("Please select a bag card number"); return }
     try {
-      const result = await createWalkInOrder({
+      const result = await (createWalkInOrder as any)({
         stationToken,
         customerId: foundCustomer._id as Id<"users">,
         customerName: foundCustomer.name || newName,
@@ -243,6 +243,8 @@ export function NewOrderContent() {
         bagCardNumber,
         notes: [customNote, ...orderNotes, extraWashLoads > 0 ? extraWashLoads + ' extra wash load(s)' : '', extraDryLoads > 0 ? extraDryLoads + ' extra dry load(s)' : ''].filter(Boolean).join(', ') || undefined,
         isDelivery: false,
+        extraWashLoads: extraWashLoads > 0 ? extraWashLoads : undefined,
+        extraDryLoads: extraDryLoads > 0 ? extraDryLoads : undefined,
       })
       toast.success(`Order created successfully! Bag #${result.bagCardNumber}`)
       router.push(`/washstation/payment?orderId=${result.orderId}&return=order`)
@@ -419,21 +421,13 @@ export function NewOrderContent() {
             <p className='text-primary flex items-center justify-center gap-1.5 mb-4 text-sm sm:text-base'>
               <Phone className='w-4 h-4' /> {foundCustomer.phoneNumber || foundCustomer.phone}
             </p>
-            <div className='grid grid-cols-2 gap-3 sm:gap-4 mb-4'>
+            <div className='grid grid-cols-1 gap-3 sm:gap-4 mb-4'>
+              
               <div className='bg-muted/50 rounded-xl p-3 sm:p-4'>
                 <p className='text-xs text-muted-foreground'>LAST VISIT</p>
                 <p className='font-semibold text-foreground text-sm sm:text-base'>
-                  {foundCustomer.lastVisit
-                    ? new Date(foundCustomer.lastVisit).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                    : "No previous visit"}
+                  {foundCustomer.lastVisit || foundCustomer.lastOrderDate ? new Date(foundCustomer.lastVisit || foundCustomer.lastOrderDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No previous visit'}
                 </p>
-              </div>
-              <div className='bg-muted/50 rounded-xl p-3 sm:p-4'>
-                <p className='text-xs text-muted-foreground'>LIFETIME VALUE</p>
-                <p className='font-semibold text-success text-sm sm:text-base'>
-                  ₵{(foundCustomer.totalSpent ?? 0).toFixed(2)}
-                </p>
-                <p className='text-xs text-muted-foreground'>{foundCustomer.orderCount ?? 0} Orders</p>
               </div>
             </div>
             <Button onClick={handleConfirmCustomer} className='w-full h-11 sm:h-12 bg-primary text-primary-foreground rounded-xl font-semibold mb-3'>
@@ -643,7 +637,7 @@ export function NewOrderContent() {
               <div>
                 <h3 className='font-semibold text-foreground mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base'>
                   <span className='w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-muted text-muted-foreground text-xs flex items-center justify-center flex-shrink-0'>3</span>
-                  Item Count (Optional)
+                  Item Count
                 </h3>
                 <div className='flex items-center gap-3 sm:gap-4'>
                   <button onClick={() => setItemCount(Math.max(0, itemCount - 1))} className='w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-muted flex items-center justify-center hover:bg-muted/80 flex-shrink-0'>
