@@ -218,7 +218,7 @@ function PaymentContent() {
     let handler: any;
     try {
       handler = (window as any).PaystackPop.setup({
-      key: "pk_test_0bcc36edcd86cbe2439fc3274f5e6b6e501c4730",
+      key: process.env.NEXT_PUBLIC_PAYSTACK_KEY || "pk_test_0bcc36edcd86cbe2439fc3274f5e6b6e501c4730",
       email: order.customer?.email || order.customerEmail || "customer@washlab.com",
       // ✅ Grossed-up amount — customer pays this, you net exactly totalDue after Paystack's 2% cut
       amount: Math.round(paystackChargeAmount * 100),

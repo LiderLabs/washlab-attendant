@@ -488,6 +488,12 @@ export function OnlineOrdersContent() {
                     <span>{pricing.numberOfLoads} load{pricing.numberOfLoads !== 1 ? "s" : ""} × GHS {pricing.pricePerLoad.toFixed(2)}</span>
                     <span>GHS {(pricing.numberOfLoads * pricing.pricePerLoad).toFixed(2)}</span>
                   </div>
+                  {pricing.whitesExtraLoad > 0 && (
+                    <div className="flex justify-between text-xs bg-yellow-50 text-yellow-800 rounded px-1 py-0.5">
+                      <span>⚠️ Whites separate (+{pricing.whitesExtraLoad} load)</span>
+                      <span>GHS {(pricing.whitesExtraLoad * pricing.pricePerLoad).toFixed(2)}</span>
+                    </div>
+                  )}
                   {extraWashLoads > 0 && (
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>+{extraWashLoads} extra wash × GHS {getPricePerLoad("wash_only").toFixed(2)}</span>
