@@ -1,4 +1,6 @@
-"use client"
+﻿const fs = require("fs");
+
+const content = `"use client"
 import { useState, useCallback } from "react"
 import { useStationOrderStatus, type OrderStatus } from "@/hooks/useStationOrderStatus"
 import { ActionVerification } from "./ActionVerification"
@@ -122,4 +124,7 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
       )}
     </div>
   )
-}
+}`;
+
+fs.writeFileSync("components/washstation/OrderRowExpander.tsx", content, "utf8");
+console.log("Done");

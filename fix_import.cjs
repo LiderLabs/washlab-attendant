@@ -1,4 +1,6 @@
-import { WashStationLayout } from '@/components/washstation/WashStationLayout';
+﻿const fs = require("fs");
+
+const pageSrc = `import { WashStationLayout } from '@/components/washstation/WashStationLayout';
 import ReportsContent from '@/components/washstation/pages/ReportsContent';
 
 export default function DailyReportPage() {
@@ -7,4 +9,7 @@ export default function DailyReportPage() {
       <ReportsContent />
     </WashStationLayout>
   );
-}
+}`;
+
+fs.writeFileSync("app/washstation/reports/page.tsx", pageSrc, "utf8");
+console.log("Done");

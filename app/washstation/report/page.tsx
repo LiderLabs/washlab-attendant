@@ -22,11 +22,13 @@ function fmt(n: number) {
 }
 
 export default function DailyReportPage() {
-  const { stationToken, isSessionValid, branchId, branchName } = useStationSession() as any;
+  const { stationToken, valid: isSessionValid, branchId: _branchId, branchName } = useStationSession() as any;
+  console.log('SESSION:', { stationToken: !!stationToken, isSessionValid, _branchId });
+  const branchId = _branchId;
 
   const autoData = useQuery(
     (api as any).dailyReports.getAutoData,
-    branchId && isSessionValid ? { branchId, date: today() } : 'skip'
+    branchId ? { branchId, date: today() } : 'skip'
   );
   const existingDraft = useQuery(
     (api as any).dailyReports.getDraft,
@@ -61,20 +63,24 @@ export default function DailyReportPage() {
     if (loaded) return;
     if (existingDraft && existingDraft.status === 'submitted') { setLoaded(true); return; }
     if (existingDraft) {
+      // Manual fields come from draft
       setAttendants(existingDraft.attendantsOnShift?.length ? existingDraft.attendantsOnShift : ['']);
-      setWasherTokens(existingDraft.washerTokensUsed ?? 0);
-      setDryerTokens(existingDraft.dryerTokensUsed ?? 0);
-      setCashAmount(existingDraft.cashAmount ?? 0);
-      setMobileMoneyAmount(existingDraft.mobileMoneylAmount ?? 0);
-      setCardAmount(existingDraft.cardAmount ?? 0);
-      setPaystackAmount(existingDraft.paystackAmount ?? 0);
       setSoapUnits(existingDraft.soapUnitsUsed ?? 0);
-      setFreeWashCount(existingDraft.freeWashCount ?? 0);
       setWashingPlanCount(existingDraft.washingPlanCount ?? 0);
       setTechnicalFaults(existingDraft.technicalFaultCount ?? 0);
       setFaultNotes(existingDraft.technicalFaultNotes ?? '');
       setNotes(existingDraft.notes ?? '');
-      setServiceBreakdown(existingDraft.serviceBreakdown ?? []);
+      // Tokens and payments always come from live system data
+      if (autoData) {
+        setWasherTokens(autoData.washerTokensUsed ?? 0);
+        setDryerTokens(autoData.dryerTokensUsed ?? 0);
+        setCashAmount(autoData.cashAmount ?? 0);
+        setMobileMoneyAmount(autoData.mobileMoneylAmount ?? 0);
+        setCardAmount(autoData.cardAmount ?? 0);
+        setPaystackAmount(autoData.paystackAmount ?? 0);
+        setFreeWashCount(autoData.freeWashCount ?? 0);
+        setServiceBreakdown(autoData.serviceBreakdown ?? []);
+      }
       setLoaded(true);
     } else if (autoData) {
       setWasherTokens(autoData.washerTokensUsed ?? 0);
@@ -227,8 +233,14 @@ export default function DailyReportPage() {
         <div className="bg-card border border-border rounded-xl p-4 space-y-4">
           <h2 className="font-semibold text-sm text-foreground">Machine Tokens Used</h2>
           <div className="grid grid-cols-2 gap-4">
-            {numField('Washer Tokens', washerTokens, setWasherTokens)}
-            {numField('Dryer Tokens', dryerTokens, setDryerTokens)}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground font-medium">Washer Tokens <span className="text-primary text-xs">(system)</span></label>
+              <div className="px-3 py-2 bg-muted/50 rounded-lg text-sm font-bold text-foreground">{washerTokens}</div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground font-medium">Dryer Tokens <span className="text-primary text-xs">(system)</span></label>
+              <div className="px-3 py-2 bg-muted/50 rounded-lg text-sm font-bold text-foreground">{dryerTokens}</div>
+            </div>
           </div>
           <div className="flex justify-between items-center pt-2 border-t border-border">
             <span className="text-sm text-muted-foreground">Total Tokens</span>
@@ -259,10 +271,12 @@ export default function DailyReportPage() {
         <div className="bg-card border border-border rounded-xl p-4 space-y-4">
           <h2 className="font-semibold text-sm text-foreground">Payment Breakdown</h2>
           <div className="grid grid-cols-2 gap-4">
-            {numField('Cash (GHS)', cashAmount, setCashAmount, 'GHS')}
-            {numField('Mobile Money (GHS)', mobileMoneyAmount, setMobileMoneyAmount, 'GHS')}
-            {numField('Card (GHS)', cardAmount, setCardAmount, 'GHS')}
-            {numField('Paystack (GHS)', paystackAmount, setPaystackAmount, 'GHS')}
+            {[['Cash', cashAmount], ['Mobile Money', mobileMoneyAmount], ['Card', cardAmount], ['Paystack', paystackAmount]].map(([label, val]) => (
+              <div key={label as string} className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground font-medium">{label as string} <span className="text-primary text-xs">(system)</span></label>
+                <div className="px-3 py-2 bg-muted/50 rounded-lg text-sm font-bold text-foreground">GHS {(val as number).toFixed(2)}</div>
+              </div>
+            ))}
           </div>
           <div className="flex justify-between items-center pt-2 border-t border-border">
             <span className="text-sm text-muted-foreground">Total Revenue</span>

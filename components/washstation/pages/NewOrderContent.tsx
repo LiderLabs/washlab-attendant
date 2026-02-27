@@ -254,7 +254,23 @@ export function NewOrderContent() {
   }
 
   const handleSaveAsDraft = () => {
-    toast.info("Order saved as draft")
+    if (!foundCustomer?._id) { toast.error("No customer selected"); return }
+    const draft = {
+      customerId: foundCustomer._id,
+      customerName: foundCustomer.name,
+      customerPhone: foundCustomer.phoneNumber,
+      customerEmail: foundCustomer.email,
+      serviceType,
+      weight,
+      itemCount,
+      bagCardNumber,
+      orderNotes,
+      extraWashLoads,
+      extraDryLoads,
+      savedAt: new Date().toISOString(),
+    }
+    sessionStorage.setItem("washlab_order_draft", JSON.stringify(draft))
+    toast.success("Draft saved! You can resume it from the dashboard.")
     router.push("/washstation/dashboard")
   }
 
@@ -326,12 +342,7 @@ export function NewOrderContent() {
           {digit}
         </button>
       ))}
-      <button
-        onClick={onClear}
-        className='h-12 sm:h-14 rounded-xl bg-destructive/10 text-lg sm:text-xl font-semibold text-destructive hover:bg-destructive/20 transition-colors'
-      >
-        <X className='w-4 h-4 sm:w-5 sm:h-5 mx-auto' />
-      </button>
+      <div className='h-12 sm:h-14' />
       <button
         onClick={() => onDigit("0")}
         className='h-12 sm:h-14 rounded-xl bg-muted text-lg sm:text-xl font-semibold text-foreground hover:bg-muted/80 transition-colors'
