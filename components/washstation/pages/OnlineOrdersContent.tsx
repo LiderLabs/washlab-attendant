@@ -465,6 +465,12 @@ export function OnlineOrdersContent() {
                 <span className="text-yellow-800 font-medium text-sm">+1 extra load</span>
               </div>
             )}
+            {(selectedOrder as any).mixWithColors && (
+              <div className="flex justify-between items-center bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                <span className="text-blue-800 font-medium text-sm">🎨 Mix with Colors</span>
+                <span className="text-blue-800 font-medium text-sm">Wash together</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Est. Weight</span>
               <span className="font-medium">{selectedOrder.estimatedWeight?.toFixed(1) || "0.0"} kg</span>
