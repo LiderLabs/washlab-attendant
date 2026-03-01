@@ -27,6 +27,7 @@ export default function DailyReportPage() {
   useEffect(() => {
     if (!autoData) return;
     setWasherTokens(autoData.washerTokensUsed ?? 0);
+    setSoapUnits(autoData.washerTokensUsed ?? 0);
     setDryerTokens(autoData.dryerTokensUsed ?? 0);
     setCashAmount(autoData.cashAmount ?? 0);
     setMobileMoneyAmount(autoData.mobileMoneylAmount ?? 0);
@@ -150,6 +151,12 @@ export default function DailyReportPage() {
     try {
       await submitMutation(buildPayload());
       toast.success('Daily report submitted!');
+      setTimeout(() => {
+        setWasherTokens(0); setDryerTokens(0);
+        setCashAmount(0); setMobileMoneyAmount(0); setCardAmount(0); setPaystackAmount(0);
+        setSoapUnits(0); setFaults([]); setEndOfDayComment('');
+        setLoaded(false);
+      }, 2000);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to submit report');
     } finally {
@@ -157,8 +164,10 @@ export default function DailyReportPage() {
     }
   };
 
-  const totalTokenRevenue = (washerTokens * 25) + (dryerTokens * 25);
-  const totalRevenue = cashAmount + mobileMoneyAmount + cardAmount + paystackAmount;
+  const totalTokenRevenue = autoData?.totalRevenue ?? 0;
+  const totalRecorded = cashAmount + mobileMoneyAmount + cardAmount + paystackAmount;
+  const discrepancy = Math.round((totalRecorded - totalTokenRevenue) * 100) / 100;
+  // totalRecorded and discrepancy calculated above
   const isSubmitted = existingDraft?.status === 'submitted';
 
   return (
@@ -230,7 +239,7 @@ export default function DailyReportPage() {
           </div>
 
           <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/30 rounded-xl mb-5">
-            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Token Revenue</span>
+            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Expected Revenue</span>
             <span className="text-lg font-bold text-blue-700 dark:text-blue-300">{fmt(totalTokenRevenue)}</span>
           </div>
 
@@ -239,7 +248,7 @@ export default function DailyReportPage() {
           <div className="space-y-3">
             {[
               { label: 'Mobile Money', value: mobileMoneyAmount, setter: setMobileMoneyAmount, color: 'border-l-blue-500' },
-              { label: 'Card Payment', value: cardAmount, setter: setCardAmount, color: 'border-l-violet-500' },
+              { label: 'Card Payment', value: cardAmount + paystackAmount, setter: setCardAmount, color: 'border-l-violet-500' },
               { label: 'Cash Payment', value: cashAmount, setter: setCashAmount, color: 'border-l-green-500' },
             ].map(({ label, value, setter, color }) => (
               <div key={label} className={`border-l-4 ${color} pl-3 py-1 flex items-center justify-between`}>
@@ -256,17 +265,11 @@ export default function DailyReportPage() {
                 )}
               </div>
             ))}
-            {paystackAmount > 0 && (
-              <div className="border-l-4 border-l-purple-500 pl-3 py-1 flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">Paystack</p>
-                <p className="text-lg font-bold text-foreground">{fmt(paystackAmount)}</p>
-              </div>
-            )}
-          </div>
+            </div>
 
           <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
-            <span className="font-semibold text-foreground">Total Recorded</span>
-            <span className="text-xl font-bold text-foreground">{fmt(totalRevenue)}</span>
+            <span className="font-semibold text-foreground">Total Collected</span>
+            <span className="text-xl font-bold text-foreground">{fmt(totalRecorded)}</span>
           </div>
         </div>
 

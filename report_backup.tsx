@@ -73,7 +73,6 @@ export default function DailyReportPage() {
       // Tokens and payments always come from live system data
       if (autoData) {
         setWasherTokens(autoData.washerTokensUsed ?? 0);
-        setSoapUnits(autoData.washerTokensUsed ?? 0);
         setDryerTokens(autoData.dryerTokensUsed ?? 0);
         setCashAmount(autoData.cashAmount ?? 0);
         setMobileMoneyAmount(autoData.mobileMoneylAmount ?? 0);
@@ -138,14 +137,6 @@ export default function DailyReportPage() {
     try {
       await submitMutation(buildPayload());
       toast.success('Daily report submitted successfully!');
-      // Reset for next day
-      setTimeout(() => {
-        setWasherTokens(0); setDryerTokens(0);
-        setCashAmount(0); setMobileMoneyAmount(0); setCardAmount(0); setPaystackAmount(0);
-        setSoapUnits(0); setFreeWashCount(0); setWashingPlanCount(0);
-        setTechnicalFaults(0); setFaultNotes(''); setNotes('');
-        setServiceBreakdown([]); setAttendants(['']); setLoaded(false);
-      }, 2000);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to submit report');
     } finally {
@@ -159,7 +150,7 @@ export default function DailyReportPage() {
   const totalRevenue = cashAmount + mobileMoneyAmount + cardAmount + paystackAmount;
   const isSubmitted = existingDraft?.status === 'submitted';
 
-  const numField = (label: string, value: number, setter: (v: number) => void, prefix = '', readonly = false) => (
+  const numField = (label: string, value: number, setter: (v: number) => void, prefix = '') => (
     <div className="flex flex-col gap-1">
       <label className="text-xs text-muted-foreground font-medium">{label}</label>
       <div className="relative">
@@ -280,7 +271,7 @@ export default function DailyReportPage() {
         <div className="bg-card border border-border rounded-xl p-4 space-y-4">
           <h2 className="font-semibold text-sm text-foreground">Payment Breakdown</h2>
           <div className="grid grid-cols-2 gap-4">
-            {[['Cash', cashAmount], ['Mobile Money', mobileMoneyAmount], ['Card', cardAmount + paystackAmount]].map(([label, val]) => (
+            {[['Cash', cashAmount], ['Mobile Money', mobileMoneyAmount], ['Card', cardAmount], ['Paystack', paystackAmount]].map(([label, val]) => (
               <div key={label as string} className="flex flex-col gap-1">
                 <label className="text-xs text-muted-foreground font-medium">{label as string} <span className="text-primary text-xs">(system)</span></label>
                 <div className="px-3 py-2 bg-muted/50 rounded-lg text-sm font-bold text-foreground">GHS {(val as number).toFixed(2)}</div>
@@ -298,9 +289,9 @@ export default function DailyReportPage() {
           <h2 className="font-semibold text-sm text-foreground">Other Counts</h2>
           <div className="grid grid-cols-2 gap-4">
             {numField('Soap Units Used', soapUnits, setSoapUnits)}
-            {numField('Free Washes', freeWashCount, setFreeWashCount, '', true)}
-            {numField('Washing Plans', washingPlanCount, setWashingPlanCount, '', true)}
-            {numField('Technical Faults', technicalFaults, setTechnicalFaults, '', true)}
+            {numField('Free Washes', freeWashCount, setFreeWashCount)}
+            {numField('Washing Plans', washingPlanCount, setWashingPlanCount)}
+            {numField('Technical Faults', technicalFaults, setTechnicalFaults)}
           </div>
           {technicalFaults > 0 && (
             <div className="flex flex-col gap-1">
@@ -330,6 +321,7 @@ export default function DailyReportPage() {
             ['Cash', fmt(cashAmount)],
             ['Mobile Money', fmt(mobileMoneyAmount)],
             ['Card', fmt(cardAmount)],
+            ['Paystack', fmt(paystackAmount)],
             ['Total Revenue', fmt(totalRevenue)],
             ['Soap Units', soapUnits],
             ['Free Washes', freeWashCount],

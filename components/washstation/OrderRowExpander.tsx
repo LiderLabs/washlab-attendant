@@ -51,13 +51,13 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
 
   const handleStart = async () => {
     setIsMoving(true)
-    setLocalStatus("washing" as OrderStatus)
+    setLocalStatus("checked_in" as OrderStatus)
     try {
-      await changeStatus(order._id as Id<"orders">, "washing" as OrderStatus)
-      toast.success("Order started")
+      await changeStatus(order._id as Id<"orders">, "checked_in" as OrderStatus)
+      toast.success("Order checked in")
     } catch (e) {
       setLocalStatus(null)
-      toast.error("Failed to start order")
+      toast.error("Failed to check in order")
     } finally {
       setIsMoving(false)
     }
