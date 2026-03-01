@@ -164,8 +164,8 @@ export default function DailyReportPage() {
     }
   };
 
-  const totalTokenRevenue = autoData?.totalRevenue ?? 0;
   const totalRecorded = cashAmount + mobileMoneyAmount + cardAmount + paystackAmount;
+  const totalTokenRevenue = autoData?.totalRevenue ?? totalRecorded;
   const discrepancy = Math.round((totalRecorded - totalTokenRevenue) * 100) / 100;
   // totalRecorded and discrepancy calculated above
   const isSubmitted = existingDraft?.status === 'submitted';
@@ -219,15 +219,13 @@ export default function DailyReportPage() {
               {isSubmitted ? (
                 <p className="text-2xl font-bold text-foreground">{washerTokens}</p>
               ) : (
-                <input type="number" min={0} value={washerTokens}
-                  onChange={e => setWasherTokens(parseInt(e.target.value) || 0)}
-                  className="text-2xl font-bold bg-transparent border-none outline-none text-foreground w-full p-0" />
+                <p className="text-2xl font-bold text-foreground w-full p-0" />
               )}
               <p className="text-xs text-muted-foreground mt-1">{fmt(washerTokens * 25)}</p>
             </div>
             <div className="bg-muted/40 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Dryer Tokens</p>
-              {isSubmitted ? (
+              {true ? (
                 <p className="text-2xl font-bold text-foreground">{dryerTokens}</p>
               ) : (
                 <input type="number" min={0} value={dryerTokens}
@@ -253,7 +251,7 @@ export default function DailyReportPage() {
             ].map(({ label, value, setter, color }) => (
               <div key={label} className={`border-l-4 ${color} pl-3 py-1 flex items-center justify-between`}>
                 <p className="text-sm text-muted-foreground">{label}</p>
-                {isSubmitted ? (
+                {true ? (
                   <p className="text-lg font-bold text-foreground">{fmt(value)}</p>
                 ) : (
                   <div className="flex items-center gap-1">
