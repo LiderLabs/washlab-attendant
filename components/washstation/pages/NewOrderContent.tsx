@@ -342,7 +342,12 @@ export function NewOrderContent() {
           {digit}
         </button>
       ))}
-      <div className='h-12 sm:h-14' />
+      <button
+        onClick={onClear}
+        className='h-12 sm:h-14 rounded-xl bg-destructive/10 text-lg sm:text-xl font-semibold text-destructive hover:bg-destructive/20 transition-colors'
+      >
+        <X className='w-4 h-4 sm:w-5 sm:h-5 mx-auto' />
+      </button>
       <button
         onClick={() => onDigit("0")}
         className='h-12 sm:h-14 rounded-xl bg-muted text-lg sm:text-xl font-semibold text-foreground hover:bg-muted/80 transition-colors'

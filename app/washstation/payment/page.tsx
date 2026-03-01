@@ -86,10 +86,6 @@ function PaymentContent() {
   const [voucherCode, setVoucherCode] = useState("");
   const [voucherResult, setVoucherResult] = useState<null | { valid: boolean; discountAmount?: number; finalPrice?: number; voucher?: { code: string; name?: string; discountType: string; discountValue: number } }>(null);
   const applyVoucherMutation = useMutation((api as any).vouchers.applyToOrder);
-  const voucherValidation = useQuery(
-    (api as any).vouchers.validate,
-    voucherCode.length >= 6 ? { code: voucherCode.toUpperCase(), orderTotal: 1 } : "skip"
-  );
   const orderIdParam = searchParams?.get("orderId");
   const returnTo = searchParams?.get("return");
 
@@ -97,6 +93,16 @@ function PaymentContent() {
     stationToken,
     orderIdParam ? (orderIdParam as Id<"orders">) : null,
     isSessionValid
+  );
+
+  const activeVouchers = useQuery(
+    (api as any).vouchers.getActive,
+    order ? { branchId: order.branchId } : "skip"
+  );
+
+  const voucherValidation = useQuery(
+    (api as any).vouchers.validate,
+    voucherCode.length >= 6 && order ? { code: voucherCode.toUpperCase(), orderTotal: order.totalPrice ?? 1, branchId: order.branchId } : "skip"
   );
 
   const deliveryFee = order?.deliveryFee || 0;
@@ -484,9 +490,20 @@ function PaymentContent() {
           </div>
         ) : (
           <div className="flex gap-2">
-            <input type="text" value={voucherCode} onChange={(e) => setVoucherCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === "Enter" && handleApplyVoucher()} placeholder="Voucher code" disabled={isProcessing} className="flex-1 px-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 uppercase" />
+            <select
+              value={voucherCode}
+              onChange={(e) => setVoucherCode(e.target.value)}
+              disabled={isProcessing}
+              className="flex-1 px-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+            >
+              <option value="">-- Select a voucher --</option>
+              {(activeVouchers ?? []).map((v: any) => (
+                <option key={v._id} value={v.code}>
+                  {v.code}{v.name ? ` — ${v.name}` : ""} ({v.discountType === "percentage" ? `${v.discountValue}% off` : `₵${v.discountValue} off`})
+                </option>
+              ))}
+            </select>
             <button onClick={handleApplyVoucher} disabled={!voucherCode.trim() || isProcessing} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40">Apply</button>
-
           </div>
         )}
       </div>

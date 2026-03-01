@@ -32,7 +32,7 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
   const effectiveStatus = (localStatus ?? order.status) as OrderStatus
 
   const isTerminal = effectiveStatus === "completed" || effectiveStatus === "cancelled" || effectiveStatus === "delivered"
-  const isNotStarted = effectiveStatus === "pending_dropoff" || effectiveStatus === "pending"
+  const isNotStarted = effectiveStatus === "pending_dropoff" || effectiveStatus === "pending" || effectiveStatus === "checked_in" || effectiveStatus === "sorting"
   const isInProgress = IN_PROGRESS_STATUSES.includes(effectiveStatus as any)
   const isReady = effectiveStatus === "ready" || effectiveStatus === "ready_for_pickup"
 
@@ -51,9 +51,9 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
 
   const handleStart = async () => {
     setIsMoving(true)
-    setLocalStatus("checked_in" as OrderStatus)
+    setLocalStatus("washing" as OrderStatus)
     try {
-      await changeStatus(order._id as Id<"orders">, "checked_in" as OrderStatus)
+      await changeStatus(order._id as Id<"orders">, "washing" as OrderStatus)
       toast.success("Order started")
     } catch (e) {
       setLocalStatus(null)
