@@ -381,15 +381,6 @@ export function NewOrderContent() {
                 />
                 <Phone className='absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground pointer-events-none' />
               </div>
-              {phone.length > 0 && (
-                <button
-                  onClick={() => { setPhone(""); hasNavigatedFromPhoneRef.current = false }}
-                  className='flex items-center justify-center gap-2 h-12 sm:h-14 px-5 w-full rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 transition-colors'
-                >
-                  <ChevronLeft className='w-5 h-5' />
-                  Clear
-                </button>
-              )}
             </div>
             <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8'>
               <NumberPad
