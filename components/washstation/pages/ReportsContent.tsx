@@ -219,7 +219,7 @@ export default function DailyReportPage() {
               {isSubmitted ? (
                 <p className="text-2xl font-bold text-foreground">{washerTokens}</p>
               ) : (
-                <p className="text-2xl font-bold text-foreground w-full p-0" />
+                <p className="text-2xl font-bold text-foreground">{washerTokens}</p>
               )}
               <p className="text-xs text-muted-foreground mt-1">{fmt(washerTokens * 25)}</p>
             </div>
