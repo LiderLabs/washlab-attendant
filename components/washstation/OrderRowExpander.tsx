@@ -51,10 +51,10 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
 
   const handleStart = async () => {
     setIsMoving(true)
-    setLocalStatus("checked_in" as OrderStatus)
+    setLocalStatus("washing" as OrderStatus)
     try {
-      await changeStatus(order._id as Id<"orders">, "checked_in" as OrderStatus)
-      toast.success("Order checked in")
+      await changeStatus(order._id as Id<"orders">, "washing" as OrderStatus)
+      toast.success("Order started")
     } catch (e) {
       setLocalStatus(null)
       toast.error("Failed to check in order")
@@ -79,25 +79,17 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
         </button>
       )}
 
-      {isNotStarted && (
+      {(isNotStarted || isInProgress || isReady) && (
         <button
-          onClick={(e) => { e.stopPropagation(); handleStart() }}
+          onClick={(e) => {
+            e.stopPropagation()
+            isNotStarted ? handleStart() : handleDone()
+          }}
           disabled={isMoving}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${isNotStarted ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-green-600 text-white hover:bg-green-700"}`}
         >
-          {isMoving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
-          Start
-        </button>
-      )}
-
-      {(isInProgress || isReady) && (
-        <button
-          onClick={(e) => { e.stopPropagation(); handleDone() }}
-          disabled={isMoving}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 transition-colors disabled:opacity-50"
-        >
-          {isMoving ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
-          Done
+          {isMoving ? <Loader2 className="w-3 h-3 animate-spin" /> : isNotStarted ? <Play className="w-3 h-3" /> : <CheckCircle className="w-3 h-3" />}
+          {isNotStarted ? "Start" : "Done"}
         </button>
       )}
 
