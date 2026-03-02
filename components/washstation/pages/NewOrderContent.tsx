@@ -176,9 +176,53 @@ export function NewOrderContent() {
     }
   }, [])
 
+  // Auto-restore walk-in draft on mount
+  useEffect(() => {
+    const saved = sessionStorage.getItem("washlab_order_draft")
+    if (!saved) return
+    try {
+      const draft = JSON.parse(saved)
+      if (!draft.savedAt) return
+      const age = Date.now() - new Date(draft.savedAt).getTime()
+      if (age > 2 * 60 * 60 * 1000) { sessionStorage.removeItem("washlab_order_draft"); return }
+      if (draft.customerId && draft.customerName) {
+        setFoundCustomer({ _id: draft.customerId, name: draft.customerName, phoneNumber: draft.customerPhone, email: draft.customerEmail })
+        setStep("order")
+      }
+      if (draft.serviceType) setServiceType(draft.serviceType)
+      if (draft.weight) setWeight(draft.weight)
+      if (draft.itemCount) setItemCount(draft.itemCount)
+      if (draft.bagCardNumber) setBagCardNumber(draft.bagCardNumber)
+      if (draft.extraWashLoads) setExtraWashLoads(draft.extraWashLoads)
+      if (draft.extraDryLoads) setExtraDryLoads(draft.extraDryLoads)
+      if (draft.orderNotes) setOrderNotes(draft.orderNotes)
+      toast.info("Draft order restored")
+    } catch {}
+  }, [])
+
   useEffect(() => {
     if (dbServices.length > 0 && !serviceType) setServiceType(dbServices[0].code)
   }, [dbServices, serviceType])
+
+  // Auto-save draft whenever key fields change
+  useEffect(() => {
+    if (!foundCustomer) return
+    const draft = {
+      customerId: foundCustomer._id,
+      customerName: foundCustomer.name,
+      customerPhone: foundCustomer.phoneNumber,
+      customerEmail: foundCustomer.email,
+      serviceType,
+      weight,
+      itemCount,
+      bagCardNumber,
+      extraWashLoads,
+      extraDryLoads,
+      orderNotes,
+      savedAt: new Date().toISOString(),
+    }
+    sessionStorage.setItem("washlab_order_draft", JSON.stringify(draft))
+  }, [foundCustomer, serviceType, weight, itemCount, bagCardNumber, extraWashLoads, extraDryLoads, orderNotes])
 
   const quickNotes = ["Rush Service", "Stains", "Delicate", "No Softener"]
 

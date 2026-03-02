@@ -288,8 +288,19 @@ export default function OrderDetailsPage() {
   const handleWhatsAppClick = () => {
     if (!order?.customer?.phoneNumber) { toast.error('Customer phone number not available'); return; }
     const phone   = order.customer.phoneNumber.replace(/\D/g, '');
+    const loads = order.estimatedLoads ?? 1;
+    const whitesLine = order.whitesSeparate ? `Whites: *Washed Separately (+1 load)*\n` : '';
+    const voucherLine = (order as any)?.voucherCode ? `Voucher: *${(order as any).voucherCode}* applied\n` : '';
+    const basePriceLine = order.basePrice != null && order.basePrice !== order.finalPrice
+      ? `Original: ₵${order.basePrice.toFixed(2)}\nDiscount: -₵${(order.basePrice - order.finalPrice).toFixed(2)}\n`
+      : '';
     const message = encodeURIComponent(
-      `🧺 WashLab Update\n\nHi ${order.customer.name},\nYour laundry order *#${order.orderNumber}* is ready for pickup.\n\nTotal: ₵${order.finalPrice.toFixed(2)}\nPlease come along with your bag card.\n\nThank you!`
+      `🧺 WashLab Update\n\nHi ${order.customer.name},\nYour laundry order *#${order.orderNumber}* is ready for pickup.\n\nService: ${order.serviceType?.replace(/_/g, ' ')}\nWash Cycles: *${loads} load${loads !== 1 ? 's' : ''}*\n` +
+      whitesLine +
+      `Total: ₵${order.finalPrice.toFixed(2)}\n` +
+      basePriceLine +
+      voucherLine +
+      `Please come along with your bag card.\n\nThank you!`
     );
     window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
     setWhatsappSent(true);

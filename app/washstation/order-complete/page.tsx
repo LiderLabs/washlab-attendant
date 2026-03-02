@@ -57,13 +57,23 @@ function OrderCompleteContent() {
     const weight = order?.estimatedWeight ?? order?.actualWeight ?? 0;
     const serviceDesc = weight > 0 ? `${service} (${weight.toFixed(1)}kg)` : service;
     const bagCard = order?.bagCardNumber ? `Bag Card: *#${order.bagCardNumber}*\n` : '';
+    const loads = order?.estimatedLoads ?? 1;
+    const whitesLine = order?.whitesSeparate ? `Whites: *Washed Separately (+1 load)*\n` : '';
+    const voucherLine = (order as any)?.voucherCode ? `Voucher: *${(order as any).voucherCode}* applied\n` : '';
+    const basePriceLine = order?.basePrice != null && order?.finalPrice != null && order.basePrice !== order.finalPrice
+      ? `Original: GHS ${order.basePrice.toFixed(2)}\nDiscount: -GHS ${(order.basePrice - order.finalPrice).toFixed(2)}\n`
+      : '';
     const msg =
       `🧺 WashLab Receipt\n\n` +
       `Hi ${name},\n` +
       `Thank you for using WashLab!\n\n` +
       `Order: *#${num}*\n` +
       `Service: ${serviceDesc}\n` +
+      `Wash Cycles: *${loads} load${loads !== 1 ? 's' : ''}*\n` +
+      whitesLine +
       `Amount Paid: *GHS ${price}*\n` +
+      basePriceLine +
+      voucherLine +
       `Payment: ${getPaymentMethodLabel(paymentMethod)}\n` +
       bagCard +
       `Phone: ${customerPhone}\n\n` +
