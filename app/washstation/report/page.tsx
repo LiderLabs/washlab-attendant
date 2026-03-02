@@ -48,6 +48,7 @@ export default function DailyReportPage() {
   const [paystackAmount, setPaystackAmount] = useState(0);
   const [soapUnits, setSoapUnits] = useState(0);
   const [freeWashCount, setFreeWashCount] = useState(0);
+  const [tokenRevenue, setTokenRevenue] = useState(0);
   const [washingPlanCount, setWashingPlanCount] = useState(0);
   const [technicalFaults, setTechnicalFaults] = useState(0);
   const [faultNotes, setFaultNotes] = useState('');
@@ -80,6 +81,7 @@ export default function DailyReportPage() {
         setCardAmount(autoData.cardAmount ?? 0);
         setPaystackAmount(autoData.paystackAmount ?? 0);
         setFreeWashCount(autoData.freeWashCount ?? 0);
+        setTokenRevenue(autoData.tokenRevenue ?? 0);
         setServiceBreakdown(autoData.serviceBreakdown ?? []);
       }
       setLoaded(true);
@@ -331,6 +333,7 @@ export default function DailyReportPage() {
             ['Mobile Money', fmt(mobileMoneyAmount)],
             ['Card', fmt(cardAmount)],
             ['Total Revenue', fmt(totalRevenue)],
+            ['Expected Revenue (Tokens)', fmt(tokenRevenue)],
             ['Soap Units', soapUnits],
             ['Free Washes', freeWashCount],
             ['Washing Plans', washingPlanCount],
