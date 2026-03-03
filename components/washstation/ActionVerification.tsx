@@ -175,7 +175,7 @@ export function ActionVerification({
                       setPinError(null)
                     }}
                     title='Enter PIN'
-                    description={`Enter your 6-digit PIN to ${actionType}`}
+                    description={`Enter your 4-digit PIN to ${actionType}`}
                     error={pinError || undefined}
                   />
                   {isVerifying && (

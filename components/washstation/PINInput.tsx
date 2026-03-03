@@ -22,9 +22,9 @@ export function PINInput({
   onComplete,
   onCancel,
   title = "Enter PIN",
-  description = "Enter your 6-digit PIN to continue",
+  description = "Enter your 4-digit PIN to continue",
   error,
-  length = 6,
+  length = 4,
 }: PINInputProps) {
   const [pin, setPin] = useState<string[]>(Array(length).fill(''));
   const [focusedIndex, setFocusedIndex] = useState(0);

@@ -114,7 +114,7 @@ export function EnrollmentFlow({
           setStep("pin-setup")
           toast({
             title: "Biometric Enrollment Complete",
-            description: "Now set up your 6-digit PIN to complete enrollment.",
+            description: "Now set up your 4-digit PIN to complete enrollment.",
           })
         } else {
           setStep("success")
