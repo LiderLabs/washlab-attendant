@@ -67,7 +67,7 @@ export function OrdersTable({ orders, stationToken, onCollectPayment }: OrdersTa
       orders.map((order) => {
         const weight = order.actualWeight || order.estimatedWeight || 0;
         const serviceType = formatServiceType(order.serviceType);
-        const unpaid = order.paymentStatus !== 'paid' && (order.finalPrice ?? 0) > 0;
+        const unpaid = order.paymentStatus !== 'paid';
         return (
           <TableRow key={order._id} className="hover:bg-muted/30 transition-colors">
             <TableCell className="whitespace-nowrap" onClick={e => e.stopPropagation()}>
