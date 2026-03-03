@@ -100,6 +100,15 @@ function PaymentContent() {
     order ? { branchId: order.branchId } : "skip"
   );
 
+  const customerLoyaltyPoints = useQuery(
+    (api as any).loyalty.getCustomerLoyaltyPoints,
+    order?.customerId ? { customerId: order.customerId } : "skip"
+  );
+  const loyaltyPoints = customerLoyaltyPoints?.points ?? 0;
+  const hasLoyaltyReward = loyaltyPoints >= 10;
+  const [useLoyalty, setUseLoyalty] = useState(false);
+  const redeemLoyaltyMutation = useMutation((api as any).loyalty.redeemPoints);
+
   const voucherValidation = useQuery(
     (api as any).vouchers.validate,
     voucherCode.length >= 6 && order ? { code: voucherCode.toUpperCase(), orderTotal: order.totalPrice ?? 1, branchId: order.branchId } : "skip"
@@ -110,15 +119,17 @@ function PaymentContent() {
   const subtotal = basePrice + deliveryFee;
   const baseTotalDue = order?.finalPrice || order?.totalPrice || (subtotal > 0 ? subtotal : 0);
   const totalDue = (voucherResult?.valid && voucherResult?.finalPrice !== undefined) ? voucherResult.finalPrice : baseTotalDue;
-  const isFreeWash = voucherResult?.valid && totalDue === 0;
+  const loyaltyDiscount = useLoyalty && hasLoyaltyReward ? baseTotalDue : 0;
+  const totalDueWithLoyalty = useLoyalty && hasLoyaltyReward ? 0 : totalDue;
+  const isFreeWash = (voucherResult?.valid && totalDue === 0) || (useLoyalty && hasLoyaltyReward);
 
   const effectivePaymentMethod: PaymentMethodType = paymentMethod;
 
   // ─── Paystack fee calculation ─────────────────────────────────────────────
   const isPaystackMethod = effectivePaymentMethod !== "cash";
   const { chargeAmount: paystackChargeAmount, fee: paystackFee } = isPaystackMethod
-    ? calcPaystackCharge(totalDue)
-    : { chargeAmount: totalDue, fee: 0 };
+    ? calcPaystackCharge(totalDueWithLoyalty)
+    : { chargeAmount: totalDueWithLoyalty, fee: 0 };
   const customerFacingAmount = isPaystackMethod ? paystackChargeAmount : totalDue;
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -142,6 +153,18 @@ function PaymentContent() {
     verificationId: Id<"biometricVerifications">
   ) => {
     setShowVerification(false);
+    if (useLoyalty && hasLoyaltyReward && order) {
+      setStage("finalizing");
+      try {
+        await redeemLoyaltyMutation({ orderId: order._id, pointsToRedeem: 10 });
+        toast.success("Loyalty points redeemed! Order marked as paid.");
+        router.push(`/washstation/order-complete?orderId=${order._id}`);
+      } catch (e: any) {
+        toast.error(e?.message || "Failed to redeem loyalty points");
+        setStage("idle");
+      }
+      return;
+    }
     if (isFreeWash) { await handleConfirmVoucher(verificationId); return; }
     if (!order) { toast.error("Order not found"); setStage("idle"); return; }
 
@@ -477,6 +500,32 @@ function PaymentContent() {
             <span className="text-foreground">₵{paystackFee.toFixed(2)}</span>
           </div>
         )}
+
+      {/* Loyalty Points */}
+      {order?.customerId && (
+        <div className="pt-3 border-t border-border">
+          {hasLoyaltyReward ? (
+            <div className={"flex items-center justify-between p-3 rounded-xl border " + (useLoyalty ? "bg-purple-50 dark:bg-purple-900/20 border-purple-200" : "bg-muted/30 border-border")}>
+              <div>
+                <p className="text-sm font-semibold text-purple-700 dark:text-purple-400">🎁 Loyalty Reward</p>
+                <p className="text-xs text-muted-foreground">{loyaltyPoints} pts — free wash available</p>
+              </div>
+              <button
+                onClick={() => setUseLoyalty(!useLoyalty)}
+                disabled={isProcessing || !!voucherResult?.valid}
+                className={"text-xs font-semibold px-3 py-1.5 rounded-lg " + (useLoyalty ? "bg-purple-600 text-white" : "bg-primary text-primary-foreground") + " disabled:opacity-40"}
+              >
+                {useLoyalty ? "Remove" : "Apply"}
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between px-1">
+              <p className="text-xs text-muted-foreground">Loyalty Points</p>
+              <p className="text-xs font-medium">{loyaltyPoints}/10 pts</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Voucher */}
       <div className="pt-3 border-t border-border">
