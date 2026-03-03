@@ -207,7 +207,10 @@ function PaymentContent() {
     if (!order || !voucherResult?.valid) return;
     setStage("finalizing");
     try {
-      await applyVoucherMutation({ voucherCode: voucherCode.trim().toUpperCase(), orderId: order._id });
+      // Only apply if not already paid (free wash pre-applied on select)
+      if (order.paymentStatus !== "paid") {
+        await applyVoucherMutation({ voucherCode: voucherCode.trim().toUpperCase(), orderId: order._id });
+      }
       toast.success("Voucher applied! Order marked as paid.");
       router.push(`/washstation/order-complete?orderId=${order._id}`);
     } catch (e: any) {
