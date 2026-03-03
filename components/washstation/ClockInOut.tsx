@@ -34,10 +34,12 @@ import {
   Timer,
   Search,
   Loader2,
+  QrCode,
 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { LoadingSpinner } from "./LoadingSpinner"
 import { BiometricVerificationModal } from "./BiometricVerificationModal"
+import { QRClockIn } from "./QRClockIn"
 import { BiometricData } from "@/types"
 
 export function ClockInOut() {
@@ -79,6 +81,7 @@ export function ClockInOut() {
   const [selectedAttendanceId, setSelectedAttendanceId] =
     useState<Id<"attendanceLogs"> | null>(null)
   const [showClockInForm, setShowClockInForm] = useState(false)
+  const [showQRMode, setShowQRMode] = useState(false)
 
   // Filter attendants by search
   const filteredAttendants = attendants?.filter(
@@ -140,6 +143,15 @@ export function ClockInOut() {
   }
 
   // Show clock-in form if explicitly requested or if there are no active attendances
+  if (showQRMode) {
+    return (
+      <QRClockIn
+        onComplete={() => { setShowQRMode(false); setShowClockInForm(false) }}
+        onCancel={() => setShowQRMode(false)}
+      />
+    )
+  }
+
   if (showClockInForm || !attendances || attendances.length === 0) {
     return (
       <>
@@ -155,6 +167,15 @@ export function ClockInOut() {
                   Please select an attendant and verify identity to clock in
                 </CardDescription>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowQRMode(true)}
+                className="flex items-center gap-2"
+              >
+                <QrCode className="w-4 h-4" />
+                Use QR Code
+              </Button>
               {attendances && attendances.length > 0 && (
                 <Button
                   onClick={() => setShowClockInForm(false)}
