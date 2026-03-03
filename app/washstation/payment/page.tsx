@@ -208,8 +208,10 @@ function PaymentContent() {
     if (!order || !voucherResult?.valid) return;
     setStage("finalizing");
     try {
-      // Always apply voucher to update paymentStatus and finalPrice
-      await applyVoucherMutation({ voucherCode: voucherCode.trim().toUpperCase(), orderId: order._id });
+      // Only apply voucher if order not already marked as paid
+      if (order.paymentStatus !== 'paid') {
+        await applyVoucherMutation({ voucherCode: voucherCode.trim().toUpperCase(), orderId: order._id });
+      }
       toast.success("Voucher applied! Order marked as paid.");
       router.push(`/washstation/order-complete?orderId=${order._id}&paymentMethod=voucher&amountPaid=0&changeDue=0`);
     } catch (e: any) {
