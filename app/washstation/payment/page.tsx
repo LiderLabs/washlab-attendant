@@ -117,7 +117,8 @@ function PaymentContent() {
   const deliveryFee = order?.deliveryFee || 0;
   const basePrice = order?.basePrice || 0;
   const subtotal = basePrice + deliveryFee;
-  const baseTotalDue = order?.finalPrice || order?.totalPrice || (subtotal > 0 ? subtotal : 0);
+  const baseTotalDue = order?.finalPrice != null ? order.finalPrice : (order?.totalPrice ?? (subtotal > 0 ? subtotal : 0));
+  const hasPreAppliedDiscount = order?.finalPrice != null && order?.totalPrice != null && order.finalPrice < order.totalPrice;
   const totalDue = (voucherResult?.valid && voucherResult?.finalPrice !== undefined) ? voucherResult.finalPrice : baseTotalDue;
   const loyaltyDiscount = useLoyalty && hasLoyaltyReward ? baseTotalDue : 0;
   const totalDueWithLoyalty = useLoyalty && hasLoyaltyReward ? 0 : totalDue;
@@ -494,6 +495,21 @@ function PaymentContent() {
           <span className="text-foreground">₵0.00</span>
         </div>
 
+        {hasPreAppliedDiscount && (
+          <div className="flex justify-between text-sm text-green-600">
+            <span className="font-medium">
+              Discount Applied
+              {(order as any)?.voucherCode ? <span className="ml-1 text-xs bg-green-100 px-1 rounded">{(order as any).voucherCode}</span> : null}
+            </span>
+            <span>-₵{((order?.totalPrice ?? 0) - (order?.finalPrice ?? 0)).toFixed(2)}</span>
+          </div>
+        )}
+        {hasPreAppliedDiscount && (
+          <div className="flex justify-between text-sm line-through text-muted-foreground">
+            <span>Original Total</span>
+            <span>₵{(order?.totalPrice ?? 0).toFixed(2)}</span>
+          </div>
+        )}
         {isPaystackMethod && (
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">
