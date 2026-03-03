@@ -165,7 +165,7 @@ export default function DailyReportPage() {
   };
 
   const totalRecorded = cashAmount + mobileMoneyAmount + cardAmount + paystackAmount;
-  const totalTokenRevenue = autoData?.totalRevenue ?? totalRecorded;
+  const totalTokenRevenue = autoData?.tokenRevenue ?? totalRecorded;
   const discrepancy = Math.round((totalRecorded - totalTokenRevenue) * 100) / 100;
   // totalRecorded and discrepancy calculated above
   const isSubmitted = existingDraft?.status === 'submitted';
