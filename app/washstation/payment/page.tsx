@@ -207,8 +207,8 @@ function PaymentContent() {
     if (!order || !voucherResult?.valid) return;
     setStage("finalizing");
     try {
-      // Only apply if not already paid (free wash pre-applied on select)
-      if (order.paymentStatus !== "paid") {
+      // Only apply voucher if not already a free wash (totalDue would be 0)
+      if (totalDue > 0) {
         await applyVoucherMutation({ voucherCode: voucherCode.trim().toUpperCase(), orderId: order._id });
       }
       toast.success("Voucher applied! Order marked as paid.");
