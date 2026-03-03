@@ -52,8 +52,7 @@ export function NewOrderContent() {
     (api as any).admin.getBranchServicesPublic,
     branchId ? { branchId } : "skip"
   ) ?? []
-  const globalServices = useQuery(api.services.getActive) ?? []
-  const branchServices = branchServicesRaw.length > 0 ? branchServicesRaw : globalServices
+  const branchServices = branchServicesRaw
 
   const dbServices = branchServices.map((s: any) => ({
     _id: s._id,
