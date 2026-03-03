@@ -101,7 +101,7 @@ function PaymentContent() {
   );
 
   const customerLoyaltyPoints = useQuery(
-    (api as any).loyalty.getCustomerLoyaltyPoints,
+    (api as any).loyalty.getPointsForAttendant,
     order?.customerId ? { customerId: order.customerId } : "skip"
   );
   const loyaltyPoints = customerLoyaltyPoints?.points ?? 0;
