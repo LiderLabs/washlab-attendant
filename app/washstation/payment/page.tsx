@@ -158,7 +158,7 @@ function PaymentContent() {
       try {
         await redeemLoyaltyMutation({ orderId: order._id, pointsToRedeem: 10 });
         toast.success("Loyalty points redeemed! Order marked as paid.");
-        router.push(`/washstation/order-complete?orderId=${order._id}`);
+        router.push(`/washstation/order-complete?orderId=${order._id}&paymentMethod=loyalty&amountPaid=0&changeDue=0`);
       } catch (e: any) {
         toast.error(e?.message || "Failed to redeem loyalty points");
         setStage("idle");
@@ -212,7 +212,7 @@ function PaymentContent() {
         await applyVoucherMutation({ voucherCode: voucherCode.trim().toUpperCase(), orderId: order._id });
       }
       toast.success("Voucher applied! Order marked as paid.");
-      router.push(`/washstation/order-complete?orderId=${order._id}`);
+      router.push(`/washstation/order-complete?orderId=${order._id}&paymentMethod=voucher&amountPaid=0&changeDue=0`);
     } catch (e: any) {
       toast.error(e?.message || "Failed to apply voucher");
       setStage("idle");

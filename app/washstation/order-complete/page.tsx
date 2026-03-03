@@ -52,14 +52,14 @@ function OrderCompleteContent() {
     const customerPhone = rawPhone;
     const name = order?.customer?.name || 'Customer';
     const num = order?.orderNumber || orderIdParam || '';
-    const price = (order?.finalPrice ?? amountPaid).toFixed(2);
+    const price = (order?.finalPrice != null ? order.finalPrice : amountPaid).toFixed(2);
     const service = formatServiceType(order?.serviceType);
     const weight = order?.estimatedWeight ?? order?.actualWeight ?? 0;
     const serviceDesc = weight > 0 ? `${service} (${weight.toFixed(1)}kg)` : service;
     const bagCard = order?.bagCardNumber ? `Bag Card: *#${order.bagCardNumber}*\n` : '';
     const loads = order?.estimatedLoads ?? 1;
     const whitesLine = order?.whitesSeparate ? `Whites: *Washed Separately (+1 load)*\n` : '';
-    const voucherLine = (order as any)?.voucherCode ? `Voucher: *${(order as any).voucherCode}* applied\n` : '';
+    const voucherLine = (order as any)?.voucherCode ? `Voucher: *${(order as any).voucherCode}* applied\n` : (paymentMethod === 'voucher' || paymentMethod === 'loyalty') ? `Payment: *Free (${paymentMethod === 'loyalty' ? 'Loyalty Reward' : 'Voucher'})*\n` : '';
     const basePriceLine = order?.basePrice != null && order?.finalPrice != null && order.basePrice !== order.finalPrice
       ? `Original: GHS ${order.basePrice.toFixed(2)}\nDiscount: -GHS ${(order.basePrice - order.finalPrice).toFixed(2)}\n`
       : '';
