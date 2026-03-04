@@ -95,11 +95,7 @@ export function ClockInOut() {
 
   const handleStartClockIn = async () => {
     if (!selectedAttendantId) return
-
-    const result = await startClockIn(selectedAttendantId as Id<"attendants">)
-    if (result) {
-      setShowClockInModal(true)
-    }
+    setShowPINClockInModal(true)
   }
 
   const handlePINClockInComplete = async (pin: string) => {
