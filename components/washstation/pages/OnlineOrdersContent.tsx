@@ -25,7 +25,7 @@ const SERVICE_PRICE_PER_LOAD: Record<string, number> = {
   dry_only: 25,
 }
 const KG_PER_LOAD = 8
-const WHITES_EXTRA_LOAD = 1
+const WHITES_EXTRA_LOAD = 0 // Attendant manually adds extra load if needed
 
 export function OnlineOrdersContent() {
   const router = useRouter()
