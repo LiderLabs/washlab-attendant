@@ -39,21 +39,21 @@ import {
 import { formatDistanceToNow } from "date-fns"
 import { LoadingSpinner } from "./LoadingSpinner"
 import { BiometricVerificationModal } from "./BiometricVerificationModal"
+import { PINInput } from "./PINInput"
 import { QRClockIn } from "./QRClockIn"
+import { useStationPINClockIn } from "@/hooks/useStationPINClockIn"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { BiometricData } from "@/types"
 
 export function ClockInOut() {
   const { stationToken } = useStationSession()
+  const { clockInWithPIN, clockOutWithPIN, isLoading: pinLoading } = useStationPINClockIn(stationToken)
   const { attendances, isLoading: attendancesLoading } =
     useStationAttendance(stationToken)
   const {
-    startClockIn,
-    finishClockIn,
     isLoading: clockInLoading,
   } = useStationClockIn(stationToken)
   const {
-    startClockOut,
-    finishClockOut,
     isLoading: clockOutLoading,
   } = useStationClockOut(stationToken)
 
@@ -77,6 +77,9 @@ export function ClockInOut() {
   >("")
   const [searchQuery, setSearchQuery] = useState("")
   const [showClockInModal, setShowClockInModal] = useState(false)
+  const [showPINClockInModal, setShowPINClockInModal] = useState(false)
+  const [showPINClockOutModal, setShowPINClockOutModal] = useState(false)
+  const [pinError, setPinError] = useState<string | null>(null)
   const [showClockOutModal, setShowClockOutModal] = useState(false)
   const [selectedAttendanceId, setSelectedAttendanceId] =
     useState<Id<"attendanceLogs"> | null>(null)
@@ -99,36 +102,37 @@ export function ClockInOut() {
     }
   }
 
-  const handleClockInComplete = async (biometricData: BiometricData) => {
+  const handlePINClockInComplete = async (pin: string) => {
     if (!selectedAttendantId) return
-
-    const success = await finishClockIn(
-      selectedAttendantId as Id<"attendants">,
-      biometricData
-    )
+    setPinError(null)
+    const success = await clockInWithPIN(selectedAttendantId as Id<"attendants">, pin)
     if (success) {
-      setShowClockInModal(false)
+      setShowPINClockInModal(false)
       setSelectedAttendantId("")
       setSearchQuery("")
       setShowClockInForm(false)
+    } else {
+      setPinError("Invalid PIN. Please try again.")
     }
   }
 
   const handleStartClockOut = async (attendanceId: Id<"attendanceLogs">) => {
     setSelectedAttendanceId(attendanceId)
-    const result = await startClockOut(attendanceId)
-    if (result) {
+    setShowPINClockOutModal(true)
+    if (true) {
       setShowClockOutModal(true)
     }
   }
 
-  const handleClockOutComplete = async (biometricData: BiometricData) => {
+  const handlePINClockOutComplete = async (pin: string) => {
     if (!selectedAttendanceId) return
-
-    const success = await finishClockOut(selectedAttendanceId, biometricData)
+    setPinError(null)
+    const success = await clockOutWithPIN(selectedAttendanceId, pin)
     if (success) {
-      setShowClockOutModal(false)
+      setShowPINClockOutModal(false)
       setSelectedAttendanceId(null)
+    } else {
+      setPinError("Invalid PIN. Please try again.")
     }
   }
 
@@ -260,16 +264,20 @@ export function ClockInOut() {
           </CardContent>
         </Card>
 
-        <BiometricVerificationModal
-          open={showClockInModal}
-          onClose={() => {
-            setShowClockInModal(false)
-          }}
-          onComplete={handleClockInComplete}
-          title='Verify Identity to Clock In'
-          description='Please verify your identity using face recognition'
-          isLoading={clockInLoading}
-        />
+        <Dialog open={showPINClockInModal} onOpenChange={setShowPINClockInModal}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Clock In</DialogTitle>
+            </DialogHeader>
+            <PINInput
+              onComplete={handlePINClockInComplete}
+              onCancel={() => { setShowPINClockInModal(false); setPinError(null) }}
+              title="Enter your PIN"
+              description="Enter your 4-digit PIN to clock in"
+              error={pinError || undefined}
+            />
+          </DialogContent>
+        </Dialog>
       </>
     )
   }
@@ -356,17 +364,20 @@ export function ClockInOut() {
           </CardContent>
         </Card>
 
-        <BiometricVerificationModal
-          open={showClockOutModal}
-          onClose={() => {
-            setShowClockOutModal(false)
-            setSelectedAttendanceId(null)
-          }}
-          onComplete={handleClockOutComplete}
-          title='Verify Identity to Clock Out'
-          description='Please verify your identity to clock out'
-          isLoading={clockOutLoading}
-        />
+        <Dialog open={showPINClockOutModal} onOpenChange={setShowPINClockOutModal}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Clock Out</DialogTitle>
+            </DialogHeader>
+            <PINInput
+              onComplete={handlePINClockOutComplete}
+              onCancel={() => { setShowPINClockOutModal(false); setPinError(null) }}
+              title="Enter your PIN"
+              description="Enter your 4-digit PIN to clock out"
+              error={pinError || undefined}
+            />
+          </DialogContent>
+        </Dialog>
       </>
     )
   }
@@ -455,16 +466,20 @@ export function ClockInOut() {
         </CardContent>
       </Card>
 
-      <BiometricVerificationModal
-        open={showClockInModal}
-        onClose={() => {
-          setShowClockInModal(false)
-        }}
-        onComplete={handleClockInComplete}
-        title='Verify Identity to Clock In'
-        description='Please verify your identity using face recognition'
-        isLoading={clockInLoading}
-      />
+      <Dialog open={showPINClockInModal} onOpenChange={setShowPINClockInModal}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Clock In</DialogTitle>
+            </DialogHeader>
+            <PINInput
+              onComplete={handlePINClockInComplete}
+              onCancel={() => { setShowPINClockInModal(false); setPinError(null) }}
+              title="Enter your PIN"
+              description="Enter your 4-digit PIN to clock in"
+              error={pinError || undefined}
+            />
+          </DialogContent>
+        </Dialog>
     </>
   )
 }

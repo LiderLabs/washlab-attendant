@@ -49,7 +49,7 @@ export function EnrollmentFlow({
   expiresAt,
   onSuccess,
 }: EnrollmentFlowProps) {
-  const [step, setStep] = useState<EnrollmentStep>("method-selection")
+  const [step, setStep] = useState<EnrollmentStep>("pin-setup")
   const [challenge, setChallenge] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -177,8 +177,11 @@ export function EnrollmentFlow({
         <CheckCircle2 className='h-16 w-16 mx-auto text-green-500' />
         <h3 className='text-2xl font-bold'>Enrollment Complete!</h3>
         <p className='text-muted-foreground'>
-          Your biometric profile and PIN have been successfully set up.
+          Your PIN has been successfully set up.
         </p>
+        <Button variant='outline' size='sm' onClick={() => setStep('method-selection')} className='text-xs'>
+          Set up Face Recognition (Optional)
+        </Button>
         <p className='text-sm text-muted-foreground'>Redirecting to login...</p>
       </Card>
     )
