@@ -4,7 +4,7 @@ import { useStationOrderStatus, type OrderStatus } from "@/hooks/useStationOrder
 import { ActionVerification } from "./ActionVerification"
 import { Id } from "@jordan6699/washlab-backend/dataModel"
 import { toast } from "sonner"
-import { Play, CheckCircle, Loader2, CreditCard } from "lucide-react"
+import { Play, CheckCircle, Loader2, CreditCard, MessageCircle } from "lucide-react"
 
 interface OrderExpanderProps {
   order: {
@@ -94,10 +94,21 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
       )}
 
       {isTerminal && (
+        <>
         <span className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs font-semibold">
           <CheckCircle className="w-3 h-3" />
           Completed
         </span>
+        {order.customer?.phoneNumber && (
+          <button
+            onClick={(e) => { e.stopPropagation(); const p = order.customer!.phoneNumber.startsWith("0") ? `233${order.customer!.phoneNumber.slice(1)}` : order.customer!.phoneNumber; const msg = encodeURIComponent(`Hi ${order.customer!.name}, your WashLab order *#${order.orderNumber}* is ready for pickup! Please bring your bag card. Thank you! 🧺`); window.open(`https://wa.me/${p}?text=${msg}`, "_blank"); }}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 transition-colors"
+          >
+            <MessageCircle className="w-3 h-3" />
+            WhatsApp
+          </button>
+        )}
+        </>
       )}
 
       {verifyOpen && (
