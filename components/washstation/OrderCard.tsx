@@ -10,6 +10,7 @@ import {
   Phone,
   Package,
   MessageCircle,
+  PhoneCall,
 } from "lucide-react"
 import Link from "next/link"
 import { Id } from "@jordan6699/washlab-backend/dataModel"
@@ -183,7 +184,17 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
                 <ArrowRight className="w-4 h-4 ml-1" />
               </Link>
             </Button>
-          </div>
+            {order.customer?.phoneNumber && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); window.location.href = `tel:${order.customer!.phoneNumber}`; }}
+                className="text-green-600 hover:text-green-700"
+              >
+                <PhoneCall className="w-4 h-4" />
+              </Button>
+            )}
+            </div>
 
           {/* WhatsApp Button */}
           {showWhatsApp && (

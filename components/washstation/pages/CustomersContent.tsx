@@ -17,7 +17,9 @@ import {
   User,
   Award,
   FileText,
-  Tag
+  Tag,
+  PhoneCall,
+  MessageCircle
 } from 'lucide-react';
 
 export function CustomersContent() {
@@ -166,7 +168,31 @@ export function CustomersContent() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+                {selectedCustomer.phone && (
+                  <Button
+                    variant="outline"
+                    className="gap-2 flex-1 sm:flex-initial text-green-600 border-green-200"
+                    onClick={() => { window.location.href = `tel:${selectedCustomer.phone || selectedCustomer.phoneNumber}`; }}
+                  >
+                    <PhoneCall className="w-4 h-4" />
+                    Call
+                  </Button>
+                )}
+                {selectedCustomer.phone && (
+                  <Button
+                    variant="outline"
+                    className="gap-2 flex-1 sm:flex-initial text-green-600 border-green-200"
+                    onClick={() => {
+                      const p = (selectedCustomer.phone || selectedCustomer.phoneNumber || '').replace(/\D/g, '');
+                      const phone = p.startsWith('0') ? `233${p.slice(1)}` : p;
+                      window.open(`https://wa.me/${phone}`, '_blank');
+                    }}
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    WhatsApp
+                  </Button>
+                )}
                 <Button variant="outline" className="gap-2 flex-1 sm:flex-initial">
                   <Edit className="w-4 h-4" />
                   Edit Profile

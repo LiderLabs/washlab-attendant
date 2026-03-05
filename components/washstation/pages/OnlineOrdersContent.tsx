@@ -137,6 +137,12 @@ export function OnlineOrdersContent() {
 
   const handleContact = () => {
     if (selectedOrder?.customer?.phoneNumber) {
+      window.location.href = `tel:${selectedOrder.customer.phoneNumber}`
+    }
+  }
+
+  const handleWhatsApp = () => {
+    if (selectedOrder?.customer?.phoneNumber) {
       const phone = selectedOrder.customer.phoneNumber.startsWith("0")
         ? `233${selectedOrder.customer.phoneNumber.slice(1)}`
         : selectedOrder.customer.phoneNumber
@@ -538,9 +544,13 @@ export function OnlineOrdersContent() {
             <Trash2 className="w-4 h-4 sm:mr-1.5" />
             <span className="hidden sm:inline text-xs">Reject</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={handleContact}>
+          <Button variant="outline" size="sm" onClick={handleContact} className="text-green-600 border-green-200">
             <Phone className="w-4 h-4 sm:mr-1.5" />
-            <span className="hidden sm:inline text-xs">Contact</span>
+            <span className="hidden sm:inline text-xs">Call</span>
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleWhatsApp} className="text-green-600 border-green-200">
+            <MessageSquare className="w-4 h-4 sm:mr-1.5" />
+            <span className="hidden sm:inline text-xs">WhatsApp</span>
           </Button>
         </div>
         <Button

@@ -2,7 +2,7 @@
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Id } from '@jordan6699/washlab-backend/dataModel';
-import { Clock, Package, CheckCircle, Truck, type LucideIcon } from 'lucide-react';
+import { Clock, Package, CheckCircle, Truck, PhoneCall, type LucideIcon } from 'lucide-react';
 import { useMemo } from 'react';
 import { OrderRowExpander } from './OrderRowExpander';
 
@@ -71,7 +71,18 @@ export function OrdersTable({ orders, stationToken, onCollectPayment }: OrdersTa
         return (
           <TableRow key={order._id} className="hover:bg-muted/30 transition-colors">
             <TableCell className="whitespace-nowrap" onClick={e => e.stopPropagation()}>
-              <OrderRowExpander order={order} stationToken={stationToken ?? null} unpaid={unpaid} onCollectPayment={() => onCollectPayment?.(order._id)} />
+              <div className="flex items-center gap-2">
+                <OrderRowExpander order={order} stationToken={stationToken ?? null} unpaid={unpaid} onCollectPayment={() => onCollectPayment?.(order._id)} />
+                {order.customer?.phoneNumber && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); window.location.href = `tel:${order.customer!.phoneNumber}`; }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-100 text-green-700 text-xs font-semibold hover:bg-green-200 transition-colors"
+                  >
+                    <PhoneCall className="w-3 h-3" />
+                    Call
+                  </button>
+                )}
+              </div>
             </TableCell>
             <TableCell className="whitespace-nowrap font-semibold text-foreground">{order.orderNumber}</TableCell>
             <TableCell className="whitespace-nowrap">
