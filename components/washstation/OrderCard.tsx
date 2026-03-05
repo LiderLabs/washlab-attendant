@@ -11,6 +11,7 @@ import {
   Package,
   MessageCircle,
   PhoneCall,
+  Pencil,
 } from "lucide-react"
 import Link from "next/link"
 import { Id } from "@jordan6699/washlab-backend/dataModel"
@@ -22,6 +23,7 @@ interface OrderCardProps {
     _id: Id<"orders">
     orderNumber: string
     status: OrderStatus
+    paymentStatus?: string
     finalPrice: number
     createdAt: number
     serviceType?: string
@@ -184,6 +186,18 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
                 <ArrowRight className="w-4 h-4 ml-1" />
               </Link>
             </Button>
+            {order.paymentStatus !== "paid" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Link href={`/washstation/orders/${order._id}/edit`}>
+                  <Pencil className="w-4 h-4" />
+                </Link>
+              </Button>
+            )}
             {order.customer?.phoneNumber && (
               <Button
                 variant="ghost"

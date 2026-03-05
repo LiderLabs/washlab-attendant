@@ -2,7 +2,8 @@
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Id } from '@jordan6699/washlab-backend/dataModel';
-import { Clock, Package, CheckCircle, Truck, PhoneCall, type LucideIcon } from 'lucide-react';
+import { Clock, Package, CheckCircle, Truck, PhoneCall, Pencil, type LucideIcon } from 'lucide-react';
+import Link from 'next/link';
 import { useMemo } from 'react';
 import { OrderRowExpander } from './OrderRowExpander';
 
@@ -81,6 +82,16 @@ export function OrdersTable({ orders, stationToken, onCollectPayment }: OrdersTa
                     <PhoneCall className="w-3 h-3" />
                     Call
                   </button>
+                )}
+                {unpaid && (
+                  <Link
+                    href={`/washstation/orders/${order._id}/edit`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-100 text-blue-700 text-xs font-semibold hover:bg-blue-200 transition-colors"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    Edit
+                  </Link>
                 )}
               </div>
             </TableCell>

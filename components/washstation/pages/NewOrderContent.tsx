@@ -118,7 +118,7 @@ export function NewOrderContent() {
   const [skipEmail, setSkipEmail] = useState(false)
 
   const [serviceType, setServiceType] = useState<string>("")
-  const [weight, setWeight] = useState(5.0)
+  const [weight, setWeight] = useState(8.0)
   const [itemCount, setItemCount] = useState(0)
   const [orderNotes, setOrderNotes] = useState<string[]>([])
   const [customNote, setCustomNote] = useState("")
