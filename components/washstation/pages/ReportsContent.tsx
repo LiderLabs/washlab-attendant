@@ -64,6 +64,56 @@ export default function DailyReportPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
+  const [draftDate, setDraftDate] = useState<string | null>(null);
+  const DRAFT_KEY = `washlab_report_draft_${branchId || "unknown"}`;
+  const isSubmitted = existingDraft?.status === 'submitted';
+
+  // Auto-save to localStorage whenever manual fields change
+  useEffect(() => {
+    if (!loaded || isSubmitted || !branchId) return;
+    const draft = {
+      date: today(),
+      soapUnits,
+      faults,
+      endOfDayComment,
+      savedAt: Date.now(),
+    };
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {}
+  }, [soapUnits, faults, endOfDayComment, loaded, isSubmitted, branchId]);
+
+  // On mount, check for a saved localStorage draft from a previous session
+  useEffect(() => {
+    if (!branchId) return;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      // Only show banner if draft is from a previous day or previous session
+      if (saved.date && saved.date !== today()) {
+        setDraftDate(saved.date);
+        setShowDraftBanner(true);
+      }
+    } catch {}
+  }, [branchId]);
+
+  const handleRestoreDraft = () => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (saved.soapUnits !== undefined) setSoapUnits(saved.soapUnits);
+      if (saved.faults) setFaults(saved.faults);
+      if (saved.endOfDayComment) setEndOfDayComment(saved.endOfDayComment);
+      toast.success("Draft restored!");
+    } catch {}
+    setShowDraftBanner(false);
+  };
+
+  const handleDiscardDraft = () => {
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    setShowDraftBanner(false);
+  };
 
   // Derive attendant names from active clocked-in staff
   const attendantNames = activeAttendances
@@ -151,6 +201,7 @@ export default function DailyReportPage() {
     try {
       await submitMutation(buildPayload());
       toast.success('Daily report submitted!');
+      try { localStorage.removeItem(DRAFT_KEY); } catch {}
       setTimeout(() => {
         setWasherTokens(0); setDryerTokens(0);
         setCashAmount(0); setMobileMoneyAmount(0); setCardAmount(0); setPaystackAmount(0);
@@ -168,7 +219,6 @@ export default function DailyReportPage() {
   const totalTokenRevenue = autoData?.tokenRevenue ?? totalRecorded;
   const discrepancy = Math.round((totalRecorded - totalTokenRevenue) * 100) / 100;
   // totalRecorded and discrepancy calculated above
-  const isSubmitted = existingDraft?.status === 'submitted';
 
   return (
     <>
@@ -187,6 +237,20 @@ export default function DailyReportPage() {
             {isSubmitted ? 'Submitted' : 'Open'}
           </span>
         </div>
+
+        {/* Draft restore banner */}
+        {showDraftBanner && (
+          <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Unsaved Draft Found</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">You have an unsaved report draft from {draftDate ? new Date(draftDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "a previous session"}. Would you like to restore it?</p>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <button onClick={handleRestoreDraft} className="text-xs font-semibold text-amber-800 dark:text-amber-300 underline">Restore</button>
+              <button onClick={handleDiscardDraft} className="text-xs text-amber-600 dark:text-amber-500 underline">Discard</button>
+            </div>
+          </div>
+        )}
 
         {/* Attendants on Duty (read-only, from clock-in) */}
         {attendantNames.length > 0 && (

@@ -44,8 +44,8 @@ export function TransactionsContent() {
   const [filter, setFilter] = useState<'all' | 'cash' | 'card' | 'mobile_money'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'walk_in' | 'online'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
 
   const clearDateRange = () => {
     setStartDate('');
@@ -56,7 +56,9 @@ export function TransactionsContent() {
     setFilter('all');
     setTypeFilter('all');
     setSearchQuery('');
-    clearDateRange();
+    const today = new Date().toISOString().split('T')[0];
+    setStartDate(today);
+    setEndDate(today);
   };
 
   const startTimestamp = startDate ? new Date(startDate).getTime() : undefined;

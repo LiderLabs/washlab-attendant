@@ -42,7 +42,8 @@ import { BiometricVerificationModal } from "./BiometricVerificationModal"
 import { PINInput } from "./PINInput"
 import { QRClockIn } from "./QRClockIn"
 import { useStationPINClockIn } from "@/hooks/useStationPINClockIn"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { useRouter } from "next/navigation"
 import { BiometricData } from "@/types"
 
 export function ClockInOut() {
@@ -85,6 +86,19 @@ export function ClockInOut() {
     useState<Id<"attendanceLogs"> | null>(null)
   const [showClockInForm, setShowClockInForm] = useState(false)
   const [showQRMode, setShowQRMode] = useState(false)
+  const [showReportWarning, setShowReportWarning] = useState(false)
+  const [pendingClockOutId, setPendingClockOutId] = useState<any>(null)
+  const router = useRouter()
+  const sessionData = (useStationSession() as any).sessionData
+  const branchId = sessionData?.branchId
+
+  function todayStr() { return new Date().toISOString().split("T")[0] }
+
+  const todayReport = (useQuery as any)(
+    (api as any).dailyReports?.getDraft,
+    branchId ? { branchId, date: todayStr() } : "skip"
+  )
+  const reportSubmitted = todayReport?.status === "submitted"
 
   // Filter attendants by search
   const filteredAttendants = attendants?.filter(
@@ -114,10 +128,25 @@ export function ClockInOut() {
 
   const handleStartClockOut = async (attendanceId: Id<"attendanceLogs">) => {
     setSelectedAttendanceId(attendanceId)
-    setShowPINClockOutModal(true)
-    if (true) {
-      setShowClockOutModal(true)
+    const isLastAttendant = attendances && attendances.length === 1
+    if (isLastAttendant && !reportSubmitted) {
+      setPendingClockOutId(attendanceId)
+      setShowReportWarning(true)
+      return
     }
+    setShowPINClockOutModal(true)
+    setShowClockOutModal(true)
+  }
+
+  const handleProceedClockOut = () => {
+    setShowReportWarning(false)
+    setShowPINClockOutModal(true)
+    setShowClockOutModal(true)
+  }
+
+  const handleGoToReport = () => {
+    setShowReportWarning(false)
+    router.push("/washstation/reports")
   }
 
   const handlePINClockOutComplete = async (pin: string) => {
@@ -272,6 +301,21 @@ export function ClockInOut() {
               description="Enter your 4-digit PIN to clock in"
               error={pinError || undefined}
             />
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showReportWarning} onOpenChange={setShowReportWarning}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Daily Report Not Submitted</DialogTitle>
+              <DialogDescription>
+                You are the last attendant clocking out and the daily report has not been submitted yet. Would you like to submit it before clocking out?
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex flex-col gap-2 sm:flex-col">
+              <Button onClick={handleGoToReport} className="w-full">Go to Report</Button>
+              <Button variant="outline" onClick={handleProceedClockOut} className="w-full">Clock Out Anyway</Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </>

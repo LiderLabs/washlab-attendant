@@ -547,7 +547,7 @@ function PaymentContent() {
       )}
 
       {/* Voucher */}
-     {/*  <div className="pt-3 border-t border-border">
+      <div className="pt-3 border-t border-border">
         {voucherResult?.valid ? (
           <div className="flex items-center justify-between p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
             <div>
@@ -574,7 +574,7 @@ function PaymentContent() {
             <button onClick={handleApplyVoucher} disabled={!voucherCode.trim() || isProcessing} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40">Apply</button>
           </div>
         )}
-      </div> */}
+      </div>
         <div className="flex justify-between pt-2 border-t border-border items-center">
           <span className="font-semibold text-foreground">Total Due</span>
           <div className="text-right">
