@@ -285,7 +285,7 @@ export default function DailyReportPage() {
               ) : (
                 <p className="text-2xl font-bold text-foreground">{washerTokens}</p>
               )}
-              <p className="text-xs text-muted-foreground mt-1">{fmt(washerTokens * 25)}</p>
+              <p className="text-xs text-muted-foreground mt-1">{fmt(washerTokens * (autoData?.washerPrice ?? 25))}</p>
             </div>
             <div className="bg-muted/40 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Dryer Tokens</p>
@@ -296,7 +296,7 @@ export default function DailyReportPage() {
                   onChange={e => setDryerTokens(parseInt(e.target.value) || 0)}
                   className="text-2xl font-bold bg-transparent border-none outline-none text-foreground w-full p-0" />
               )}
-              <p className="text-xs text-muted-foreground mt-1">{fmt(dryerTokens * 25)}</p>
+              <p className="text-xs text-muted-foreground mt-1">{fmt(dryerTokens * (autoData?.dryerPrice ?? 25))}</p>
             </div>
           </div>
 

@@ -484,6 +484,21 @@ export default function OrderDetailsPage() {
                     <span className="font-semibold text-foreground">₵{order.finalPrice.toFixed(2)}</span>
                   </div>
                 </div>
+                {order.basePrice != null && order.basePrice > order.finalPrice && (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Original Price</span>
+                      <span className="line-through text-muted-foreground">₵{order.basePrice.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-1.5 text-green-700 dark:text-green-400 font-medium">
+                        <Tag className="w-3.5 h-3.5" />
+                        {(order as any).voucherCode ? `Voucher (${(order as any).voucherCode})` : "Loyalty Discount"}
+                      </span>
+                      <span className="text-green-700 dark:text-green-400 font-semibold">-₵{(order.basePrice - order.finalPrice).toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
                 <div className="border-t border-border mt-4 pt-4 flex justify-between">
                   <span className="font-semibold text-foreground">Total</span>
                   <span className="font-bold text-xl text-primary">₵{order.finalPrice.toFixed(2)}</span>

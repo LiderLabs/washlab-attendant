@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
-    "@jordan6699/washlab-backend": "^1.1.59",
+    "@jordan6699/washlab-backend": "^1.1.61",
     "@mediapipe/camera_utils": "^0.3.1675466862",
     "@mediapipe/drawing_utils": "^0.3.1675466124",
     "@mediapipe/face_detection": "^0.4.1646425229",
