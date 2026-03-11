@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Lock, CheckCircle2, Loader2, Plus, X, Save, Wrench, Tag } from 'lucide-react';
+import { Lock, CheckCircle2, Loader2, Plus, X, Save, Wrench, Tag, ChevronRight, Clock } from 'lucide-react';
 
 function today() { return new Date().toISOString().split('T')[0]; }
 function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
@@ -39,6 +39,10 @@ export default function DailyReportPage() {
     (api as any).dailyReports.getDraft,
     branchId ? { branchId, date: today() } : 'skip'
   );
+  const pastReports = useQuery(
+    (api as any).dailyReports.getByBranch,
+    branchId ? { branchId, limit: 14, stationToken: stationToken || undefined } : 'skip'
+  );
   const clockedInStaff = null;
   // Also try via station token (same as ActionVerification does)
   const activeAttendances = useQuery(
@@ -67,7 +71,7 @@ export default function DailyReportPage() {
   const [showDraftBanner, setShowDraftBanner] = useState(false);
   const [draftDate, setDraftDate] = useState<string | null>(null);
   const DRAFT_KEY = `washlab_report_draft_${branchId || "unknown"}`;
-  const isSubmitted = existingDraft?.status === 'submitted';
+  const isSubmitted = existingDraft?.status === 'submitted' || existingDraft?.status === 'submitted_with_outstanding';
 
   // Auto-save to localStorage whenever manual fields change
   useEffect(() => {
@@ -115,10 +119,10 @@ export default function DailyReportPage() {
     setShowDraftBanner(false);
   };
 
-  // Derive attendant names from active clocked-in staff
-  const attendantNames = activeAttendances
-    ?.map(a => a.attendant?.name).filter(Boolean) as string[] ?? 
-    clockedInStaff?.map((s: any) => s.name || s.staffName).filter(Boolean) as string[] ?? [];
+  // Use all attendants who clocked in today (covers those who left early)
+  const attendantNames: string[] = (autoData?.todayAttendantNames && autoData.todayAttendantNames.length > 0)
+    ? autoData.todayAttendantNames
+    : (activeAttendances?.map(a => a.attendant?.name).filter(Boolean) as string[] ?? []);
 
   useEffect(() => {
     if (existingDraft && existingDraft.status === 'submitted') { setLoaded(true); return; }
@@ -181,6 +185,8 @@ export default function DailyReportPage() {
     technicalFaultCount: faults.length,
     technicalFaultNotes: faults.map(f => `[${f.machineId}] ${f.description}`).join('\n') || undefined,
     notes: endOfDayComment || undefined,
+    outstandingAmount: autoData?.outstandingAmount ?? 0,
+    outstandingOrderCount: autoData?.outstandingOrderCount ?? 0,
   });
 
   const handleSaveDraft = async () => {
@@ -233,9 +239,9 @@ export default function DailyReportPage() {
             </h1>
             <p className="text-sm text-muted-foreground mt-1">{fmtDate(today())}</p>
           </div>
-          <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${isSubmitted ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-            <span className={`w-2 h-2 rounded-full animate-pulse ${isSubmitted ? 'bg-amber-500' : 'bg-green-500'}`} />
-            {isSubmitted ? 'Submitted' : 'Open'}
+          <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${existingDraft?.status === 'submitted_with_outstanding' ? 'bg-orange-100 text-orange-700' : isSubmitted ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+            <span className={`w-2 h-2 rounded-full animate-pulse ${existingDraft?.status === 'submitted_with_outstanding' ? 'bg-orange-500' : isSubmitted ? 'bg-amber-500' : 'bg-green-500'}`} />
+            {existingDraft?.status === 'submitted_with_outstanding' ? 'Outstanding' : isSubmitted ? 'Submitted' : 'Open'}
           </span>
         </div>
 
@@ -330,6 +336,18 @@ export default function DailyReportPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+          {(autoData?.outstandingOrderCount ?? 0) > 0 && (
+            <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl mb-3">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-amber-600 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <div>
+                  <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Outstanding Payments</p>
+                  <p className="text-xs text-amber-600 dark:text-amber-400">{autoData?.outstandingOrderCount} order{(autoData?.outstandingOrderCount ?? 0) > 1 ? 's' : ''} not yet paid</p>
+                </div>
+              </div>
+              <span className="text-lg font-bold text-amber-700 dark:text-amber-300">GHS {(autoData?.outstandingAmount ?? 0).toFixed(2)}</span>
             </div>
           )}
           <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/30 rounded-xl mb-5">
@@ -448,7 +466,40 @@ export default function DailyReportPage() {
         {isSubmitted && (
           <div className="flex items-center gap-2 p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-xl text-green-700 dark:text-green-400 text-sm font-medium">
             <CheckCircle2 className="w-5 h-5" />
-            Report submitted successfully.
+            {existingDraft?.status === 'submitted_with_outstanding' ? 'Report submitted with outstanding payments. Admin has been notified.' : 'Report submitted successfully.'}
+          </div>
+        )}
+
+        {/* Past Reports */}
+        {pastReports && pastReports.filter((r: any) => r.date !== today()).length > 0 && (
+          <div className="bg-card border border-border rounded-2xl p-5">
+            <h2 className="font-semibold text-foreground mb-3">Recent Reports</h2>
+            <div className="space-y-2">
+              {pastReports.filter((r: any) => r.date !== today()).slice(0, 10).map((r: any) => (
+                <div key={r._id} className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border">
+                  <div className="flex items-center gap-3">
+                    <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{fmtDate(r.date)}</p>
+                      <p className="text-xs text-muted-foreground">{r.attendantsOnShift?.join(', ') || '—'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-foreground">GHS {(r.totalRevenue ?? 0).toFixed(2)}</p>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        r.status === 'submitted_with_outstanding' ? 'bg-orange-100 text-orange-700' :
+                        r.status === 'submitted' ? 'bg-green-100 text-green-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {r.status === 'submitted_with_outstanding' ? 'Outstanding' : r.status === 'submitted' ? 'Submitted' : 'Draft'}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
