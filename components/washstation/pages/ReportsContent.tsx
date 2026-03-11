@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Lock, CheckCircle2, Loader2, Plus, X, Save, Wrench } from 'lucide-react';
+import { Lock, CheckCircle2, Loader2, Plus, X, Save, Wrench, Tag } from 'lucide-react';
 
 function today() { return new Date().toISOString().split('T')[0]; }
 function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
@@ -176,6 +176,7 @@ export default function DailyReportPage() {
     paystackAmount,
     soapUnitsUsed: soapUnits,
     freeWashCount: autoData?.freeWashCount ?? 0,
+    voucherBreakdown: autoData?.voucherBreakdown ?? [],
     washingPlanCount: 0,
     technicalFaultCount: faults.length,
     technicalFaultNotes: faults.map(f => `[${f.machineId}] ${f.description}`).join('\n') || undefined,
@@ -300,6 +301,37 @@ export default function DailyReportPage() {
             </div>
           </div>
 
+          {(autoData?.freeWashCount ?? 0) > 0 && (
+            <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-950/30 rounded-xl mb-3">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22C6.5 22 2 17.5 2 12S6.5 2 12 2s10 4.5 10 10-4.5 10-10 10z"/><path d="M8 12l3 3 5-5"/></svg>
+                <span className="text-sm font-medium text-green-700 dark:text-green-300">Free Washes Today</span>
+              </div>
+              <span className="text-lg font-bold text-green-700 dark:text-green-300">{autoData?.freeWashCount ?? 0}</span>
+            </div>
+          )}
+          {(autoData?.voucherBreakdown ?? []).length > 0 && (
+            <div className="bg-muted/30 border border-border rounded-xl p-3 mb-3 space-y-2">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Tag className="w-3.5 h-3.5 text-primary" />
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Discounts Used Today</p>
+              </div>
+              {(autoData?.voucherBreakdown ?? []).map((v: any, i: number) => (
+                <div key={i} className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{v.name}</p>
+                    <p className="text-xs text-muted-foreground">{v.code}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-foreground">{v.count}×</p>
+                    <p className="text-xs text-muted-foreground">
+                      {v.discountType === "loyalty" ? `${v.totalDiscount} pts` : `GHS ${v.totalDiscount.toFixed(2)}`}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/30 rounded-xl mb-5">
             <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Expected Revenue</span>
             <span className="text-lg font-bold text-blue-700 dark:text-blue-300">{fmt(totalTokenRevenue)}</span>
