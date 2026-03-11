@@ -339,8 +339,8 @@ export default function DailyReportPage() {
             </div>
           )}
           {(autoData?.outstandingOrderCount ?? 0) > 0 && (
-            <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl mb-3">
-              <div className="flex items-center gap-2">
+            <div className="flex items-start sm:items-center justify-between p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl mb-3 gap-2">
+              <div className="flex items-start sm:items-center gap-2">
                 <svg className="w-4 h-4 text-amber-600 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                 <div>
                   <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Outstanding Payments</p>
@@ -451,7 +451,7 @@ export default function DailyReportPage() {
 
         {/* Actions */}
         {!isSubmitted && (
-          <div className="flex gap-3 pb-6">
+          <div className="flex flex-col sm:flex-row gap-3 pb-6">
             <Button variant="outline" onClick={handleSaveDraft} disabled={isSaving || isSubmitting} className="flex-1">
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
               Save Draft
@@ -476,15 +476,15 @@ export default function DailyReportPage() {
             <h2 className="font-semibold text-foreground mb-3">Recent Reports</h2>
             <div className="space-y-2">
               {pastReports.filter((r: any) => r.date !== today()).slice(0, 10).map((r: any) => (
-                <div key={r._id} className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border">
-                  <div className="flex items-center gap-3">
+                <div key={r._id} className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground">{fmtDate(r.date)}</p>
-                      <p className="text-xs text-muted-foreground">{r.attendantsOnShift?.join(', ') || '—'}</p>
+                      <p className="text-xs text-muted-foreground truncate max-w-[140px] sm:max-w-none">{r.attendantsOnShift?.join(', ') || '—'}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <div className="text-right">
                       <p className="text-sm font-bold text-foreground">GHS {(r.totalRevenue ?? 0).toFixed(2)}</p>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${

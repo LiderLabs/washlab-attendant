@@ -169,6 +169,15 @@ function PaymentContent() {
     if (isFreeWash) { await handleConfirmVoucher(verificationId); return; }
     if (!order) { toast.error("Order not found"); setStage("idle"); return; }
 
+    // Apply non-free-wash voucher to record usage in voucherUsages
+    if (voucherResult?.valid && voucherResult.voucher?.discountType !== "free_wash") {
+      try {
+        await applyVoucherMutation({ voucherCode: voucherCode.trim().toUpperCase(), orderId: order._id });
+      } catch (e) {
+        console.warn("Voucher record failed (non-critical):", e);
+      }
+    }
+
     try {
       // Record the order amount (not the grossed-up charge) in the DB
       const paymentId = await createPayment({
