@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useStationSession } from "@/hooks/useStationSession"
 import { useQuery, useMutation } from "convex/react"
-import { api } from "@devlider001/washlab-backend/api"
-import { Id } from "@devlider001/washlab-backend/dataModel"
+import { api } from "@jordan6699/washlab-backend/api"
+import { Id } from "@jordan6699/washlab-backend/dataModel"
 
 import {
   Phone,
@@ -37,10 +37,6 @@ function normaliseToLocalDigits(raw: string): string {
 
 function isPhoneComplete(phone: string): boolean {
   return phone.length === 10 && phone.startsWith("0")
-}
-
-function generatePlaceholderEmail(phone: string): string {
-  return `noemail_${phone || Date.now()}@washlab.app`
 }
 
 export function NewOrderContent() {
@@ -199,15 +195,13 @@ export function NewOrderContent() {
 
   const handleRegisterNewCustomer = async () => {
     if (!newName.trim()) { toast.error("Please enter customer name"); return }
-    const finalEmail = skipEmail || !newEmail.trim()
-      ? generatePlaceholderEmail(phone)
-      : newEmail.trim()
+    const finalEmail = (!skipEmail && newEmail.trim()) ? newEmail.trim() : undefined
     try {
       const customerId = await createGuestCustomer({
         name: newName,
         phoneNumber: formatPhoneForBackend(phone),
-        email: finalEmail,
-      })
+        ...(finalEmail ? { email: finalEmail } : {}),
+      } as any)
       const customer = await getCustomerByPhone
       setFoundCustomer(customer || {
         _id: customerId,
@@ -235,7 +229,7 @@ export function NewOrderContent() {
         customerId: foundCustomer._id as Id<"users">,
         customerName: foundCustomer.name || newName,
         customerPhone: foundCustomer.phoneNumber || formatPhoneForBackend(phone),
-        customerEmail: foundCustomer.email || newEmail,
+        customerEmail: foundCustomer.email || newEmail || undefined,
         serviceType: serviceType as "wash_only" | "wash_and_dry" | "dry_only",
         weight: weight,
         itemCount: itemCount || 1,
@@ -281,8 +275,8 @@ export function NewOrderContent() {
 
   const selectedService = dbServices.find((s) => s.code === serviceType)
 
-  const washService = dbServices.find((s) => s.code === "wash_only")
-  const dryService = dbServices.find((s) => s.code === "dry_only")
+  const washService = dbServices.find((s: any) => s.code === "wash_only")
+  const dryService = dbServices.find((s: any) => s.code === "dry_only")
   const washPrice = washService?.basePrice ?? selectedService?.basePrice ?? 0
   const dryPrice = dryService?.basePrice ?? selectedService?.basePrice ?? 0
 
@@ -296,7 +290,7 @@ export function NewOrderContent() {
     return { basePrice: total, subtotal: total, total, totalPrice: total }
   }
 
-    const pricing = calculatePrice()
+  const pricing = calculatePrice()
   const rushFee = orderNotes.includes("Rush Service") ? 5 : 0
   const finalTotal = pricing.total + rushFee
 
@@ -310,7 +304,7 @@ export function NewOrderContent() {
     return m[code] || "/laundry-hero-1.jpg"
   }
 
-  const services = dbServices.map((s) => ({
+  const services = dbServices.map((s: any) => ({
     id: s.code,
     name: s.name,
     price: `₵${s.basePrice.toFixed(2)} / load`,
@@ -428,7 +422,6 @@ export function NewOrderContent() {
               <Phone className='w-4 h-4' /> {foundCustomer.phoneNumber || foundCustomer.phone}
             </p>
             <div className='grid grid-cols-1 gap-3 sm:gap-4 mb-4'>
-              
               <div className='bg-muted/50 rounded-xl p-3 sm:p-4'>
                 <p className='text-xs text-muted-foreground'>LAST VISIT</p>
                 <p className='font-semibold text-foreground text-sm sm:text-base'>
@@ -512,10 +505,7 @@ export function NewOrderContent() {
               </div>
               {skipEmail ? (
                 <div className='flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-muted/50 border border-dashed border-border rounded-xl'>
-                  <span className='text-muted-foreground text-sm flex-1 truncate'>
-                    noemail_{phone || "…"}@washlab.app
-                  </span>
-                  <span className='text-xs text-muted-foreground whitespace-nowrap'>auto</span>
+                  <span className='text-xs text-muted-foreground'>Phone only — customer can add email later when creating an account.</span>
                 </div>
               ) : (
                 <Input
@@ -590,7 +580,7 @@ export function NewOrderContent() {
                   </div>
                 ) : (
                   <div className='grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4'>
-                    {services.map((service) => (
+                    {services.map((service: any) => (
                       <button
                         key={service.id}
                         onClick={() => setServiceType(service.id)}
@@ -718,11 +708,10 @@ export function NewOrderContent() {
               </div>
             </div>
 
-            {/* Right - Order Summary (fixed sidebar) */}
+            {/* Right - Order Summary */}
             <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 w-full lg:w-80 lg:flex-shrink-0'>
               <h3 className='font-semibold text-foreground mb-4 text-sm sm:text-base'>Order Summary</h3>
 
-              {/* Extra Loads Controls */}
               {serviceType && (
                 <div className='mb-4 p-3 bg-muted/50 rounded-xl border border-border'>
                   <p className='text-xs font-semibold text-muted-foreground mb-2'>EXTRA LOADS</p>
@@ -754,7 +743,7 @@ export function NewOrderContent() {
               <div className='space-y-3 pb-4 border-b border-border'>
                 <div className='flex justify-between items-start gap-2'>
                   <span className='text-foreground text-sm sm:text-base truncate'>
-                    {selectedService?.name || services.find((s) => s.id === serviceType)?.name || "No service selected"}
+                    {selectedService?.name || services.find((s: any) => s.id === serviceType)?.name || "No service selected"}
                   </span>
                   <span className='font-semibold text-foreground text-sm sm:text-base flex-shrink-0'>₵{(pricing?.totalPrice || 0).toFixed(2)}</span>
                 </div>

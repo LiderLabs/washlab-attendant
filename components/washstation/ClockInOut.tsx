@@ -98,7 +98,7 @@ export function ClockInOut() {
     (api as any).dailyReports?.getDraft,
     branchId ? { branchId, date: todayStr() } : "skip"
   )
-  const reportSubmitted = todayReport?.status === "submitted"
+  const reportSubmitted = todayReport?.status === "submitted" || todayReport?.status === "submitted_with_outstanding"
 
   // Filter attendants by search
   const filteredAttendants = attendants?.filter(

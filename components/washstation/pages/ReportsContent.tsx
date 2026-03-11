@@ -1,5 +1,6 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@jordan6699/washlab-backend/api';
 import { useStationSession } from '@/hooks/useStationSession';
@@ -14,7 +15,10 @@ function today() { return new Date().toISOString().split('T')[0]; }
 function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
 function fmt(n: number) { return `GHS ${n.toFixed(2)}`; }
 
-export default function DailyReportPage() {
+function DailyReportPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const dateParam = searchParams?.get('date');
   const { stationToken, sessionData, isSessionValid } = useStationSession() as any;
   const branchId = sessionData?.branchId;
   const branchName = sessionData?.branchName;
@@ -68,6 +72,7 @@ export default function DailyReportPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
+  const [reportDateFilter, setReportDateFilter] = useState('');
   const [showDraftBanner, setShowDraftBanner] = useState(false);
   const [draftDate, setDraftDate] = useState<string | null>(null);
   const DRAFT_KEY = `washlab_report_draft_${branchId || "unknown"}`;
@@ -471,27 +476,46 @@ export default function DailyReportPage() {
         )}
 
         {/* Past Reports */}
-        {pastReports && pastReports.filter((r: any) => r.date !== today()).length > 0 && (
+        {pastReports && pastReports.length > 0 && (
           <div className="bg-card border border-border rounded-2xl p-5">
-            <h2 className="font-semibold text-foreground mb-3">Recent Reports</h2>
+            <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+              <h2 className="font-semibold text-foreground">Recent Reports</h2>
+              <input
+                type="date"
+                value={reportDateFilter}
+                onChange={e => setReportDateFilter(e.target.value)}
+                className="text-xs px-2 py-1.5 rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+              />
+            </div>
+            {pastReports.filter((r) => r.date !== today() && r.status === 'open').length > 0 && (
+              <div className="flex items-center gap-2 p-3 mb-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                <svg className="w-4 h-4 text-amber-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
+                  You have {pastReports.filter((r) => r.date !== today() && r.status === 'open').length} unsubmitted report(s). Tap to open and submit.
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
-              {pastReports.filter((r: any) => r.date !== today()).slice(0, 10).map((r: any) => (
-                <div key={r._id} className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border gap-2">
+              {pastReports
+                .filter((r) => r.date !== today())
+                .filter((r) => reportDateFilter ? r.date === reportDateFilter : true)
+                .slice(0, 14)
+                .map((r) => (
+                <div key={r._id}
+                  className={"flex items-center justify-between p-3 rounded-xl border gap-2 cursor-pointer hover:bg-muted/50 transition-colors " + (r.status === 'open' ? 'bg-amber-50/50 dark:bg-amber-950/10 border-amber-200 dark:border-amber-800' : 'bg-muted/30 border-border')}
+                  onClick={() => router.push("/washstation/reports?date=" + r.date)}
+                >
                   <div className="flex items-center gap-2 min-w-0">
                     <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground">{fmtDate(r.date)}</p>
-                      <p className="text-xs text-muted-foreground truncate max-w-[140px] sm:max-w-none">{r.attendantsOnShift?.join(', ') || '—'}</p>
+                      <p className="text-xs text-muted-foreground truncate max-w-[140px] sm:max-w-none">{r.attendantsOnShift && r.attendantsOnShift.join(', ') || '—'}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <div className="text-right">
-                      <p className="text-sm font-bold text-foreground">GHS {(r.totalRevenue ?? 0).toFixed(2)}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        r.status === 'submitted_with_outstanding' ? 'bg-orange-100 text-orange-700' :
-                        r.status === 'submitted' ? 'bg-green-100 text-green-700' :
-                        'bg-amber-100 text-amber-700'
-                      }`}>
+                      <p className="text-sm font-bold text-foreground">GHS {(r.totalRevenue || 0).toFixed(2)}</p>
+                      <span className={"text-xs px-2 py-0.5 rounded-full font-medium " + (r.status === 'submitted_with_outstanding' ? 'bg-orange-100 text-orange-700' : r.status === 'submitted' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>
                         {r.status === 'submitted_with_outstanding' ? 'Outstanding' : r.status === 'submitted' ? 'Submitted' : 'Draft'}
                       </span>
                     </div>
@@ -499,6 +523,9 @@ export default function DailyReportPage() {
                   </div>
                 </div>
               ))}
+              {pastReports.filter((r) => r.date !== today()).filter((r) => reportDateFilter ? r.date === reportDateFilter : true).length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-4">No reports found{reportDateFilter ? ' for selected date' : ''}.</p>
+              )}
             </div>
           </div>
         )}
@@ -517,5 +544,12 @@ export default function DailyReportPage() {
         )}
       </div>
     </>
+  );
+}
+export default function DailyReportPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
+      <DailyReportPageInner />
+    </Suspense>
   );
 }
