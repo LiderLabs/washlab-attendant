@@ -122,7 +122,7 @@ function PaymentContent() {
   const totalDue = (voucherResult?.valid && voucherResult?.finalPrice !== undefined) ? voucherResult.finalPrice : baseTotalDue;
   const loyaltyDiscount = useLoyalty && hasLoyaltyReward ? baseTotalDue : 0;
   const totalDueWithLoyalty = useLoyalty && hasLoyaltyReward ? 0 : totalDue;
-  const isFreeWash = (voucherResult?.valid && totalDue === 0) || (useLoyalty && hasLoyaltyReward);
+  const isFreeWash = (voucherResult?.valid && totalDue === 0) || (useLoyalty && hasLoyaltyReward) || (hasPreAppliedDiscount && baseTotalDue === 0);
 
   const effectivePaymentMethod: PaymentMethodType = paymentMethod;
 
@@ -529,22 +529,16 @@ function PaymentContent() {
           </div>
         )}
 
-      {/* Loyalty Points */}
+      {/* Loyalty Points - read only, customer redeems online */}
       {order?.customerId && (
         <div className="pt-3 border-t border-border">
           {hasLoyaltyReward ? (
-            <div className={"flex items-center justify-between p-3 rounded-xl border " + (useLoyalty ? "bg-purple-50 dark:bg-purple-900/20 border-purple-200" : "bg-muted/30 border-border")}>
+            <div className="flex items-center justify-between p-3 rounded-xl border bg-purple-50 dark:bg-purple-900/20 border-purple-200">
               <div>
                 <p className="text-sm font-semibold text-purple-700 dark:text-purple-400">🎁 Loyalty Reward</p>
                 <p className="text-xs text-muted-foreground">{loyaltyPoints} pts — free wash available</p>
               </div>
-              <button
-                onClick={() => setUseLoyalty(!useLoyalty)}
-                disabled={isProcessing || !!voucherResult?.valid}
-                className={"text-xs font-semibold px-3 py-1.5 rounded-lg " + (useLoyalty ? "bg-purple-600 text-white" : "bg-primary text-primary-foreground") + " disabled:opacity-40"}
-              >
-                {useLoyalty ? "Remove" : "Apply"}
-              </button>
+              <p className="text-xs text-purple-600 font-medium">Customer redeems online</p>
             </div>
           ) : (
             <div className="flex items-center justify-between px-1">
