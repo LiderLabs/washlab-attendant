@@ -524,7 +524,7 @@ function DailyReportPageInner() {
                   </div>
                 </div>
               ))}
-              {pastReports.filter((r) => r.date !== today()).filter((r) => reportDateFilter ? r.date === reportDateFilter : true).length === 0 && (
+              {pastReports.filter((r) => !(r.date === today() && r.status !== 'open')).filter((r) => reportDateFilter ? r.date === reportDateFilter : true).length === 0 && (
                 <p className="text-xs text-muted-foreground text-center py-4">No reports found{reportDateFilter ? ' for selected date' : ''}.</p>
               )}
             </div>
