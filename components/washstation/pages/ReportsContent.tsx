@@ -25,7 +25,7 @@ function DailyReportPageInner() {
 
   const autoData = useQuery(
     (api as any).dailyReports.getAutoData,
-    branchId ? { branchId, date: today(), stationToken: stationToken || undefined } : 'skip'
+    branchId ? { branchId, date: dateParam || today(), stationToken: stationToken || undefined } : 'skip'
   );
   // Always sync system data
   useEffect(() => {
@@ -41,7 +41,7 @@ function DailyReportPageInner() {
 
   const existingDraft = useQuery(
     (api as any).dailyReports.getDraft,
-    branchId ? { branchId, date: today() } : 'skip'
+    branchId ? { branchId, date: dateParam || today() } : 'skip'
   );
   const pastReports = useQuery(
     (api as any).dailyReports.getByBranch,
@@ -71,6 +71,7 @@ function DailyReportPageInner() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  useEffect(() => { setLoaded(false); }, [dateParam]);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [reportDateFilter, setReportDateFilter] = useState('');
   const [showDraftBanner, setShowDraftBanner] = useState(false);
@@ -82,7 +83,7 @@ function DailyReportPageInner() {
   useEffect(() => {
     if (!loaded || isSubmitted || !branchId) return;
     const draft = {
-      date: today(),
+      date: dateParam || today(),
       soapUnits,
       faults,
       endOfDayComment,
@@ -174,7 +175,7 @@ function DailyReportPageInner() {
 
   const buildPayload = () => ({
     branchId,
-    date: today(),
+    date: dateParam || today(),
     attendantsOnShift: attendantNames,
     washerTokensUsed: washerTokens,
     dryerTokensUsed: dryerTokens,
@@ -238,12 +239,18 @@ function DailyReportPageInner() {
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
 
         {/* Header */}
+        {dateParam && (
+          <button onClick={() => router.push('/washstation/reports')} className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-colors mb-1">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Back to Today\'s Report
+          </button>
+        )}
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">
               Daily Report{branchName ? ` – ${branchName}` : ''}
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">{fmtDate(today())}</p>
+            <p className="text-sm text-muted-foreground mt-1">{fmtDate(dateParam || today())}</p>
           </div>
           <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${existingDraft?.status === 'submitted_with_outstanding' ? 'bg-orange-100 text-orange-700' : isSubmitted ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
             <span className={`w-2 h-2 rounded-full animate-pulse ${existingDraft?.status === 'submitted_with_outstanding' ? 'bg-orange-500' : isSubmitted ? 'bg-amber-500' : 'bg-green-500'}`} />

@@ -172,7 +172,6 @@ export function ClockInOut() {
     )
   }
 
-  // Show clock-in form if explicitly requested or if there are no active attendances
   if (showQRMode) {
     return (
       <QRClockIn
@@ -182,149 +181,8 @@ export function ClockInOut() {
     )
   }
 
-  if (showClockInForm || !attendances || attendances.length === 0) {
-    return (
-      <>
-        <Card>
-          <CardHeader>
-            <div className='flex items-center justify-between'>
-              <div>
-                <CardTitle className='flex items-center gap-2'>
-                  <LogIn className='w-5 h-5' />
-                  Clock In
-                </CardTitle>
-                <CardDescription>
-                  Please select an attendant and verify identity to clock in
-                </CardDescription>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowQRMode(true)}
-                className="flex items-center gap-2"
-              >
-                <QrCode className="w-4 h-4" />
-                Use QR Code
-              </Button>
-              {attendances && attendances.length > 0 && (
-                <Button
-                  onClick={() => setShowClockInForm(false)}
-                  variant='ghost'
-                  size='sm'
-                >
-                  Cancel
-                </Button>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className='space-y-4'>
-            {attendants && attendants.length > 0 ? (
-              <>
-                <div className='space-y-2'>
-                  <Label>Select Attendant</Label>
-                  <div className='relative'>
-                    <Search className='absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground' />
-                    <Input
-                      placeholder='Search by name or email...'
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className='pl-9'
-                    />
-                  </div>
-                  <Select
-                    value={selectedAttendantId}
-                    onValueChange={(v) =>
-                      setSelectedAttendantId(v as Id<"attendants">)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder='Select attendant' />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {filteredAttendants && filteredAttendants.length > 0 ? (
-                        filteredAttendants.map((attendant) => (
-                          <SelectItem key={attendant._id} value={attendant._id}>
-                            <div className='flex items-center justify-between w-full'>
-                              <span>{attendant.name}</span>
-                              {attendant.hasBiometric && (
-                                <Badge variant='outline' className='ml-2'>
-                                  Biometric
-                                </Badge>
-                              )}
-                            </div>
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <div className='p-2 text-sm text-muted-foreground'>
-                          No attendants found
-                        </div>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Button
-                  onClick={handleStartClockIn}
-                  disabled={!selectedAttendantId || clockInLoading}
-                  className='w-full'
-                  size='lg'
-                >
-                  {clockInLoading ? (
-                    <>
-                      <Loader2 className='w-4 h-4 mr-2 animate-spin' />
-                      Starting...
-                    </>
-                  ) : (
-                    <>
-                      <LogIn className='w-4 h-4 mr-2' />
-                      Clock In
-                    </>
-                  )}
-                </Button>
-              </>
-            ) : (
-              <div className='text-center py-8 text-muted-foreground'>
-                <p>No attendants available for this branch</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Dialog open={showPINClockInModal} onOpenChange={setShowPINClockInModal}>
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>Clock In</DialogTitle>
-            </DialogHeader>
-            <PINInput
-              onComplete={handlePINClockInComplete}
-              onCancel={() => { setShowPINClockInModal(false); setPinError(null) }}
-              title="Enter your PIN"
-              description="Enter your 4-digit PIN to clock in"
-              error={pinError || undefined}
-            />
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={showReportWarning} onOpenChange={setShowReportWarning}>
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>Daily Report Not Submitted</DialogTitle>
-              <DialogDescription>
-                You are the last attendant clocking out and the daily report has not been submitted yet. Would you like to submit it before clocking out?
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="flex flex-col gap-2 sm:flex-col">
-              <Button onClick={handleGoToReport} className="w-full">Go to Report</Button>
-              <Button variant="outline" onClick={handleProceedClockOut} className="w-full">Clock Out Anyway</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </>
-    )
-  }
-
-  // Show clock-out if there are active attendances
-  if (attendances && attendances.length > 0) {
+  // ── CLOCKED-IN VIEW ──────────────────────────────────────────────────────────
+  if (!showClockInForm && attendances && attendances.length > 0) {
     return (
       <>
         <Card className='border-green-500'>
@@ -350,16 +208,10 @@ export function ClockInOut() {
             {attendances.map((attendance) => {
               const timeAgo = formatDistanceToNow(
                 new Date(attendance.clockInAt),
-                {
-                  addSuffix: false,
-                }
+                { addSuffix: false }
               )
-
               return (
-                <div
-                  key={attendance._id}
-                  className='p-4 border rounded-lg space-y-3'
-                >
+                <div key={attendance._id} className='p-4 border rounded-lg space-y-3'>
                   <div className='flex items-center justify-between'>
                     <div className='space-y-1'>
                       <div className='flex items-center gap-2'>
@@ -387,7 +239,6 @@ export function ClockInOut() {
               )
             })}
 
-            {/* Option to clock in another attendant */}
             <div className='pt-4 border-t'>
               <Button
                 onClick={() => {
@@ -405,6 +256,7 @@ export function ClockInOut() {
           </CardContent>
         </Card>
 
+        {/* PIN Clock Out Modal */}
         <Dialog open={showPINClockOutModal} onOpenChange={setShowPINClockOutModal}>
           <DialogContent className="sm:max-w-sm">
             <DialogHeader>
@@ -419,20 +271,51 @@ export function ClockInOut() {
             />
           </DialogContent>
         </Dialog>
+
+        {/* Report Warning Dialog */}
+        <Dialog open={showReportWarning} onOpenChange={setShowReportWarning}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Daily Report Not Submitted</DialogTitle>
+              <DialogDescription>
+                You are the last attendant clocking out and the daily report has not been submitted yet. Would you like to submit it before clocking out?
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex flex-col gap-2 sm:flex-col">
+              <Button onClick={handleGoToReport} className="w-full">Go to Report</Button>
+              <Button variant="outline" onClick={handleProceedClockOut} className="w-full">Clock Out Anyway</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </>
     )
   }
+
+  // ── CLOCK-IN FORM ─────────────────────────────────────────────────────────────
   return (
     <>
       <Card>
         <CardHeader>
-          <CardTitle className='flex items-center gap-2'>
-            <LogIn className='w-5 h-5' />
-            Clock In
-          </CardTitle>
-          <CardDescription>
-            Please select an attendant and verify identity to clock in
-          </CardDescription>
+          <div className='flex items-center justify-between'>
+            <div>
+              <CardTitle className='flex items-center gap-2'>
+                <LogIn className='w-5 h-5' />
+                Clock In
+              </CardTitle>
+              <CardDescription>
+                Please select an attendant and verify identity to clock in
+              </CardDescription>
+            </div>
+            {attendances && attendances.length > 0 && (
+              <Button
+                onClick={() => setShowClockInForm(false)}
+                variant='ghost'
+                size='sm'
+              >
+                Cancel
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className='space-y-4'>
           {attendants && attendants.length > 0 ? (
@@ -507,20 +390,21 @@ export function ClockInOut() {
         </CardContent>
       </Card>
 
+      {/* PIN Clock In Modal */}
       <Dialog open={showPINClockInModal} onOpenChange={setShowPINClockInModal}>
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>Clock In</DialogTitle>
-            </DialogHeader>
-            <PINInput
-              onComplete={handlePINClockInComplete}
-              onCancel={() => { setShowPINClockInModal(false); setPinError(null) }}
-              title="Enter your PIN"
-              description="Enter your 4-digit PIN to clock in"
-              error={pinError || undefined}
-            />
-          </DialogContent>
-        </Dialog>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Clock In</DialogTitle>
+          </DialogHeader>
+          <PINInput
+            onComplete={handlePINClockInComplete}
+            onCancel={() => { setShowPINClockInModal(false); setPinError(null) }}
+            title="Enter your PIN"
+            description="Enter your 4-digit PIN to clock in"
+            error={pinError || undefined}
+          />
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

@@ -72,7 +72,7 @@ export function OnlineOrdersContent() {
 
   const branchServices = useQuery(
     (api as any).admin.getBranchServicesPublic,
-    branchInfo ? { branchId: (branchInfo as any).branchId } : "skip"
+    (selectedOrder?.branchId || (branchInfo as any)?.branchId) ? { branchId: selectedOrder?.branchId || (branchInfo as any).branchId } : "skip"
   ) ?? []
 
   // Restore draft on return from payment

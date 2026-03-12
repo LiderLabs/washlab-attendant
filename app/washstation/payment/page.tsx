@@ -507,8 +507,8 @@ function PaymentContent() {
         {hasPreAppliedDiscount && (
           <div className="flex justify-between text-sm text-green-600">
             <span className="font-medium">
-              Discount Applied
-              {(order as any)?.voucherCode ? <span className="ml-1 text-xs bg-green-100 px-1 rounded">{(order as any).voucherCode}</span> : null}
+              {(order as any)?.voucherCode ? "Voucher Applied" : "Loyalty Redeemed"}
+              {(order as any)?.voucherCode ? <span className="ml-1 text-xs bg-green-100 px-1 rounded">{(order as any).voucherCode}</span> : <span className="ml-1 text-xs bg-green-100 px-1 rounded">🎁 1 free wash</span>}
             </span>
             <span>-₵{((order?.totalPrice ?? 0) - (order?.finalPrice ?? 0)).toFixed(2)}</span>
           </div>
