@@ -192,6 +192,7 @@ function DailyReportPageInner() {
     notes: endOfDayComment || undefined,
     outstandingAmount: autoData?.outstandingAmount ?? 0,
     outstandingOrderCount: autoData?.outstandingOrderCount ?? 0,
+    stationToken: stationToken || undefined,
   });
 
   const handleSaveDraft = async () => {
