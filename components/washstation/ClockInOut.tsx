@@ -128,7 +128,8 @@ export function ClockInOut() {
 
   const handleStartClockOut = async (attendanceId: Id<"attendanceLogs">) => {
     setSelectedAttendanceId(attendanceId)
-    const isLastAttendant = attendances && attendances.length === 1
+    const activeCount = attendances?.length ?? 0
+    const isLastAttendant = activeCount <= 1
     if (isLastAttendant && !reportSubmitted) {
       setPendingClockOutId(attendanceId)
       setShowReportWarning(true)

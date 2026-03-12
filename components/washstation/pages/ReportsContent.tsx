@@ -487,17 +487,17 @@ function DailyReportPageInner() {
                 className="text-xs px-2 py-1.5 rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
               />
             </div>
-            {pastReports.filter((r) => r.date !== today() && r.status === 'open').length > 0 && (
+            {pastReports.filter((r) => r.status === 'open').length > 0 && (
               <div className="flex items-center gap-2 p-3 mb-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
                 <svg className="w-4 h-4 text-amber-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
-                  You have {pastReports.filter((r) => r.date !== today() && r.status === 'open').length} unsubmitted report(s). Tap to open and submit.
+                  You have {pastReports.filter((r) => r.status === 'open').length} unsubmitted report(s). Tap to open and submit.
                 </p>
               </div>
             )}
             <div className="space-y-2">
               {pastReports
-                .filter((r) => r.date !== today())
+                .filter((r) => !(r.date === today() && r.status !== 'open'))
                 .filter((r) => reportDateFilter ? r.date === reportDateFilter : true)
                 .slice(0, 14)
                 .map((r) => (
