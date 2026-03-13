@@ -153,7 +153,7 @@ export function OnlineOrdersContent() {
   const getPricePerLoad = (serviceType: string): number => {
     if ((branchServices as any[]).length > 0) {
       const match = (branchServices as any[]).find(s => s.code === serviceType)
-      if (match) return match.pricingPerKg ?? match.basePrice ?? SERVICE_PRICE_PER_LOAD[serviceType] ?? 50
+      if (match) return match.price ?? match.pricingPerKg ?? match.basePrice ?? SERVICE_PRICE_PER_LOAD[serviceType] ?? 50
     }
     return SERVICE_PRICE_PER_LOAD[serviceType] ?? 50
   }
@@ -298,6 +298,7 @@ export function OnlineOrdersContent() {
                 <span>·</span>
                 <span className="truncate">{getServiceName(order.serviceType || "wash_and_fold")}</span>
                 {order.isDelivery && <><span>·</span><span className="text-amber-500">Delivery</span></>}
+                {order.finalPrice < order.totalPrice && <><span>·</span><span className="text-purple-500">🎁 Loyalty</span></>}
               </div>
             </button>
           ))
@@ -354,6 +355,15 @@ export function OnlineOrdersContent() {
           <p className="text-xs text-muted-foreground">Order ID</p>
           <p className="font-bold text-foreground">#{selectedOrder.orderNumber}</p>
         </div>
+        {selectedOrder.finalPrice < selectedOrder.totalPrice && (
+          <div className="flex items-center gap-2 p-3 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+            <span className="text-lg">🎁</span>
+            <div>
+              <p className="text-sm font-semibold text-purple-700 dark:text-purple-400">Loyalty Reward Applied</p>
+              <p className="text-xs text-muted-foreground">Customer saved GHS {(selectedOrder.totalPrice - selectedOrder.finalPrice).toFixed(2)} — Total due: GHS {selectedOrder.finalPrice.toFixed(2)}</p>
+            </div>
+          </div>
+        )}
 
         {/* Weight Intake */}
         <div>
@@ -519,9 +529,15 @@ export function OnlineOrdersContent() {
                     </div>
                   )}
                 </div>
+                {selectedOrder.finalPrice < selectedOrder.totalPrice && (
+                  <div className="flex justify-between text-xs text-purple-600 font-medium">
+                    <span>🎁 Loyalty/Discount Applied</span>
+                    <span>-GHS {(selectedOrder.totalPrice - selectedOrder.finalPrice).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between border-t border-border pt-2">
                   <span className="font-semibold text-foreground">Total</span>
-                  <span className="text-xl font-bold text-green-600">GHS {pricing.total.toFixed(2)}</span>
+                  <span className="text-xl font-bold text-green-600">GHS {selectedOrder.finalPrice.toFixed(2)}</span>
                 </div>
               </>
             ) : (
