@@ -344,7 +344,7 @@ function DailyReportPageInner() {
                   <div className="text-right">
                     <p className="text-sm font-bold text-foreground">{v.count}×</p>
                     <p className="text-xs text-muted-foreground">
-                      {v.discountType === "loyalty" ? `${v.totalDiscount} pts` : `GHS ${v.totalDiscount.toFixed(2)}`}
+                      {v.discountType === "loyalty" ? fmt(v.totalDiscount) : `GHS ${v.totalDiscount.toFixed(2)}`}
                     </p>
                   </div>
                 </div>

@@ -166,6 +166,19 @@ function PaymentContent() {
       }
       return;
     }
+    // Pre-applied loyalty (customer redeemed online) — finalPrice already 0, just finalize
+    if (isFreeWash && hasPreAppliedDiscount && !voucherCode && !voucherResult?.valid) {
+      setStage("finalizing");
+      try {
+        await finalizePaymentSafe({ orderId: order._id, verificationId, gatewayTransactionId: undefined });
+        toast.success("Loyalty free wash completed! Order marked as paid.");
+        router.push(`/washstation/order-complete?orderId=${order._id}&paymentMethod=loyalty&amountPaid=0&changeDue=0`);
+      } catch (e: any) {
+        toast.error(e?.message || "Failed to complete order");
+        setStage("idle");
+      }
+      return;
+    }
     if (isFreeWash) { await handleConfirmVoucher(verificationId); return; }
     if (!order) { toast.error("Order not found"); setStage("idle"); return; }
 
@@ -626,9 +639,17 @@ function PaymentContent() {
       <h2 className="text-lg sm:text-xl font-bold text-foreground mb-1">Select Payment Method</h2>
       <p className="text-muted-foreground text-sm mb-5">Choose how the customer would like to pay.</p>
 
+      {hasPreAppliedDiscount && !isFreeWash && (
+        <div className="mb-5 p-4 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+          <p className="text-sm font-bold text-purple-700 dark:text-purple-400 mb-1">
+            {(order as any)?.voucherCode ? `🎫 Voucher Applied: ${(order as any).voucherCode}` : "🎁 Loyalty Discount Applied"}
+          </p>
+          <p className="text-xs text-muted-foreground">Customer already redeemed a discount. Price reduced by ₵{((order?.totalPrice ?? 0) - (order?.finalPrice ?? 0)).toFixed(2)}. Proceed with payment of ₵{baseTotalDue.toFixed(2)}.</p>
+        </div>
+      )}
       {isFreeWash && (
         <div className="mb-5 p-5 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-center">
-          <p className="text-lg font-bold text-green-700 dark:text-green-400 mb-1">Free Wash Applied!</p>
+          <p className="text-lg font-bold text-green-700 dark:text-green-400 mb-1">{hasPreAppliedDiscount && !voucherCode ? "🎁 Loyalty Free Wash!" : "Free Wash Applied!"}</p>
           <p className="text-sm text-muted-foreground mb-4">No payment required. Click below to complete the order.</p>
           <button onClick={() => { setStage("verification"); setShowVerification(true); }} disabled={isProcessing} className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2">
             {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
