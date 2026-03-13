@@ -170,6 +170,8 @@ function PaymentContent() {
     if (isFreeWash && hasPreAppliedDiscount && !voucherCode && !voucherResult?.valid) {
       setStage("finalizing");
       try {
+        // Create a zero-amount payment record first (required by finalizePaymentSafe)
+        await createPayment({ orderId: order._id, amount: 0, paymentMethod: "cash" });
         await finalizePaymentSafe({ orderId: order._id, verificationId, gatewayTransactionId: undefined });
         toast.success("Loyalty free wash completed! Order marked as paid.");
         router.push(`/washstation/order-complete?orderId=${order._id}&paymentMethod=loyalty&amountPaid=0&changeDue=0`);
