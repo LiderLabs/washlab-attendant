@@ -18,12 +18,7 @@ import { toast } from "sonner"
 import { LoadingSpinner } from "@/components/washstation/LoadingSpinner"
 import { ActionVerification } from "@/components/washstation/ActionVerification"
 
-const SERVICE_PRICE_PER_LOAD: Record<string, number> = {
-  wash_only: 25,
-  wash_and_dry: 50,
-  wash_and_fold: 50,
-  dry_only: 25,
-}
+const SERVICE_PRICE_PER_LOAD: Record<string, number> = {}
 const KG_PER_LOAD = 8
 const WHITES_EXTRA_LOAD = 0 // Attendant manually adds extra load if needed
 
@@ -151,11 +146,10 @@ export function OnlineOrdersContent() {
   }
 
   const getPricePerLoad = (serviceType: string): number => {
-    if ((branchServices as any[]).length > 0) {
-      const match = (branchServices as any[]).find(s => s.code === serviceType)
-      if (match) return match.price ?? match.pricingPerKg ?? match.basePrice ?? SERVICE_PRICE_PER_LOAD[serviceType] ?? 50
-    }
-    return SERVICE_PRICE_PER_LOAD[serviceType] ?? 50
+    const match = (branchServices as any[]).find(s => s.code === serviceType)
+    if (match) return match.price ?? match.basePrice ?? 50
+    const anyService = (branchServices as any[])[0]
+    return anyService?.price ?? 50
   }
 
   const numWeight = parseFloat(weight) || 0
