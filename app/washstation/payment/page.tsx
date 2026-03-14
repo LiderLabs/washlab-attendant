@@ -264,7 +264,9 @@ function PaymentContent() {
 
     const channels = method === "card" ? ["card"] : ["mobile_money"];
     const rawPhone = order.customer?.phoneNumber || order.customerPhoneNumber || "";
-    const customerPhone = rawPhone.replace(/[\s\-]/g, "").replace(/^\+/, "").replace(/^0/, "233");
+    // Paystack expects local format e.g. 0551234987
+    const cleanPhone = rawPhone.replace(/[\s\-]/g, "").replace(/^\+233/, "0").replace(/^233/, "0");
+    const customerPhone = cleanPhone.startsWith("0") ? cleanPhone : "0" + cleanPhone;
 
     setStage("paystack");
     toast.info("Payment window opening for customer…");
