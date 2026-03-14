@@ -349,6 +349,54 @@ export function OnlineOrdersContent() {
           <p className="text-xs text-muted-foreground">Order ID</p>
           <p className="font-bold text-foreground">#{selectedOrder.orderNumber}</p>
         </div>
+
+        {/* Customer Order Details */}
+        <div className="bg-card border border-border rounded-xl p-4">
+          <h3 className="font-semibold text-sm text-foreground mb-3">Customer Order Details</h3>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Service</span>
+              <span className="font-medium">{getServiceName(selectedOrder.serviceType || "wash_and_dry")}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Est. Weight</span>
+              <span className="font-medium">{selectedOrder.estimatedWeight?.toFixed(1) || "0.0"} kg</span>
+            </div>
+            {selectedOrder.itemCount > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Item Count</span>
+                <span className="font-medium">{selectedOrder.itemCount} item{selectedOrder.itemCount !== 1 ? "s" : ""}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Whites Separate</span>
+              <span className={selectedOrder.whitesSeparate ? "font-medium text-yellow-600" : "text-muted-foreground"}>
+                {selectedOrder.whitesSeparate ? "Yes - wash separately" : "No"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Order Type</span>
+              <span className="font-medium">{selectedOrder.isDelivery ? "Delivery" : "Pickup"}</span>
+            </div>
+            {selectedOrder.isDelivery && selectedOrder.deliveryAddress && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Delivery Address</span>
+                <span className="font-medium text-right max-w-xs">{selectedOrder.deliveryAddress}</span>
+              </div>
+            )}
+            {selectedOrder.isDelivery && selectedOrder.deliveryHall && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Hall/Hostel</span>
+                <span className="font-medium">{selectedOrder.deliveryHall}{selectedOrder.deliveryRoom ? ", Rm " + selectedOrder.deliveryRoom : ""}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t border-border pt-2">
+              <span className="text-muted-foreground">Quoted Price</span>
+              <span className="font-semibold text-primary">GHS {selectedOrder.totalPrice?.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+
         {selectedOrder.finalPrice < selectedOrder.totalPrice && (
           <div className="flex items-center gap-2 p-3 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
             <span className="text-lg">🎁</span>

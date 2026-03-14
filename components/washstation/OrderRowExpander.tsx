@@ -1,10 +1,10 @@
-"use client"
+﻿"use client"
 import { useState, useCallback } from "react"
 import { useStationOrderStatus, type OrderStatus } from "@/hooks/useStationOrderStatus"
 import { ActionVerification } from "./ActionVerification"
 import { Id } from "@jordan6699/washlab-backend/dataModel"
 import { toast } from "sonner"
-import { Play, CheckCircle, Loader2, CreditCard, MessageCircle } from "lucide-react"
+import { Play, CheckCircle, Loader2, CreditCard, MessageCircle, Truck } from "lucide-react"
 
 interface OrderExpanderProps {
   order: {
@@ -41,8 +41,9 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
     setLocalStatus(status)
     try {
       await changeStatus(order._id as Id<"orders">, status, undefined, attendantId)
+      // Keep localStatus set so UI reflects change immediately
     } catch (e) {
-      setLocalStatus(null)
+      setLocalStatus(null) // Only reset on failure
       toast.error("Failed to update status")
     } finally {
       setIsMoving(false)
@@ -67,6 +68,33 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
     setVerifyOpen(true)
   }
 
+  const handleDeliver = async () => {
+    setIsMoving(true)
+    setLocalStatus("delivered" as OrderStatus)
+    try {
+      await changeStatus(order._id as Id<"orders">, "delivered" as OrderStatus)
+      toast.success("Order marked as delivered")
+      // localStatus stays as "delivered" - UI stays greyed out
+    } catch (e) {
+      setLocalStatus(null)
+      toast.error("Failed to mark as delivered")
+    } finally {
+      setIsMoving(false)
+    }
+  }
+
+  const sendWhatsApp = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!order.customer?.phoneNumber) return
+    const p = order.customer.phoneNumber.startsWith("0")
+      ? "233" + order.customer.phoneNumber.slice(1)
+      : order.customer.phoneNumber
+    const msg = encodeURIComponent(
+      "Hi " + order.customer.name + ", your WashLab order *#" + order.orderNumber + "* is ready for pickup! Please bring your bag card. Thank you! 🧺"
+    )
+    window.open("https://wa.me/" + p + "?text=" + msg, "_blank")
+  }
+
   return (
     <div className="flex items-center gap-1.5 flex-wrap min-w-[120px]">
       {unpaid && onCollectPayment && (
@@ -86,7 +114,7 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
             isNotStarted ? handleStart() : handleDone()
           }}
           disabled={isMoving}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${isNotStarted ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-green-600 text-white hover:bg-green-700"}`}
+          className={"flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 " + (isNotStarted ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-green-600 text-white hover:bg-green-700")}
         >
           {isMoving ? <Loader2 className="w-3 h-3 animate-spin" /> : isNotStarted ? <Play className="w-3 h-3" /> : <CheckCircle className="w-3 h-3" />}
           {isNotStarted ? "Start" : "Done"}
@@ -95,19 +123,41 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
 
       {isTerminal && (
         <>
-        <span className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs font-semibold">
-          <CheckCircle className="w-3 h-3" />
-          Completed
-        </span>
-        {order.customer?.phoneNumber && (
-          <button
-            onClick={(e) => { e.stopPropagation(); const p = order.customer!.phoneNumber.startsWith("0") ? `233${order.customer!.phoneNumber.slice(1)}` : order.customer!.phoneNumber; const msg = encodeURIComponent(`Hi ${order.customer!.name}, your WashLab order *#${order.orderNumber}* is ready for pickup! Please bring your bag card. Thank you! 🧺`); window.open(`https://wa.me/${p}?text=${msg}`, "_blank"); }}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 transition-colors"
-          >
-            <MessageCircle className="w-3 h-3" />
-            WhatsApp
-          </button>
-        )}
+          {effectiveStatus === "delivered" ? (
+            <span className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs font-semibold opacity-60">
+              <Truck className="w-3 h-3" />
+              Delivered
+            </span>
+          ) : effectiveStatus === "cancelled" ? (
+            <span className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs font-semibold opacity-60">
+              <CheckCircle className="w-3 h-3" />
+              Cancelled
+            </span>
+          ) : (
+            <>
+              <span className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs font-semibold">
+                <CheckCircle className="w-3 h-3" />
+                Completed
+              </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleDeliver() }}
+                disabled={isMoving}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {isMoving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Truck className="w-3 h-3" />}
+                Deliver
+              </button>
+            </>
+          )}
+          {order.customer?.phoneNumber && (
+            <button
+              onClick={sendWhatsApp}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 transition-colors"
+            >
+              <MessageCircle className="w-3 h-3" />
+              WhatsApp
+            </button>
+          )}
         </>
       )}
 
