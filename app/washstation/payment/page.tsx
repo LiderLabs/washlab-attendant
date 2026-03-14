@@ -107,7 +107,7 @@ function PaymentContent() {
   const loyaltyPoints = customerLoyaltyPoints?.points ?? 0;
   const hasLoyaltyReward = loyaltyPoints >= 10;
   const [useLoyalty, setUseLoyalty] = useState(false);
-  const redeemLoyaltyMutation = useMutation((api as any).loyalty.redeemPoints);
+  const redeemLoyaltyMutation = useMutation((api as any).loyalty.redeemPointsForAttendant);
 
   const voucherValidation = useQuery(
     (api as any).vouchers.validate,
@@ -157,7 +157,7 @@ function PaymentContent() {
     if (useLoyalty && hasLoyaltyReward && order) {
       setStage("finalizing");
       try {
-        await redeemLoyaltyMutation({ orderId: order._id, pointsToRedeem: 10 });
+        await redeemLoyaltyMutation({ orderId: order._id, stationToken: stationToken!, pointsToRedeem: 10 });
         toast.success("Loyalty points redeemed! Order marked as paid.");
         router.push(`/washstation/order-complete?orderId=${order._id}&paymentMethod=loyalty&amountPaid=0&changeDue=0`);
       } catch (e: any) {
@@ -548,12 +548,18 @@ function PaymentContent() {
       {order?.customerId && (
         <div className="pt-3 border-t border-border">
           {hasLoyaltyReward ? (
-            <div className="flex items-center justify-between p-3 rounded-xl border bg-purple-50 dark:bg-purple-900/20 border-purple-200">
+            <div className={"flex items-center justify-between p-3 rounded-xl border " + (useLoyalty ? "bg-purple-100 dark:bg-purple-900/30 border-purple-400" : "bg-purple-50 dark:bg-purple-900/20 border-purple-200")}>
               <div>
                 <p className="text-sm font-semibold text-purple-700 dark:text-purple-400">🎁 Loyalty Reward</p>
                 <p className="text-xs text-muted-foreground">{loyaltyPoints} pts — free wash available</p>
               </div>
-              <p className="text-xs text-purple-600 font-medium">Customer redeems online</p>
+              <button
+                onClick={() => setUseLoyalty(!useLoyalty)}
+                disabled={isProcessing || !!voucherResult?.valid}
+                className={"text-xs font-semibold px-3 py-1.5 rounded-lg " + (useLoyalty ? "bg-purple-600 text-white" : "bg-primary text-primary-foreground") + " disabled:opacity-40"}
+              >
+                {useLoyalty ? "Remove" : "Apply"}
+              </button>
             </div>
           ) : (
             <div className="flex items-center justify-between px-1">
