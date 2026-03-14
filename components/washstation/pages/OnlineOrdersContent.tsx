@@ -531,7 +531,7 @@ export function OnlineOrdersContent() {
                 )}
                 <div className="flex justify-between border-t border-border pt-2">
                   <span className="font-semibold text-foreground">Total</span>
-                  <span className="text-xl font-bold text-green-600">GHS {selectedOrder.finalPrice.toFixed(2)}</span>
+                  <span className="text-xl font-bold text-green-600">GHS {pricing.total.toFixed(2)}</span>
                 </div>
               </>
             ) : (
