@@ -23,6 +23,7 @@ export type OrderStatus =
 export interface StationOrderFilters {
   status?: OrderStatus;
   orderType?: "walk_in" | "online";
+  search?: string;
 }
 
 /**
@@ -39,6 +40,7 @@ export function useStationOrders(
       stationToken,
       status: filters?.status,
       orderType: filters?.orderType,
+      search: filters?.search || undefined,
     } : 'skip',
     { initialNumItems: 20 }
   );

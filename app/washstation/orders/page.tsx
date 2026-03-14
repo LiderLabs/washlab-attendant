@@ -26,6 +26,7 @@ export default function OrdersPage() {
 
   const { orders: allOrders, isLoading, loadMore, hasMore } = useStationOrders(stationToken, {
     ...(selectedStatus !== "all" ? { status: selectedStatus as OrderStatus } : {}),
+    search: searchQuery || undefined,
   })
 
   const filteredOrders = allOrders?.filter((order) => {
@@ -42,7 +43,10 @@ export default function OrdersPage() {
     }
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
-      return order.orderNumber.toLowerCase().includes(query) || order.customer?.name.toLowerCase().includes(query) || order.customer?.phoneNumber.includes(query)
+      return order.orderNumber.toLowerCase().includes(query) ||
+        order.customer?.name?.toLowerCase().includes(query) ||
+        order.customer?.phoneNumber?.includes(query) ||
+        (order as any).bagCardNumber?.toLowerCase().includes(query)
     }
     return true
   })
