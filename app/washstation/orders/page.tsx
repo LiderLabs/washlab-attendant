@@ -25,7 +25,7 @@ export default function OrdersPage() {
   const router = useRouter()
 
   const { orders: allOrders, isLoading, loadMore, hasMore } = useStationOrders(stationToken, {
-    ...(selectedStatus !== "all" && selectedStatus !== "completed" ? { status: selectedStatus } : {}),
+    ...(selectedStatus !== "all" ? { status: selectedStatus as OrderStatus } : {}),
   })
 
   const filteredOrders = allOrders?.filter((order) => {
