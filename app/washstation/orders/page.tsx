@@ -86,7 +86,7 @@ export default function OrdersPage() {
           {isLoading ? <LoadingSpinner text="Loading orders..." /> : filteredOrders && filteredOrders.length > 0 ? (
             <>
               <OrdersTable orders={filteredOrders} stationToken={stationToken} onOrderClick={(orderId) => router.push(`/washstation/orders/${orderId}`)} onCollectPayment={(orderId) => router.push(`/washstation/payment?orderId=${orderId}`)} />
-              {hasMore && <div className="mt-6 text-center"><Button variant="outline" onClick={() => loadMore(20)}>Load More Orders</Button></div>}
+
             </>
           ) : (
             <EmptyState icon={Filter} title="No orders found" description={searchQuery ? "Try adjusting your search query" : "Orders will appear here once they are created"} />

@@ -32,6 +32,7 @@ interface Order {
   finalPrice: number;
   createdAt: number;
   customer?: { name: string; phoneNumber: string; email?: string } | null;
+  bagCardNumber?: string;
 }
 
 const getStatusBadge = (status: OrderStatus) => {
@@ -101,7 +102,10 @@ export function OrdersTable({ orders, stationToken, onCollectPayment }: OrdersTa
                 <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm flex-shrink-0">
                   {order.customer?.name?.split(' ').map((n) => n[0]).join('').slice(0, 2) || 'CU'}
                 </div>
-                <span className="font-medium text-foreground">{order.customer?.name || 'Unknown'}</span>
+                <div>
+                  <span className="font-medium text-foreground">{order.customer?.name || 'Unknown'}</span>
+                  {(order as any).bagCardNumber && <p className="text-xs text-muted-foreground">Bag #{(order as any).bagCardNumber}</p>}
+                </div>
               </div>
             </TableCell>
             <TableCell className="text-muted-foreground whitespace-nowrap">{serviceType} ({weight.toFixed(1)}kg)</TableCell>

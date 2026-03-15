@@ -41,7 +41,7 @@ export function useStationOrders(
       status: filters?.status,
       orderType: filters?.orderType,
     } : 'skip',
-    { initialNumItems: 20 }
+    { initialNumItems: 200 }
   );
 
   return {
