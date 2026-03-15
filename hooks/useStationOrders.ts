@@ -40,7 +40,6 @@ export function useStationOrders(
       stationToken,
       status: filters?.status,
       orderType: filters?.orderType,
-      search: filters?.search || undefined,
     } : 'skip',
     { initialNumItems: 20 }
   );
