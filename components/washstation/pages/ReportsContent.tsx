@@ -363,9 +363,19 @@ function DailyReportPageInner() {
               <span className="text-lg font-bold text-amber-700 dark:text-amber-300">GHS {(autoData?.outstandingAmount ?? 0).toFixed(2)}</span>
             </div>
           )}
-          <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/30 rounded-xl mb-5">
-            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Expected Revenue</span>
+          <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/30 rounded-xl mb-3">
+            <div>
+              <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Tokens Used Value</span>
+              <p className="text-xs text-blue-600 dark:text-blue-400">{(autoData?.washerTokensUsed ?? 0) + (autoData?.dryerTokensUsed ?? 0)} tokens used</p>
+            </div>
             <span className="text-lg font-bold text-blue-700 dark:text-blue-300">{fmt(totalTokenRevenue)}</span>
+          </div>
+          <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-950/30 rounded-xl mb-5">
+            <div>
+              <span className="text-sm font-medium text-green-700 dark:text-green-300">Expected Revenue</span>
+              <p className="text-xs text-green-600 dark:text-green-400">From paid orders excl. free washes</p>
+            </div>
+            <span className="text-lg font-bold text-green-700 dark:text-green-300">{fmt(autoData?.expectedRevenue ?? totalTokenRevenue)}</span>
           </div>
 
           {/* Payment Breakdown */}
