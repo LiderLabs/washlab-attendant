@@ -532,7 +532,7 @@ function DailyReportPageInner() {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <div className="text-right">
-                      <p className="text-sm font-bold text-foreground">GHS {(r.totalRevenue || 0).toFixed(2)}</p>
+                      <p className="text-sm font-bold text-foreground">GHS {((r.cashAmount || 0) + (r.mobileMoneylAmount || 0) + (r.cardAmount || 0) + (r.paystackAmount || 0)).toFixed(2)}</p>
                       <span className={"text-xs px-2 py-0.5 rounded-full font-medium " + (r.status === 'submitted_with_outstanding' ? 'bg-orange-100 text-orange-700' : r.status === 'submitted' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>
                         {r.status === 'submitted_with_outstanding' ? 'Outstanding' : r.status === 'submitted' ? 'Submitted' : 'Draft'}
                       </span>
