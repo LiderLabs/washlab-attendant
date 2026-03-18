@@ -173,7 +173,7 @@ function PaymentContent() {
       try {
         // Create a zero-amount payment record first (required by finalizePaymentSafe)
         await createPayment({ orderId: order._id, amount: 0, paymentMethod: "cash" });
-        await finalizePaymentSafe({ orderId: order._id, verificationId, gatewayTransactionId: undefined });
+        await finalizePaymentSafe({ orderId: order._id, verificationId, gatewayTransactionId: undefined, confirmedPaymentMethod: "cash" });
         toast.success("Loyalty free wash completed! Order marked as paid.");
         router.push(`/washstation/order-complete?orderId=${order._id}&paymentMethod=loyalty&amountPaid=0&changeDue=0`);
       } catch (e: any) {
@@ -209,7 +209,7 @@ function PaymentContent() {
         return;
       }
 
-      finalizePayment({ verificationId, gatewayTransactionId: null });
+      finalizePayment({ verificationId, gatewayTransactionId: null, confirmedPaymentMethod: "cash" });
 
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to start payment");
@@ -296,10 +296,16 @@ function PaymentContent() {
 
       callback: function (response: any) {
         paystackHandlerRef.current = null;
-        toast.success(`${method === "card" ? "Card" : "Mobile Money"} payment authorised`);
+        const paystackChannel = response?.channel ?? response?.authorization?.channel ?? "";
+        let resolvedMethod: "cash" | "card" | "mobile_money" = method as any;
+        if (paystackChannel === "mobile_money") resolvedMethod = "mobile_money";
+        else if (paystackChannel === "card") resolvedMethod = "card";
+        else if (paystackChannel === "bank" || paystackChannel === "bank_transfer") resolvedMethod = "card";
+        toast.success(`${resolvedMethod === "card" ? "Card" : "Mobile Money"} payment authorised`);
         finalizePayment({
           verificationId,
           gatewayTransactionId: response.reference || response.trxref || ref,
+          confirmedPaymentMethod: resolvedMethod,
         });
       },
 
@@ -353,9 +359,11 @@ function PaymentContent() {
   const finalizePayment = async ({
     verificationId,
     gatewayTransactionId,
+    confirmedPaymentMethod,
   }: {
     verificationId: Id<"biometricVerifications">;
     gatewayTransactionId: string | null;
+    confirmedPaymentMethod?: "cash" | "card" | "mobile_money";
   }) => {
     if (!order) return;
     if (isPaying.current) { toast.error("Payment is already being processed."); return; }
@@ -369,6 +377,7 @@ function PaymentContent() {
         orderId: order._id,
         verificationId,
         gatewayTransactionId: gatewayTransactionId ?? undefined,
+        confirmedPaymentMethod: confirmedPaymentMethod ?? effectivePaymentMethod,
       });
 
       toast.dismiss("finalizing");
