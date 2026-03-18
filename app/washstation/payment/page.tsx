@@ -70,6 +70,7 @@ function PaymentContent() {
   const createPayment = useMutation((api as any).payments.create);
   const initiatePayment = useMutation((api as any).payments.initiate);
   const finalizePaymentSafe = useMutation((api as any).payments.finalizePaymentSafe);
+  const saveGatewayReference = useMutation((api as any).payments.saveGatewayReference);
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>("mobile_money");
   const [showVerification, setShowVerification] = useState(false);
@@ -204,7 +205,7 @@ function PaymentContent() {
       if (effectivePaymentMethod !== "cash") {
         await initiatePayment({ paymentId });
         pendingVerificationId.current = verificationId;
-        openPaystack(effectivePaymentMethod as "card" | "mobile_money", verificationId);
+        openPaystack(effectivePaymentMethod as "card" | "mobile_money", verificationId, paymentId);
         return;
       }
 
@@ -249,7 +250,8 @@ function PaymentContent() {
 
   const openPaystack = (
     method: "card" | "mobile_money",
-    verificationId: Id<"biometricVerifications">
+    verificationId: Id<"biometricVerifications">,
+    paymentId?: any
   ) => {
     if (!order || !paystackLoaded) return;
     // Force-clear any stale handler from a previous failed attempt
@@ -261,6 +263,12 @@ function PaymentContent() {
 
     const ref = `washlab_${order._id}_${Date.now()}`;
     setPaystackRef(ref);
+    // Save reference to DB immediately so webhook can match it even if frontend dies
+    if (paymentId) {
+      saveGatewayReference({ paymentId, gatewayReference: ref }).catch((e) =>
+        console.warn("Failed to save gateway ref:", e)
+      );
+    }
 
     const channels = method === "card" ? ["card"] : ["mobile_money"];
     const rawPhone = order.customer?.phoneNumber || order.customerPhoneNumber || "";

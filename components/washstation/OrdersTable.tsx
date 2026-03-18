@@ -5,6 +5,7 @@ import { Id } from '@jordan6699/washlab-backend/dataModel';
 import { Clock, Package, CheckCircle, Truck, PhoneCall, Pencil, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo } from 'react';
+import { format } from 'date-fns';
 import { OrderRowExpander } from './OrderRowExpander';
 
 export type OrderStatus =
@@ -109,6 +110,10 @@ export function OrdersTable({ orders, stationToken, onCollectPayment }: OrdersTa
               </div>
             </TableCell>
             <TableCell className="text-muted-foreground whitespace-nowrap">{serviceType} ({weight.toFixed(1)}kg)</TableCell>
+            <TableCell className="whitespace-nowrap">
+              <p className="text-sm font-medium text-foreground">{format(new Date(order.createdAt), 'MMM d')}</p>
+              <p className="text-xs text-muted-foreground">{format(new Date(order.createdAt), 'h:mm a')}</p>
+            </TableCell>
           </TableRow>
         );
       }),
@@ -128,6 +133,7 @@ export function OrdersTable({ orders, stationToken, onCollectPayment }: OrdersTa
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Order ID</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Customer</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Services</TableHead>
+            <TableHead className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Date & Time</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>{tableRows}</TableBody>
