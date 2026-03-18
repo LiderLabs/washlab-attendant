@@ -4,7 +4,8 @@ import { useState, Suspense, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { WashStationLayout } from "@/components/washstation/WashStationLayout";
-import { useStationSession } from "@/hooks/useStationSession";
+import { useStationSession } from "@/hooks/useStationSession"
+import { useAttendantSession } from "@/hooks/use-attendant-session";
 import { useStationOrder } from "@/hooks/useStationOrders";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@devlider001/washlab-backend/api";
@@ -64,7 +65,8 @@ function PaymentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const { stationToken, isSessionValid } = useStationSession();
+  const { stationToken, isSessionValid } = useStationSession()
+  const { attendantId: loggedInAttendantId } = useAttendantSession();
   const paystackLoaded = usePaystackScript();
 
   const createPayment = useMutation((api as any).payments.create);

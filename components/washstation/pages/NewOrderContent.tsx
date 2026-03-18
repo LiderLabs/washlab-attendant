@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useStationSession } from "@/hooks/useStationSession"
+import { useAttendantSession } from "@/hooks/use-attendant-session"
 import { useQuery, useMutation } from "convex/react"
 import { api } from "@jordan6699/washlab-backend/api"
 import { Id } from "@jordan6699/washlab-backend/dataModel"
@@ -42,6 +43,7 @@ function isPhoneComplete(phone: string): boolean {
 export function NewOrderContent() {
   const router = useRouter()
   const { stationToken, isSessionValid, sessionData } = useStationSession()
+  const { attendantId: loggedInAttendantId } = useAttendantSession()
 
   const branchId = (sessionData as any)?.branchId
   const branchServicesRaw = useQuery(
@@ -238,6 +240,7 @@ export function NewOrderContent() {
         isDelivery: false,
         extraWashLoads: extraWashLoads > 0 ? extraWashLoads : undefined,
         extraDryLoads: extraDryLoads > 0 ? extraDryLoads : undefined,
+        attendantId: loggedInAttendantId ?? undefined,
       })
       toast.success(`Order created successfully! Bag #${result.bagCardNumber}`)
       router.push(`/washstation/payment?orderId=${result.orderId}&return=order`)
