@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  Banknote,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -43,6 +44,7 @@ const WashStationSidebar = ({
     // { id: 'activity', label: 'Activity Log', icon: Activity, path: '/washstation/activity' },
     { id: 'inventory', label: 'Inventory', icon: Package, path: '/washstation/inventory' },
     { id: 'reports', label: 'Daily Report', icon: FileText, path: '/washstation/reports' },
+    { id: 'reconciliation', label: 'Cash Reconciliation', icon: Banknote, path: '/washstation/reconciliation' },
   ];
 
   const isActive = (path: string) =>
