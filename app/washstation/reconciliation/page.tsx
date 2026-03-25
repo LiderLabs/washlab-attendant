@@ -18,7 +18,7 @@ import { Banknote, CheckCircle, Clock, AlertCircle, ChevronDown, ChevronUp, Load
 
 export default function ReconciliationPage() {
   const { stationToken } = useStationSession()
-  const { activeAttendance } = useStationAttendance(stationToken)
+  const { attendance: activeAttendance } = useStationAttendance(stationToken)
   const [momoNumber, setMomoNumber] = useState('')
   const [network, setNetwork] = useState('mtn')
   const [loading, setLoading] = useState(false)
