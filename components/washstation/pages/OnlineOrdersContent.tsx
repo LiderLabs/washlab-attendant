@@ -40,6 +40,7 @@ export function OnlineOrdersContent() {
   const [notes, setNotes] = useState("")
   const [extraWashLoads, setExtraWashLoads] = useState(0)
   const [extraDryLoads, setExtraDryLoads] = useState(0)
+  const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null)
 
   const activeBagNumbers =
     useQuery(api.stations.getActiveBagNumbers, stationToken ? { stationToken } : "skip") ?? []
@@ -67,6 +68,10 @@ export function OnlineOrdersContent() {
 
   const branchServices = useQuery(
     (api as any).admin.getBranchServicesPublic,
+    (selectedOrder?.branchId || (branchInfo as any)?.branchId) ? { branchId: selectedOrder?.branchId || (branchInfo as any).branchId } : "skip"
+  ) ?? []
+  const activeMachines = useQuery(
+    (api as any).branchMachines.getActiveMachines,
     (selectedOrder?.branchId || (branchInfo as any)?.branchId) ? { branchId: selectedOrder?.branchId || (branchInfo as any).branchId } : "skip"
   ) ?? []
 
@@ -159,14 +164,22 @@ export function OnlineOrdersContent() {
       return { numberOfLoads: 0, whitesExtraLoad: 0, totalLoads: 0, pricePerLoad: 0, basePrice: 0, deliveryFee: 0, extraWashCost: 0, extraDryCost: 0, total: selectedOrder?.finalPrice || 0 }
     }
     const serviceType = selectedOrder.serviceType || "wash_and_dry"
-    const pricePerLoad = getPricePerLoad(serviceType)
-    const washPrice = getPricePerLoad("wash_only")
+    const selectedMachine = (activeMachines as any[]).find((m: any) => m._id === selectedMachineId) ?? null
+    const baseWashPrice = getPricePerLoad("wash_only")
     const dryPrice = getPricePerLoad("dry_only")
+    const effectiveWashPrice = selectedMachine ? selectedMachine.washPrice : baseWashPrice
+    const pricePerLoad = serviceType === "wash_and_dry"
+      ? effectiveWashPrice + dryPrice
+      : serviceType === "wash_only"
+      ? effectiveWashPrice
+      : serviceType === "dry_only"
+      ? dryPrice
+      : getPricePerLoad(serviceType)
     const numberOfLoads = Math.ceil(numWeight / KG_PER_LOAD)
     const whitesExtraLoad = selectedOrder.whitesSeparate ? WHITES_EXTRA_LOAD : 0
     const totalLoads = numberOfLoads + whitesExtraLoad
     const basePrice = totalLoads * pricePerLoad
-    const extraWashCost = extraWashLoads * washPrice
+    const extraWashCost = extraWashLoads * effectiveWashPrice
     const extraDryCost = extraDryLoads * dryPrice
     const deliveryFee = selectedOrder.isDelivery && branchInfo ? branchInfo.deliveryFee : 0
     return { numberOfLoads, whitesExtraLoad, totalLoads, pricePerLoad, basePrice, deliveryFee, extraWashCost, extraDryCost, total: basePrice + extraWashCost + extraDryCost + deliveryFee }
@@ -508,6 +521,31 @@ export function OnlineOrdersContent() {
             </div>
           )}
         </div>
+
+        {/* Machine Selector (optional) */}
+        {(activeMachines as any[]).length > 0 && (
+          <div className="bg-card border border-border rounded-xl p-4">
+            <h3 className="font-semibold text-sm text-foreground mb-1">Machine <span className="text-xs font-normal text-muted-foreground">(optional)</span></h3>
+            <p className="text-xs text-muted-foreground mb-3">Select if using a non-standard machine</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setSelectedMachineId(null)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${selectedMachineId === null ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground"}`}
+              >
+                Standard
+              </button>
+              {(activeMachines as any[]).map((machine: any) => (
+                <button
+                  key={machine._id}
+                  onClick={() => setSelectedMachineId(machine._id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${selectedMachineId === machine._id ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground"}`}
+                >
+                  {machine.name} · ₵{machine.washPrice} wash
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Order Summary — bottom of page */}
         <div className="bg-card border border-border rounded-xl p-4">

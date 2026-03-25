@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import { useState } from 'react'
-import { useQuery, useAction } from 'convex/react'
+import { useQuery, useAction, useMutation } from 'convex/react'
 import { api } from '@jordan6699/washlab-backend/api'
 import { useStationSession } from '@/hooks/useStationSession'
 import { useStationAttendance } from '@/hooks/useStationAttendance'
@@ -28,6 +28,7 @@ export default function ReconciliationPage() {
   const summary = useQuery((api as any).cashReconciliation.getTodayCashSummary, stationToken ? { stationToken } : 'skip')
   const history = useQuery((api as any).cashReconciliation.getReconciliationHistory, stationToken && showHistory ? { stationToken, limit: 10 } : 'skip')
   const initiate = useAction((api as any).cashReconciliation.initiateCashReconciliation)
+  const save = useMutation((api as any).cashReconciliation.saveReconciliation)
 
   const handleSubmit = async () => {
     if (!momoNumber || momoNumber.length < 10) { toast.error('Please enter a valid MoMo number'); return }
@@ -35,6 +36,7 @@ export default function ReconciliationPage() {
     setLoading(true)
     try {
       const res = await initiate({ stationToken, senderMomoNumber: momoNumber, network, amount: summary.totalCash, attendantId: activeAttendance?.attendant?._id })
+      await save({ stationToken, senderMomoNumber: momoNumber, network, amountSent: summary.totalCash, paystackReference: res.reference, status: 'processing' })
       setResult(res)
       toast.success('Payment request sent! Check your phone.')
     } catch (e) {
