@@ -34,6 +34,7 @@ interface Order {
   createdAt: number;
   customer?: { name: string; phoneNumber: string; email?: string } | null;
   bagCardNumber?: string;
+  statusHistory?: Array<{ status: string; changedAt: number }>;
 }
 
 const getStatusBadge = (status: OrderStatus) => {
