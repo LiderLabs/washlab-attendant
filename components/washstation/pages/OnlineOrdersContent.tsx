@@ -375,7 +375,7 @@ export function OnlineOrdersContent() {
               <span className="text-muted-foreground">Est. Weight</span>
               <span className="font-medium">{selectedOrder.estimatedWeight?.toFixed(1) || "0.0"} kg</span>
             </div>
-            {selectedOrder.itemCount > 0 && (
+            {true && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Item Count</span>
                 <span className="font-medium">{selectedOrder.itemCount} item{selectedOrder.itemCount !== 1 ? "s" : ""}</span>

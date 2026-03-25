@@ -111,8 +111,22 @@ export function OrdersTable({ orders, stationToken, onCollectPayment }: OrdersTa
             </TableCell>
             <TableCell className="text-muted-foreground whitespace-nowrap">{serviceType} ({weight.toFixed(1)}kg)</TableCell>
             <TableCell className="whitespace-nowrap">
-              <p className="text-sm font-medium text-foreground">{format(new Date(order.createdAt), 'MMM d')}</p>
-              <p className="text-xs text-muted-foreground">{format(new Date(order.createdAt), 'h:mm a')}</p>
+              {(() => {
+                const isCompleted = order.status === 'completed' || order.status === 'delivered';
+                const completedEntry = isCompleted
+                  ? [...(order.statusHistory || [])].reverse().find(h => h.status === 'completed' || h.status === 'delivered')
+                  : null;
+                const displayTs = completedEntry ? completedEntry.changedAt : order.createdAt;
+                return (
+                  <>
+                    <p className="text-sm font-medium text-foreground">{format(new Date(displayTs), 'MMM d')}</p>
+                    <p className="text-xs text-muted-foreground">{format(new Date(displayTs), 'h:mm a')}</p>
+                    {isCompleted && completedEntry && (
+                      <p className="text-xs text-success">Completed</p>
+                    )}
+                  </>
+                );
+              })()}
             </TableCell>
           </TableRow>
         );
