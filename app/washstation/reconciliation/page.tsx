@@ -39,8 +39,8 @@ export default function ReconciliationPage() {
       await save({ stationToken, senderMomoNumber: momoNumber, network, amountSent: summary.totalCash, paystackReference: res.reference, status: 'processing' })
       setResult(res)
       toast.success('Payment request sent! Check your phone.')
-    } catch (e) {
-      toast.error(e.message || 'Failed to initiate reconciliation')
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to initiate reconciliation')
     } finally {
       setLoading(false)
     }
