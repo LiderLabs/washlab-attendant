@@ -180,8 +180,8 @@ export function NewOrderContent() {
   }, [])
 
   useEffect(() => {
-    if (dbServices.length > 0 && !serviceType) setServiceType(dbServices[0].code)
-  }, [dbServices, serviceType])
+    if (dbServices.length > 0 && !serviceType && !selectedMachineId) setServiceType(dbServices[0].code)
+  }, [dbServices, serviceType, selectedMachineId])
 
   const quickNotes = ["Rush Service", "Stains", "Delicate", "No Softener"]
 
@@ -292,10 +292,10 @@ export function NewOrderContent() {
   const effectiveWashPrice = selectedMachine ? selectedMachine.washPrice : baseWashPrice
 
   const calculatePrice = () => {
-    if (!selectedService) return { basePrice: 0, subtotal: 0, total: 0, totalPrice: 0 }
+    if (!selectedService && !selectedMachineId) return { basePrice: 0, subtotal: 0, total: 0, totalPrice: 0 }
     const loads = Math.ceil(weight / 8)
     const basePrice = selectedMachineId
-      ? loads * (effectiveWashPrice + (bigWasherIncludeDry ? dryPrice : 0))
+      ? loads * effectiveWashPrice
       : serviceType === "wash_and_dry"
       ? loads * (effectiveWashPrice + dryPrice)
       : serviceType === "wash_only"
@@ -588,7 +588,7 @@ export function NewOrderContent() {
               </div>
 
               {/* 1. Select Service */}
-              <div style={{ display: selectedMachineId ? 'none' : undefined }}>
+              <div>
                 <h3 className='font-semibold text-foreground mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base'>
                   <span className='w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center flex-shrink-0'>1</span>
                   Select Service
@@ -602,7 +602,7 @@ export function NewOrderContent() {
                     {services.map((service: any) => (
                       <button
                         key={service.id}
-                        onClick={() => setServiceType(service.id)}
+                        onClick={() => { setServiceType(service.id); setSelectedMachineId(null); }}
                         className={`rounded-xl overflow-hidden border-2 transition-all ${serviceType === service.id ? "border-primary ring-2 ring-primary/20" : "border-border hover:border-muted-foreground/30"}`}
                       >
                         <div className='aspect-video bg-muted relative overflow-hidden'>
@@ -628,39 +628,21 @@ export function NewOrderContent() {
                 <div>
                   <h3 className='font-semibold text-foreground mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base'>
                     <span className='w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-muted text-muted-foreground text-xs flex items-center justify-center flex-shrink-0'>⚙</span>
-                    Machine <span className='text-xs font-normal text-muted-foreground ml-1'>(optional)</span>
+                    Machine
                   </h3>
                   <div className='flex flex-wrap gap-2'>
-                    <button
-                      onClick={() => { setSelectedMachineId(null); setBigWasherIncludeDry(false) }}
-                      className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all ${selectedMachineId === null ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground hover:border-muted-foreground/30"}`}
-                    >
-                      Standard
-                    </button>
+
                     {(activeMachines as any[]).map((machine: any) => (
                       <button
                         key={machine._id}
-                        onClick={() => setSelectedMachineId(machine._id)}
+                        onClick={() => { const newId = machine._id === selectedMachineId ? null : machine._id; setSelectedMachineId(newId); if (newId) setServiceType(""); }}
                         className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all ${selectedMachineId === machine._id ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground hover:border-muted-foreground/30"}`}
                       >
                         {machine.name} <span className='opacity-70'>· ₵{machine.washPrice} wash</span>
                       </button>
                     ))}
                   </div>
-                  {selectedMachineId && (
-                    <div className='mt-3 space-y-2'>
-                      <button
-                        onClick={() => setBigWasherIncludeDry(p => !p)}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all ${bigWasherIncludeDry ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground'}`}
-                      >
-                        <span>{bigWasherIncludeDry ? '✓' : '+'}</span>
-                        Include Dry <span className='opacity-70'>+₵{dryPrice.toFixed(2)}</span>
-                      </button>
-                      <p className='text-xs text-muted-foreground'>
-                        {bigWasherIncludeDry ? `Big Washer + Dry: ₵${(selectedMachine?.washPrice + dryPrice).toFixed(2)} per load` : `Big Washer only: ₵${selectedMachine?.washPrice?.toFixed(2)} per load`}
-                      </p>
-                    </div>
-                  )}
+
                 </div>
               )}
 
@@ -772,11 +754,11 @@ export function NewOrderContent() {
             <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 w-full lg:w-80 lg:flex-shrink-0'>
               <h3 className='font-semibold text-foreground mb-4 text-sm sm:text-base'>Order Summary</h3>
 
-              {serviceType && (
+              {(serviceType || selectedMachineId) && (
                 <div className='mb-4 p-3 bg-muted/50 rounded-xl border border-border'>
                   <p className='text-xs font-semibold text-muted-foreground mb-2'>EXTRA LOADS</p>
                   <div className='space-y-2'>
-                    {(serviceType === 'wash_and_dry' || serviceType === 'wash_only') && (
+                    {(serviceType === 'wash_and_dry' || serviceType === 'wash_only' || !!selectedMachineId) && (
                       <div className='flex items-center justify-between'>
                         <span className='text-xs text-foreground'>Extra Wash</span>
                         <div className='flex items-center gap-1'>
@@ -786,7 +768,7 @@ export function NewOrderContent() {
                         </div>
                       </div>
                     )}
-                    {(serviceType === 'wash_and_dry' || serviceType === 'dry_only') && (
+                    {(serviceType === 'wash_and_dry' || serviceType === 'dry_only' || !!selectedMachineId) && (
                       <div className='flex items-center justify-between'>
                         <span className='text-xs text-foreground'>Extra Dry</span>
                         <div className='flex items-center gap-1'>
@@ -803,18 +785,21 @@ export function NewOrderContent() {
               <div className='space-y-3 pb-4 border-b border-border'>
                 <div className='flex justify-between items-start gap-2'>
                   <span className='text-foreground text-sm sm:text-base truncate'>
-                    {selectedService?.name || services.find((s: any) => s.id === serviceType)?.name || "No service selected"}
+                    {selectedMachine ? selectedMachine.name : (selectedService?.name || services.find((s: any) => s.id === serviceType)?.name || "No service selected")}
                   </span>
                   <span className='font-semibold text-foreground text-sm sm:text-base flex-shrink-0'>₵{(pricing?.totalPrice || 0).toFixed(2)}</span>
                 </div>
-                {selectedService && (
+                {(true) && (
                   <div className='text-xs sm:text-sm text-muted-foreground pl-2'>
-                    {Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedService.basePrice.toFixed(2)}
-                    {(extraWashLoads > 0 || extraDryLoads > 0) && (
-                      <span className='block text-primary'>
-                        +{extraWashLoads + extraDryLoads} extra load(s) × ₵{selectedService.basePrice.toFixed(2)}
-                      </span>
-                    )}
+                    {selectedMachine ? (
+                      <>{Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedMachine.washPrice} wash
+                        {(extraWashLoads > 0 || extraDryLoads > 0) && <span className='block text-primary'>+{extraWashLoads + extraDryLoads} extra load(s)</span>}
+                      </>
+                    ) : selectedService ? (
+                      <>{Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedService.basePrice.toFixed(2)}
+                        {(extraWashLoads > 0 || extraDryLoads > 0) && <span className='block text-primary'>+{extraWashLoads + extraDryLoads} extra load(s) × ₵{selectedService.basePrice.toFixed(2)}</span>}
+                      </>
+                    ) : null}
                   </div>
                 )}
                 {orderNotes.includes("Rush Service") && (

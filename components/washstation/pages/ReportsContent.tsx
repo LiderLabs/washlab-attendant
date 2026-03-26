@@ -21,6 +21,11 @@ function DailyReportPageInner() {
   const dateParam = searchParams?.get('date');
   const { stationToken, sessionData, isSessionValid } = useStationSession() as any;
   const branchId = sessionData?.branchId;
+  const activeMachines = useQuery(
+    (api as any).branchMachines.getActiveMachines,
+    branchId ? { branchId } : "skip"
+  ) ?? [];
+  const reportFault = useMutation((api as any).maintenanceTickets.reportFault);
   const branchName = sessionData?.branchName;
 
   const autoData = useQuery(
@@ -64,9 +69,11 @@ function DailyReportPageInner() {
   const [cardAmount, setCardAmount] = useState(0);
   const [paystackAmount, setPaystackAmount] = useState(0);
   const [soapUnits, setSoapUnits] = useState(0);
-  const [machineId, setMachineId] = useState('');
+  const [selectedMachineId, setSelectedMachineId] = useState('');
+  const QUICK_FAULTS = ["Not spinning", "Coin stuck", "Not rolling", "Door won't close", "Water leaking", "Not draining", "Noisy", "Not starting"];
+  const [selectedFaultTypes, setSelectedFaultTypes] = useState<string[]>([]);
   const [faultDescription, setFaultDescription] = useState('');
-  const [faults, setFaults] = useState<Array<{ machineId: string; description: string }>>([]);
+  const [faults, setFaults] = useState<Array<{ machineId: string; machineName: string; faultTypes: string[]; description: string }>>([]);
   const [endOfDayComment, setEndOfDayComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -167,9 +174,17 @@ function DailyReportPageInner() {
   }, [existingDraft, autoData, loaded]);
 
   const handleAddFault = () => {
-    if (!machineId.trim() || !faultDescription.trim()) { toast.error('Enter machine ID and fault description'); return; }
-    setFaults([...faults, { machineId: machineId.trim(), description: faultDescription.trim() }]);
-    setMachineId(''); setFaultDescription('');
+    if (!selectedMachineId.trim() && !faultDescription.trim()) { toast.error('Select a machine and describe the fault'); return; }
+    const machine = (activeMachines as any[]).find((m: any) => m._id === selectedMachineId);
+    setFaults([...faults, {
+      machineId: selectedMachineId.trim(),
+      machineName: machine?.name || selectedMachineId.trim(),
+      faultTypes: selectedFaultTypes,
+      description: faultDescription.trim(),
+    }]);
+    setSelectedMachineId('');
+    setSelectedFaultTypes([]);
+    setFaultDescription('');
     toast.success('Fault added');
   };
 
@@ -429,16 +444,38 @@ function DailyReportPageInner() {
             {!isSubmitted && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-muted-foreground font-medium block mb-1">Machine ID</label>
-                  <Input value={machineId} onChange={e => setMachineId(e.target.value)} placeholder="e.g. ADX1234" className="text-sm" />
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Machine</label>
+                  {(activeMachines as any[]).length > 0 ? (
+                    <select value={selectedMachineId} onChange={e => setSelectedMachineId(e.target.value)}
+                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
+                      <option value="">Select machine...</option>
+                      {(activeMachines as any[]).map((m: any) => (
+                        <option key={m._id} value={m._id}>{m.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input value={selectedMachineId} onChange={e => setSelectedMachineId(e.target.value)} placeholder="e.g. ADX1234" className="text-sm" />
+                  )}
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground font-medium block mb-1">Fault Description</label>
+                  <label className="text-xs text-muted-foreground font-medium block mb-2">Fault Type</label>
+                  <div className="flex flex-wrap gap-2">
+                    {QUICK_FAULTS.map(f => (
+                      <button key={f} type="button"
+                        onClick={() => setSelectedFaultTypes(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f])}
+                        className={"px-3 py-1 rounded-full text-xs font-medium border transition-all " + (selectedFaultTypes.includes(f) ? "bg-destructive text-destructive-foreground border-destructive" : "bg-muted text-muted-foreground border-border hover:border-destructive/50")}>
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">Additional Details</label>
                   <Textarea value={faultDescription} onChange={e => setFaultDescription(e.target.value)}
-                    placeholder="Describe the issue..." rows={3} className="text-sm resize-none" />
+                    placeholder="Describe the issue in more detail..." rows={2} className="text-sm resize-none" />
                 </div>
                 <Button onClick={handleAddFault} size="sm" variant="outline">
-                  <Plus className="w-4 h-4 mr-2" /> Add Fault
+                  <Plus className="w-4 h-4 mr-2" /> Report Fault
                 </Button>
               </div>
             )}
@@ -448,8 +485,13 @@ function DailyReportPageInner() {
                   <div key={i} className="flex items-start gap-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
                     <Wrench className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-destructive">{f.machineId}</p>
-                      <p className="text-sm text-foreground">{f.description}</p>
+                      <p className="text-xs font-semibold text-destructive">{f.machineName || f.machineId}</p>
+                      {f.faultTypes && f.faultTypes.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {f.faultTypes.map((ft: string) => <span key={ft} className="text-xs px-1.5 py-0.5 bg-destructive/10 text-destructive rounded">{ft}</span>)}
+                        </div>
+                      )}
+                      {f.description && <p className="text-sm text-foreground mt-0.5">{f.description}</p>}
                     </div>
                     {!isSubmitted && (
                       <button onClick={() => setFaults(faults.filter((_, idx) => idx !== i))}

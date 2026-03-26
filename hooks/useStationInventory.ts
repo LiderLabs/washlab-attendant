@@ -23,6 +23,8 @@ export interface InventoryItem {
   maxStock: number;
   minStock: number;
   reorderPoint: number;
+  scoopsPerUnit?: number;
+  usageNotes?: string;
   status: InventoryStatus;
   orderedAt?: number;
   expectedArrivalDate?: number;

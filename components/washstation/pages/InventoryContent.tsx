@@ -1,252 +1,73 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { 
-  RefreshCw, 
-  AlertTriangle,
-  Package,
-  CheckCircle,
-  Plus
+import {
+  RefreshCw, AlertTriangle, Package, CheckCircle, Droplets, Info, Bell,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStationSession } from '@/hooks/useStationSession';
 import {
   useStationInventory,
-  useUpdateInventoryStock,
-  usePlaceInventoryOrder,
-  useCreateInventoryItem,
   type InventoryItem,
-  type InventoryCategory,
 } from '@/hooks/useStationInventory';
+import { useMutation } from 'convex/react';
+import { api } from '@jordan6699/washlab-backend/api';
 import { format } from 'date-fns';
-import { ActionVerification } from '@/components/washstation/ActionVerification';
-import { Id } from '@jordan6699/washlab-backend/dataModel';
 
 export function InventoryContent() {
   const { stationToken } = useStationSession();
   const [filter, setFilter] = useState<'all' | 'critical' | 'low'>('all');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
-  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  const [orderDialogOpen, setOrderDialogOpen] = useState(false);
-  const [addItemDialogOpen, setAddItemDialogOpen] = useState(false);
-  const [showVerification, setShowVerification] = useState(false);
-  const [pendingItemData, setPendingItemData] = useState<{
-    name: string;
-    category: InventoryCategory;
-    unit: string;
-    description: string;
-    currentStock: number;
-    maxStock: number;
-    minStock: number;
-    reorderPoint: number;
-  } | null>(null);
-  const [updateStockValue, setUpdateStockValue] = useState('');
-  const [orderQuantity, setOrderQuantity] = useState('');
-  const [expectedArrivalDate, setExpectedArrivalDate] = useState('');
-  const [itemForm, setItemForm] = useState({
-    name: '',
-    category: 'cleaning_supplies' as InventoryCategory,
-    unit: '',
-    description: '',
-    currentStock: 0,
-    maxStock: 0,
-    minStock: 0,
-    reorderPoint: 0,
-  });
+  const [requestDialogOpen, setRequestDialogOpen] = useState(false);
+  const [requestNotes, setRequestNotes] = useState('');
+  const [isRequesting, setIsRequesting] = useState(false);
 
   const { inventory, isLoading, stats } = useStationInventory(
     stationToken,
     filter === 'all' ? undefined : { status: filter }
   );
-  const { updateStock } = useUpdateInventoryStock();
-  const { placeOrder } = usePlaceInventoryOrder();
-  const { createItem } = useCreateInventoryItem();
 
-  const handleRefresh = () => {
-    toast.success('Inventory refreshed');
-  };
+  const requestOrder = useMutation((api as any).inventory.requestOrder);
 
-  const handleUpdateClick = (item: InventoryItem) => {
+  const handleRequestClick = (item: InventoryItem) => {
     setSelectedItem(item);
-    setUpdateStockValue(item.currentStock.toString());
-    setUpdateDialogOpen(true);
+    setRequestNotes('');
+    setRequestDialogOpen(true);
   };
 
-  const handleOrderClick = (item: InventoryItem) => {
-    setSelectedItem(item);
-    setOrderQuantity('');
-    setExpectedArrivalDate('');
-    setOrderDialogOpen(true);
-  };
-
-  const handleUpdateStock = async () => {
-    if (!selectedItem) return;
-
-    const stockValue = parseFloat(updateStockValue);
-    if (isNaN(stockValue) || stockValue < 0) {
-      toast.error('Please enter a valid stock amount');
-      return;
-    }
-
-    const success = await updateStock(selectedItem._id, stockValue);
-    if (success.success) {
-      setUpdateDialogOpen(false);
-      setSelectedItem(null);
-      setUpdateStockValue('');
-    }
-  };
-
-  const handlePlaceOrder = async () => {
-    if (!selectedItem) return;
-
-    const quantity = parseFloat(orderQuantity);
-    if (isNaN(quantity) || quantity <= 0) {
-      toast.error('Please enter a valid order quantity');
-      return;
-    }
-
-    let arrivalTimestamp: number | undefined;
-    if (expectedArrivalDate) {
-      const date = new Date(expectedArrivalDate);
-      if (isNaN(date.getTime())) {
-        toast.error('Please enter a valid date');
-        return;
-      }
-      arrivalTimestamp = date.getTime();
-    }
-
-    const success = await placeOrder(selectedItem._id, quantity, arrivalTimestamp);
-    if (success.success) {
-      setOrderDialogOpen(false);
-      setSelectedItem(null);
-      setOrderQuantity('');
-      setExpectedArrivalDate('');
-    }
-  };
-
-  const handleAddItem = () => {
-    setItemForm({
-      name: '',
-      category: 'cleaning_supplies',
-      unit: '',
-      description: '',
-      currentStock: 0,
-      maxStock: 0,
-      minStock: 0,
-      reorderPoint: 0,
-    });
-    setAddItemDialogOpen(true);
-  };
-
-  const handleSaveItem = () => {
-    if (!itemForm.name.trim()) {
-      toast.error('Please enter item name');
-      return;
-    }
-    if (!itemForm.unit.trim()) {
-      toast.error('Please enter unit');
-      return;
-    }
-    if (itemForm.maxStock <= 0) {
-      toast.error('Max stock must be greater than 0');
-      return;
-    }
-    if (itemForm.minStock < 0) {
-      toast.error('Min stock cannot be negative');
-      return;
-    }
-    if (itemForm.reorderPoint < 0) {
-      toast.error('Reorder point cannot be negative');
-      return;
-    }
-    if (itemForm.minStock >= itemForm.reorderPoint) {
-      toast.error('Min stock must be less than reorder point');
-      return;
-    }
-    if (itemForm.reorderPoint >= itemForm.maxStock) {
-      toast.error('Reorder point must be less than max stock');
-      return;
-    }
-
-    // Store form data and show verification modal
-    setPendingItemData({ ...itemForm });
-    setAddItemDialogOpen(false);
-    setShowVerification(true);
-  };
-
-  const handleVerificationSuccess = async (
-    attendantId: Id<'attendants'>,
-    verificationId: Id<'biometricVerifications'>
-  ) => {
-    if (!pendingItemData) return;
-
-    setShowVerification(false);
-
-    const success = await createItem(
-      pendingItemData.name,
-      pendingItemData.category,
-      pendingItemData.unit,
-      pendingItemData.currentStock,
-      pendingItemData.maxStock,
-      pendingItemData.minStock,
-      pendingItemData.reorderPoint,
-      pendingItemData.description || undefined,
-      verificationId
-    );
-
-    if (success.success) {
-      setPendingItemData(null);
-      setItemForm({
-        name: '',
-        category: 'cleaning_supplies',
-        unit: '',
-        description: '',
-        currentStock: 0,
-        maxStock: 0,
-        minStock: 0,
-        reorderPoint: 0,
+  const handleSubmitRequest = async () => {
+    if (!selectedItem || !stationToken) return;
+    setIsRequesting(true);
+    try {
+      await requestOrder({
+        itemId: selectedItem._id,
+        stationToken,
+        notes: requestNotes || undefined,
       });
+      toast.success('Order request sent to admin');
+      setRequestDialogOpen(false);
+      setSelectedItem(null);
+      setRequestNotes('');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to send request');
+    } finally {
+      setIsRequesting(false);
     }
   };
 
-  const categoryLabels: Record<InventoryCategory, string> = {
-    cleaning_supplies: 'Cleaning Supplies',
-    add_ons: 'Add-ons',
-    facility: 'Facility',
-    retail: 'Retail',
-    operational: 'Operational',
-  };
-
-  const filteredInventory = inventory;
-
-  const getStatusBadge = (status: string) => {
-    const config: Record<string, { label: string; className: string; icon: any }> = {
-      critical: { label: 'Critical', className: 'bg-destructive/10 text-destructive', icon: AlertTriangle },
-      low: { label: 'Low Stock', className: 'bg-warning/10 text-warning', icon: AlertTriangle },
-      ok: { label: 'In Stock', className: 'bg-success/10 text-success', icon: CheckCircle },
-      ordered: { label: 'Ordered', className: 'bg-primary/10 text-primary', icon: Package },
-    };
-    return config[status] || config.ok;
-  };
+  const getStatusConfig = (status: string) => ({
+    critical: { label: 'Critical', cls: 'bg-red-100 text-red-700', icon: AlertTriangle },
+    low: { label: 'Low Stock', cls: 'bg-amber-100 text-amber-700', icon: AlertTriangle },
+    ok: { label: 'In Stock', cls: 'bg-green-100 text-green-700', icon: CheckCircle },
+    ordered: { label: 'Requested', cls: 'bg-blue-100 text-blue-700', icon: Package },
+  }[status] || { label: 'In Stock', cls: 'bg-green-100 text-green-700', icon: CheckCircle });
 
   if (isLoading) {
     return (
@@ -258,21 +79,32 @@ export function InventoryContent() {
 
   return (
     <>
-      {/* Stats & Actions */}
+      {/* Stats bar */}
       <div className="flex flex-col gap-4 mb-6">
-        <div className="flex flex-wrap gap-2 sm:gap-3">
-          <div className="px-3 sm:px-4 py-2 bg-destructive/10 text-destructive rounded-lg whitespace-nowrap">
-            <span className="text-xs sm:text-sm font-medium">{stats.critical} Critical</span>
-          </div>
-          <div className="px-3 sm:px-4 py-2 bg-warning/10 text-warning rounded-lg whitespace-nowrap">
-            <span className="text-xs sm:text-sm font-medium">{stats.low} Low</span>
-          </div>
-          <div className="px-3 sm:px-4 py-2 bg-primary/10 text-primary rounded-lg whitespace-nowrap">
-            <span className="text-xs sm:text-sm font-medium">{stats.ordered} Ordered</span>
-          </div>
+        <div className="flex flex-wrap gap-2">
+          {stats.critical > 0 && (
+            <div className="px-4 py-2 bg-red-100 text-red-700 rounded-lg flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span className="text-sm font-medium">{stats.critical} Critical</span>
+            </div>
+          )}
+          {stats.low > 0 && (
+            <div className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span className="text-sm font-medium">{stats.low} Low</span>
+            </div>
+          )}
+          {stats.ordered > 0 && (
+            <div className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg flex items-center gap-1.5">
+              <Bell className="w-3.5 h-3.5" />
+              <span className="text-sm font-medium">{stats.ordered} Requested</span>
+            </div>
+          )}
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
-          <div className="flex gap-1 sm:gap-2 bg-muted rounded-xl p-1 flex-shrink-0">
+
+        {/* Filter tabs */}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 bg-muted rounded-xl p-1">
             {[
               { id: 'all', label: 'All' },
               { id: 'critical', label: 'Critical' },
@@ -281,9 +113,9 @@ export function InventoryContent() {
               <button
                 key={tab.id}
                 onClick={() => setFilter(tab.id as any)}
-                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
-                  filter === tab.id 
-                    ? 'bg-card text-foreground shadow-sm' 
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  filter === tab.id
+                    ? 'bg-card text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -291,81 +123,111 @@ export function InventoryContent() {
               </button>
             ))}
           </div>
-          <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-2 flex-shrink-0">
+          <Button variant="outline" size="sm" onClick={() => toast.success('Refreshed')} className="gap-2">
             <RefreshCw className="w-4 h-4" />
             <span className="hidden sm:inline">Refresh</span>
-          </Button>
-          <Button size="sm" onClick={handleAddItem} className="gap-2 flex-shrink-0">
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Add Item</span>
-            <span className="sm:hidden">Add</span>
           </Button>
         </div>
       </div>
 
+      {/* Notice */}
+      <div className="flex items-start gap-2 p-3 bg-muted/50 border border-border rounded-lg mb-4">
+        <Info className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-muted-foreground">
+          You can request orders for low or critical items. The admin will be notified and fulfil the order.
+        </p>
+      </div>
+
       {/* Inventory Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
-        {filteredInventory.map((item) => {
-          const status = getStatusBadge(item.status);
-          const StatusIcon = status.icon;
-          const stockPercentage = (item.currentStock / item.maxStock) * 100;
-          
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {inventory.map((item: any) => {
+          const cfg = getStatusConfig(item.status);
+          const StatusIcon = cfg.icon;
+          const stockPct = Math.min((item.currentStock / item.maxStock) * 100, 100);
+          const totalScoops = item.scoopsPerUnit && item.currentStock > 0
+            ? Math.floor(item.currentStock * item.scoopsPerUnit)
+            : null;
+
           return (
-            <div key={item._id} className="bg-card border border-border rounded-xl p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow min-w-0">
+            <div key={item._id} className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+              {/* Header */}
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-foreground mb-1 truncate">{item.name}</h3>
-                  <p className="text-xs sm:text-sm text-muted-foreground truncate">{item.category.replace('_', ' ')}</p>
+                  <h3 className="font-semibold text-foreground truncate">{item.name}</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{item.category.replace(/_/g, ' ')}</p>
                 </div>
-                <span className={`inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${status.className}`}>
-                  <StatusIcon className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
-                  <span className="hidden sm:inline">{status.label}</span>
-                  <span className="sm:hidden">{status.label.split(' ')[0]}</span>
+                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${cfg.cls}`}>
+                  <StatusIcon className="w-3 h-3" />
+                  {cfg.label}
                 </span>
               </div>
-              
-              <div className="space-y-2 mb-4">
-                <div className="flex items-center justify-between text-xs sm:text-sm gap-2">
-                  <span className="text-muted-foreground whitespace-nowrap">Stock</span>
-                  <span className="font-medium text-foreground text-right break-words">
-                    {item.currentStock} / {item.maxStock} <span className="hidden sm:inline">{item.unit}</span>
-                  </span>
+
+              {/* Stock bar */}
+              <div className="space-y-1.5 mb-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Current Stock</span>
+                  <span className="font-semibold">{item.currentStock} / {item.maxStock} {item.unit}</span>
                 </div>
-                <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                  <div 
-                    className={`h-full transition-all ${
-                      stockPercentage < 20 ? 'bg-destructive' :
-                      stockPercentage < 40 ? 'bg-warning' :
-                      'bg-success'
-                    }`}
-                    style={{ width: `${Math.min(stockPercentage, 100)}%` }}
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div
+                    className={`h-full rounded-full transition-all ${stockPct < 20 ? 'bg-red-500' : stockPct < 40 ? 'bg-amber-500' : 'bg-green-500'}`}
+                    style={{ width: `${stockPct}%` }}
                   />
+                </div>
+                {/* Thresholds */}
+                <div className="grid grid-cols-2 gap-1 mt-1">
+                  <div className="flex items-center justify-between text-xs px-2 py-1 bg-red-50 dark:bg-red-950/20 rounded">
+                    <span className="text-red-600">Critical below</span>
+                    <span className="font-semibold text-red-700">{item.minStock} {item.unit}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs px-2 py-1 bg-amber-50 dark:bg-amber-950/20 rounded">
+                    <span className="text-amber-600">Reorder at</span>
+                    <span className="font-semibold text-amber-700">{item.reorderPoint} {item.unit}</span>
+                  </div>
                 </div>
               </div>
 
-              {item.status === 'ordered' && item.expectedArrivalDate && (
-                <p className="text-xs text-primary mb-3 truncate">
-                  Arriving: {format(new Date(item.expectedArrivalDate), 'MMM d, yyyy')}
-                </p>
+              {/* Scoops info */}
+              {item.scoopsPerUnit && (
+                <div className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-blue-950/20 rounded-lg mb-3">
+                  <Droplets className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                  <div className="text-xs">
+                    <span className="text-blue-600">{item.scoopsPerUnit} scoops per {item.unit}</span>
+                    {totalScoops !== null && (
+                      <span className="text-blue-800 dark:text-blue-300 font-semibold ml-2">≈ {totalScoops} scoops left</span>
+                    )}
+                  </div>
+                </div>
               )}
 
-              <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="flex-1 text-xs sm:text-sm"
-                  onClick={() => handleUpdateClick(item)}
-                >
-                  Update
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="flex-1 text-xs sm:text-sm"
-                  onClick={() => handleOrderClick(item)}
+              {/* Usage notes */}
+              {item.usageNotes && (
+                <div className="flex items-start gap-2 p-2 bg-muted/50 rounded-lg mb-3">
+                  <Info className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground">{item.usageNotes}</p>
+                </div>
+              )}
+
+              {/* Order status */}
+              {item.status === 'ordered' && (
+                <div className="p-2 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 rounded-lg mb-3 text-xs text-blue-700">
+                  {item.expectedArrivalDate
+                    ? `Expected: ${format(new Date(item.expectedArrivalDate), 'MMM d, yyyy')}`
+                    : 'Order request sent — awaiting admin'}
+                </div>
+              )}
+
+              {/* Request Order button only */}
+              <div className="pt-2 border-t border-border">
+                <Button
+                  variant={item.status === 'critical' ? 'default' : 'outline'}
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => handleRequestClick(item)}
                   disabled={item.status === 'ordered'}
                 >
-                  {item.status === 'ordered' ? 'Ordered' : 'Order'}
+                  <Package className="w-3.5 h-3.5" />
+                  {item.status === 'ordered' ? 'Request Sent' : 'Request Order'}
                 </Button>
               </div>
             </div>
@@ -373,232 +235,52 @@ export function InventoryContent() {
         })}
       </div>
 
-      {filteredInventory.length === 0 && (
+      {inventory.length === 0 && (
         <div className="bg-card border border-border rounded-xl p-12 text-center">
           <Package className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">No items found</p>
+          <p className="text-muted-foreground">No inventory items found</p>
+          <p className="text-xs text-muted-foreground mt-1">The admin will add items for your branch</p>
         </div>
       )}
 
-      {/* Update Stock Dialog */}
-      <Dialog open={updateDialogOpen} onOpenChange={setUpdateDialogOpen}>
+      {/* Request Order Dialog */}
+      <Dialog open={requestDialogOpen} onOpenChange={setRequestDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Update Stock - {selectedItem?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="stock">Current Stock ({selectedItem?.unit})</Label>
-              <Input
-                id="stock"
-                type="number"
-                min="0"
-                value={updateStockValue}
-                onChange={(e) => setUpdateStockValue(e.target.value)}
-                placeholder="Enter stock amount"
-                className="mt-1"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Current: {selectedItem?.currentStock} / Max: {selectedItem?.maxStock}
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setUpdateDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleUpdateStock}>
-              Update Stock
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Place Order Dialog */}
-      <Dialog open={orderDialogOpen} onOpenChange={setOrderDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Place Order - {selectedItem?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="quantity">Order Quantity ({selectedItem?.unit})</Label>
-              <Input
-                id="quantity"
-                type="number"
-                min="1"
-                value={orderQuantity}
-                onChange={(e) => setOrderQuantity(e.target.value)}
-                placeholder="Enter quantity to order"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label htmlFor="arrivalDate">Expected Arrival Date (Optional)</Label>
-              <Input
-                id="arrivalDate"
-                type="date"
-                value={expectedArrivalDate}
-                onChange={(e) => setExpectedArrivalDate(e.target.value)}
-                className="mt-1"
-                min={new Date().toISOString().split('T')[0]}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOrderDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handlePlaceOrder}>
-              Place Order
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Item Dialog */}
-      <Dialog open={addItemDialogOpen} onOpenChange={setAddItemDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Add Inventory Item</DialogTitle>
+            <DialogTitle>Request Order — {selectedItem?.name}</DialogTitle>
             <DialogDescription>
-              Create a new inventory item for this branch
+              This will notify the admin to place an order for this item.
+              Current stock: <strong>{selectedItem?.currentStock} {selectedItem?.unit}</strong>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <Label htmlFor="itemName">Item Name *</Label>
-                <Input
-                  id="itemName"
-                  value={itemForm.name}
-                  onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
-                  placeholder="e.g., Liquid Detergent"
-                />
+            {selectedItem?.scoopsPerUnit && (
+              <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
+                <Droplets className="w-4 h-4 text-blue-500" />
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  ≈ {Math.floor((selectedItem.currentStock || 0) * selectedItem.scoopsPerUnit)} scoops remaining
+                </p>
               </div>
-              <div>
-                <Label htmlFor="itemCategory">Category *</Label>
-                <Select
-                  value={itemForm.category}
-                  onValueChange={(value) =>
-                    setItemForm({ ...itemForm, category: value as InventoryCategory })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(categoryLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="itemUnit">Unit *</Label>
-                <Input
-                  id="itemUnit"
-                  value={itemForm.unit}
-                  onChange={(e) => setItemForm({ ...itemForm, unit: e.target.value })}
-                  placeholder="e.g., Units, Boxes, Rolls"
-                />
-              </div>
-              <div className="col-span-2">
-                <Label htmlFor="itemDescription">Description</Label>
-                <Textarea
-                  id="itemDescription"
-                  value={itemForm.description}
-                  onChange={(e) =>
-                    setItemForm({ ...itemForm, description: e.target.value })
-                  }
-                  placeholder="Optional description"
-                  rows={3}
-                />
-              </div>
-              <div>
-                <Label htmlFor="itemCurrentStock">Current Stock</Label>
-                <Input
-                  id="itemCurrentStock"
-                  type="number"
-                  min="0"
-                  value={itemForm.currentStock}
-                  onChange={(e) =>
-                    setItemForm({
-                      ...itemForm,
-                      currentStock: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="itemMaxStock">Max Stock *</Label>
-                <Input
-                  id="itemMaxStock"
-                  type="number"
-                  min="1"
-                  value={itemForm.maxStock}
-                  onChange={(e) =>
-                    setItemForm({
-                      ...itemForm,
-                      maxStock: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="itemMinStock">Min Stock (Critical Threshold) *</Label>
-                <Input
-                  id="itemMinStock"
-                  type="number"
-                  min="0"
-                  value={itemForm.minStock}
-                  onChange={(e) =>
-                    setItemForm({
-                      ...itemForm,
-                      minStock: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="itemReorderPoint">Reorder Point *</Label>
-                <Input
-                  id="itemReorderPoint"
-                  type="number"
-                  min="0"
-                  value={itemForm.reorderPoint}
-                  onChange={(e) =>
-                    setItemForm({
-                      ...itemForm,
-                      reorderPoint: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                />
-              </div>
+            )}
+            <div>
+              <Label>Notes for admin (optional)</Label>
+              <Textarea
+                value={requestNotes}
+                onChange={(e) => setRequestNotes(e.target.value)}
+                placeholder="e.g., Running very low, need urgently"
+                rows={3}
+                className="mt-1"
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddItemDialogOpen(false)}>
-              Cancel
+            <Button variant="outline" onClick={() => setRequestDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSubmitRequest} disabled={isRequesting}>
+              {isRequesting ? 'Sending...' : 'Send Request'}
             </Button>
-            <Button onClick={handleSaveItem}>Create Item</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Biometric Verification Modal */}
-      <ActionVerification
-        open={showVerification}
-        onCancel={() => {
-          setShowVerification(false);
-          setPendingItemData(null);
-          setAddItemDialogOpen(true);
-        }}
-        onVerified={handleVerificationSuccess}
-        actionType="create_inventory_item"
-      />
     </>
   );
 }
