@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@jordan6699/washlab-backend/api';
@@ -14,6 +14,36 @@ import { Lock, CheckCircle2, Loader2, Plus, X, Save, Wrench, Tag, ChevronRight, 
 function today() { return new Date().toISOString().split('T')[0]; }
 function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
 function fmt(n: number) { return `GHS ${n.toFixed(2)}`; }
+
+// ── Fault serialization helpers ───────────────────────────────────────────────
+interface FaultEntry {
+  machineId: string
+  machineName: string
+  faultTypes: string[]
+  description: string
+}
+
+function serializeFaults(faults: FaultEntry[]): string {
+  return JSON.stringify(faults)
+}
+
+function deserializeFaults(raw: string | null | undefined): FaultEntry[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed
+  } catch {
+    // Legacy format: "[machineId] description" lines — best-effort parse
+    const lines = raw.split('\n').filter(Boolean)
+    return lines.map((l: string) => {
+      const match = l.match(/^\[(.+?)\]\s*(.*)$/)
+      return match
+        ? { machineId: match[1], machineName: match[1], faultTypes: [], description: match[2] }
+        : { machineId: '', machineName: '', faultTypes: [], description: l }
+    })
+  }
+  return []
+}
 
 function DailyReportPageInner() {
   const router = useRouter();
@@ -32,17 +62,6 @@ function DailyReportPageInner() {
     (api as any).dailyReports.getAutoData,
     branchId ? { branchId, date: dateParam || today(), stationToken: stationToken || undefined } : 'skip'
   );
-  // Always sync system data
-  useEffect(() => {
-    if (!autoData) return;
-    setWasherTokens(autoData.washerTokensUsed ?? 0);
-    setSoapUnits(autoData.washerTokensUsed ?? 0);
-    setDryerTokens(autoData.dryerTokensUsed ?? 0);
-    setCashAmount(autoData.cashAmount ?? 0);
-    setMobileMoneyAmount(autoData.mobileMoneylAmount ?? 0);
-    setCardAmount(autoData.cardAmount ?? 0);
-    setPaystackAmount(autoData.paystackAmount ?? 0);
-  }, [autoData]);
 
   const existingDraft = useQuery(
     (api as any).dailyReports.getDraft,
@@ -52,8 +71,6 @@ function DailyReportPageInner() {
     (api as any).dailyReports.getByBranch,
     branchId ? { branchId, limit: 14, stationToken: stationToken || undefined } : 'skip'
   );
-  const clockedInStaff = null;
-  // Also try via station token (same as ActionVerification does)
   const activeAttendances = useQuery(
     api.stations.getActiveStationAttendances,
     stationToken ? { stationToken } : 'skip'
@@ -73,12 +90,24 @@ function DailyReportPageInner() {
   const QUICK_FAULTS = ["Not spinning", "Coin stuck", "Not rolling", "Door won't close", "Water leaking", "Not draining", "Noisy", "Not starting"];
   const [selectedFaultTypes, setSelectedFaultTypes] = useState<string[]>([]);
   const [faultDescription, setFaultDescription] = useState('');
-  const [faults, setFaults] = useState<Array<{ machineId: string; machineName: string; faultTypes: string[]; description: string }>>([]);
+  const [faults, setFaults] = useState<FaultEntry[]>([]);
   const [endOfDayComment, setEndOfDayComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // FIX: Use a ref to track whether we've loaded data for the current date.
+  // Previously 'loaded' was in the useEffect dependency array that also called
+  // setLoaded(true), creating a re-run loop that could cause unexpected behavior
+  // including triggering submit flows on re-renders.
+  const loadedRef = useRef(false);
   const [loaded, setLoaded] = useState(false);
-  useEffect(() => { setLoaded(false); }, [dateParam]);
+
+  // Reset loaded state when date changes
+  useEffect(() => {
+    loadedRef.current = false;
+    setLoaded(false);
+  }, [dateParam]);
+
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [reportDateFilter, setReportDateFilter] = useState('');
   const [showDraftBanner, setShowDraftBanner] = useState(false);
@@ -86,9 +115,23 @@ function DailyReportPageInner() {
   const DRAFT_KEY = `washlab_report_draft_${branchId || "unknown"}`;
   const isSubmitted = existingDraft?.status === 'submitted' || existingDraft?.status === 'submitted_with_outstanding';
 
-  // Auto-save to localStorage whenever manual fields change
+  // Always sync system/auto data (read-only fields) whenever autoData changes
   useEffect(() => {
-    if (!loaded || isSubmitted || !branchId) return;
+    if (!autoData) return;
+    setWasherTokens(autoData.washerTokensUsed ?? 0);
+    setSoapUnits(autoData.washerTokensUsed ?? 0);
+    setDryerTokens(autoData.dryerTokensUsed ?? 0);
+    setCashAmount(autoData.cashAmount ?? 0);
+    setMobileMoneyAmount(autoData.mobileMoneylAmount ?? 0);
+    setCardAmount(autoData.cardAmount ?? 0);
+    setPaystackAmount(autoData.paystackAmount ?? 0);
+  }, [autoData]);
+
+  // Auto-save to localStorage whenever manual fields change
+  // FIX: Removed 'loaded' from deps — use loadedRef.current instead so this
+  // effect doesn't re-trigger just because loaded state flipped.
+  useEffect(() => {
+    if (!loadedRef.current || isSubmitted || !branchId) return;
     const draft = {
       date: dateParam || today(),
       soapUnits,
@@ -97,7 +140,7 @@ function DailyReportPageInner() {
       savedAt: Date.now(),
     };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {}
-  }, [soapUnits, faults, endOfDayComment, loaded, isSubmitted, branchId]);
+  }, [soapUnits, faults, endOfDayComment, isSubmitted, branchId, dateParam]);
 
   // On mount, check for a saved localStorage draft from a previous session
   useEffect(() => {
@@ -106,7 +149,6 @@ function DailyReportPageInner() {
       const raw = localStorage.getItem(DRAFT_KEY);
       if (!raw) return;
       const saved = JSON.parse(raw);
-      // Only show banner if draft is from a previous day or previous session
       if (saved.date && saved.date !== today()) {
         setDraftDate(saved.date);
         setShowDraftBanner(true);
@@ -120,7 +162,7 @@ function DailyReportPageInner() {
       if (!raw) return;
       const saved = JSON.parse(raw);
       if (saved.soapUnits !== undefined) setSoapUnits(saved.soapUnits);
-      if (saved.faults) setFaults(saved.faults);
+      if (Array.isArray(saved.faults)) setFaults(saved.faults);
       if (saved.endOfDayComment) setEndOfDayComment(saved.endOfDayComment);
       toast.success("Draft restored!");
     } catch {}
@@ -132,51 +174,50 @@ function DailyReportPageInner() {
     setShowDraftBanner(false);
   };
 
-  // Use all attendants who clocked in today (covers those who left early)
   const attendantNames: string[] = (autoData?.todayAttendantNames && autoData.todayAttendantNames.length > 0)
     ? autoData.todayAttendantNames
     : (activeAttendances?.map(a => a.attendant?.name).filter(Boolean) as string[] ?? []);
 
+  // FIX: Removed 'loaded' from the dependency array. The previous version had
+  // 'loaded' in deps, which meant every time setLoaded(true) was called, this
+  // effect re-ran — potentially re-loading and resetting state mid-session, or
+  // in race conditions triggering submit-adjacent state changes. We now guard
+  // with loadedRef.current so the load only happens once per date.
   useEffect(() => {
-    if (existingDraft && existingDraft.status === 'submitted') { setLoaded(true); return; }
+    // Don't reload if already loaded for this date
+    if (loadedRef.current) return;
+    // Wait until we have at least one of existingDraft or autoData
+    if (existingDraft === undefined && autoData === undefined) return;
+
+    if (existingDraft?.status === 'submitted' || existingDraft?.status === 'submitted_with_outstanding') {
+      loadedRef.current = true;
+      setLoaded(true);
+      return;
+    }
+
     if (existingDraft) {
-      // Tokens and payments always from live system
-      if (autoData) {
-        setWasherTokens(autoData.washerTokensUsed ?? 0);
-        setDryerTokens(autoData.dryerTokensUsed ?? 0);
-        setCashAmount(autoData.cashAmount ?? 0);
-        setMobileMoneyAmount(autoData.mobileMoneylAmount ?? 0);
-        setCardAmount(autoData.cardAmount ?? 0);
-        setPaystackAmount(autoData.paystackAmount ?? 0);
-      }
-      // Manual fields from draft
+      // Restore manual fields from draft
       setSoapUnits(existingDraft.soapUnitsUsed ?? 0);
       setEndOfDayComment(existingDraft.notes ?? '');
       if (existingDraft.technicalFaultNotes) {
-        const lines = existingDraft.technicalFaultNotes.split('\n').filter(Boolean);
-        const parsed = lines.map((l: string) => {
-          const match = l.match(/^\[(.+?)\]\s*(.+)$/);
-          return match ? { machineId: match[1], description: match[2] } : { machineId: '', description: l };
-        });
-        setFaults(parsed);
+        setFaults(deserializeFaults(existingDraft.technicalFaultNotes));
       }
+      loadedRef.current = true;
       setLoaded(true);
     } else if (autoData) {
-      setWasherTokens(autoData.washerTokensUsed ?? 0);
-      setDryerTokens(autoData.dryerTokensUsed ?? 0);
-      setCashAmount(autoData.cashAmount ?? 0);
-      setMobileMoneyAmount(autoData.mobileMoneylAmount ?? 0);
-      setCardAmount(autoData.cardAmount ?? 0);
-      setPaystackAmount(autoData.paystackAmount ?? 0);
-      // keep this branch
+      // No draft yet — just mark as loaded (auto fields already synced above)
+      loadedRef.current = true;
       setLoaded(true);
     }
-  }, [existingDraft, autoData, loaded]);
+  }, [existingDraft, autoData]);
+  // NOTE: 'loaded' intentionally excluded from deps ^^^
 
   const handleAddFault = () => {
-    if (!selectedMachineId.trim() && !faultDescription.trim()) { toast.error('Select a machine and describe the fault'); return; }
+    if (!selectedMachineId.trim() && !faultDescription.trim()) {
+      toast.error('Select a machine and describe the fault'); return;
+    }
     const machine = (activeMachines as any[]).find((m: any) => m._id === selectedMachineId);
-    setFaults([...faults, {
+    setFaults(prev => [...prev, {
       machineId: selectedMachineId.trim(),
       machineName: machine?.name || selectedMachineId.trim(),
       faultTypes: selectedFaultTypes,
@@ -204,7 +245,7 @@ function DailyReportPageInner() {
     voucherBreakdown: autoData?.voucherBreakdown ?? [],
     washingPlanCount: 0,
     technicalFaultCount: faults.length,
-    technicalFaultNotes: faults.map(f => `[${f.machineId}] ${f.description}`).join('\n') || undefined,
+    technicalFaultNotes: faults.length > 0 ? serializeFaults(faults) : undefined,
     notes: endOfDayComment || undefined,
     outstandingAmount: autoData?.outstandingAmount ?? 0,
     outstandingOrderCount: autoData?.outstandingOrderCount ?? 0,
@@ -226,6 +267,9 @@ function DailyReportPageInner() {
 
   const handleSubmitConfirmed = async () => {
     if (!branchId) return;
+    // FIX: Guard against double-submission. If already submitting or already
+    // submitted, bail out immediately. This prevents any accidental re-trigger.
+    if (isSubmitting || isSubmitted) return;
     setIsSubmitting(true);
     try {
       await submitMutation(buildPayload());
@@ -235,6 +279,7 @@ function DailyReportPageInner() {
         setWasherTokens(0); setDryerTokens(0);
         setCashAmount(0); setMobileMoneyAmount(0); setCardAmount(0); setPaystackAmount(0);
         setSoapUnits(0); setFaults([]); setEndOfDayComment('');
+        loadedRef.current = false;
         setLoaded(false);
       }, 2000);
     } catch (e: any) {
@@ -247,7 +292,6 @@ function DailyReportPageInner() {
   const totalRecorded = cashAmount + mobileMoneyAmount + cardAmount + paystackAmount;
   const totalTokenRevenue = autoData?.tokenRevenue ?? totalRecorded;
   const discrepancy = Math.round((totalRecorded - totalTokenRevenue) * 100) / 100;
-  // totalRecorded and discrepancy calculated above
 
   return (
     <>
@@ -257,7 +301,7 @@ function DailyReportPageInner() {
         {dateParam && (
           <button onClick={() => router.push('/washstation/reports')} className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-colors mb-1">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-            Back to Today\'s Report
+            Back to Today's Report
           </button>
         )}
         <div className="flex items-start justify-between">
@@ -287,7 +331,7 @@ function DailyReportPageInner() {
           </div>
         )}
 
-        {/* Attendants on Duty (read-only, from clock-in) */}
+        {/* Attendants on Duty */}
         {attendantNames.length > 0 && (
           <div className="bg-card border border-border rounded-2xl p-5">
             <h2 className="font-semibold text-foreground mb-3">Attendants on Duty</h2>
@@ -311,26 +355,15 @@ function DailyReportPageInner() {
             <h2 className="font-semibold text-foreground">Sales Summary</h2>
           </div>
 
-          {/* Token stats */}
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div className="bg-muted/40 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Washer Tokens</p>
-              {isSubmitted ? (
-                <p className="text-2xl font-bold text-foreground">{washerTokens}</p>
-              ) : (
-                <p className="text-2xl font-bold text-foreground">{washerTokens}</p>
-              )}
+              <p className="text-2xl font-bold text-foreground">{washerTokens}</p>
               <p className="text-xs text-muted-foreground mt-1">{fmt(washerTokens * (autoData?.washerPrice ?? 25))}</p>
             </div>
             <div className="bg-muted/40 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Dryer Tokens</p>
-              {true ? (
-                <p className="text-2xl font-bold text-foreground">{dryerTokens}</p>
-              ) : (
-                <input type="number" min={0} value={dryerTokens}
-                  onChange={e => setDryerTokens(parseInt(e.target.value) || 0)}
-                  className="text-2xl font-bold bg-transparent border-none outline-none text-foreground w-full p-0" />
-              )}
+              <p className="text-2xl font-bold text-foreground">{dryerTokens}</p>
               <p className="text-xs text-muted-foreground mt-1">{fmt(dryerTokens * (autoData?.dryerPrice ?? 25))}</p>
             </div>
           </div>
@@ -393,29 +426,19 @@ function DailyReportPageInner() {
             <span className="text-lg font-bold text-green-700 dark:text-green-300">{fmt(autoData?.expectedRevenue ?? totalTokenRevenue)}</span>
           </div>
 
-          {/* Payment Breakdown */}
           <h3 className="font-semibold text-sm text-foreground mb-3">Payment Breakdown</h3>
           <div className="space-y-3">
             {[
-              { label: 'Mobile Money', value: mobileMoneyAmount, setter: setMobileMoneyAmount, color: 'border-l-blue-500' },
-              { label: 'Card Payment', value: cardAmount + paystackAmount, setter: setCardAmount, color: 'border-l-violet-500' },
-              { label: 'Cash Payment', value: cashAmount, setter: setCashAmount, color: 'border-l-green-500' },
-            ].map(({ label, value, setter, color }) => (
+              { label: 'Mobile Money', value: mobileMoneyAmount, color: 'border-l-blue-500' },
+              { label: 'Card Payment', value: cardAmount + paystackAmount, color: 'border-l-violet-500' },
+              { label: 'Cash Payment', value: cashAmount, color: 'border-l-green-500' },
+            ].map(({ label, value, color }) => (
               <div key={label} className={`border-l-4 ${color} pl-3 py-1 flex items-center justify-between`}>
                 <p className="text-sm text-muted-foreground">{label}</p>
-                {true ? (
-                  <p className="text-lg font-bold text-foreground">{fmt(value)}</p>
-                ) : (
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground">GHS</span>
-                    <input type="number" min={0} value={value}
-                      onChange={e => setter(parseFloat(e.target.value) || 0)}
-                      className="w-28 text-lg font-bold bg-transparent border-none outline-none text-foreground p-0 text-right" />
-                  </div>
-                )}
+                <p className="text-lg font-bold text-foreground">{fmt(value)}</p>
               </div>
             ))}
-            </div>
+          </div>
 
           <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
             <span className="font-semibold text-foreground">Total Collected</span>
@@ -479,23 +502,26 @@ function DailyReportPageInner() {
                 </Button>
               </div>
             )}
+
             {faults.length > 0 && (
               <div className="mt-3 space-y-2">
                 {faults.map((f, i) => (
                   <div key={i} className="flex items-start gap-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
                     <Wrench className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-destructive">{f.machineName || f.machineId}</p>
+                      <p className="text-xs font-semibold text-destructive">{f.machineName || f.machineId || 'Unknown machine'}</p>
                       {f.faultTypes && f.faultTypes.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-0.5">
-                          {f.faultTypes.map((ft: string) => <span key={ft} className="text-xs px-1.5 py-0.5 bg-destructive/10 text-destructive rounded">{ft}</span>)}
+                          {f.faultTypes.map((ft: string) => (
+                            <span key={ft} className="text-xs px-1.5 py-0.5 bg-destructive/10 text-destructive rounded">{ft}</span>
+                          ))}
                         </div>
                       )}
                       {f.description && <p className="text-sm text-foreground mt-0.5">{f.description}</p>}
                     </div>
                     {!isSubmitted && (
                       <button onClick={() => setFaults(faults.filter((_, idx) => idx !== i))}
-                        className="text-muted-foreground hover:text-destructive">
+                        className="text-muted-foreground hover:text-destructive flex-shrink-0">
                         <X className="w-3.5 h-3.5" />
                       </button>
                     )}
@@ -531,7 +557,9 @@ function DailyReportPageInner() {
         {isSubmitted && (
           <div className="flex items-center gap-2 p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-xl text-green-700 dark:text-green-400 text-sm font-medium">
             <CheckCircle2 className="w-5 h-5" />
-            {existingDraft?.status === 'submitted_with_outstanding' ? 'Report submitted with outstanding payments. Admin has been notified.' : 'Report submitted successfully.'}
+            {existingDraft?.status === 'submitted_with_outstanding'
+              ? 'Report submitted with outstanding payments. Admin has been notified.'
+              : 'Report submitted successfully.'}
           </div>
         )}
 
@@ -547,11 +575,11 @@ function DailyReportPageInner() {
                 className="text-xs px-2 py-1.5 rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
               />
             </div>
-            {pastReports.filter((r) => ((r.status === 'open' || r.status === 'draft') || r.status === 'draft')).length > 0 && (
+            {pastReports.filter((r) => r.status === 'open' || r.status === 'draft').length > 0 && (
               <div className="flex items-center gap-2 p-3 mb-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
                 <svg className="w-4 h-4 text-amber-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
-                  You have {pastReports.filter((r) => ((r.status === 'open' || r.status === 'draft') || r.status === 'draft')).length} unsubmitted report(s). Tap to open and submit.
+                  You have {pastReports.filter((r) => r.status === 'open' || r.status === 'draft').length} unsubmitted report(s). Tap to open and submit.
                 </p>
               </div>
             )}
@@ -561,28 +589,28 @@ function DailyReportPageInner() {
                 .filter((r) => reportDateFilter ? r.date === reportDateFilter : true)
                 .slice(0, 14)
                 .map((r) => (
-                <div key={r._id}
-                  className={"flex items-center justify-between p-3 rounded-xl border gap-2 cursor-pointer hover:bg-muted/50 transition-colors " + (((r.status === 'open' || r.status === 'draft') || r.status === 'draft') ? 'bg-amber-50/50 dark:bg-amber-950/10 border-amber-200 dark:border-amber-800' : 'bg-muted/30 border-border')}
-                  onClick={() => router.push("/washstation/reports?date=" + r.date)}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground">{fmtDate(r.date)}</p>
-                      <p className="text-xs text-muted-foreground truncate max-w-[140px] sm:max-w-none">{r.attendantsOnShift && r.attendantsOnShift.join(', ') || '—'}</p>
+                  <div key={r._id}
+                    className={"flex items-center justify-between p-3 rounded-xl border gap-2 cursor-pointer hover:bg-muted/50 transition-colors " + (r.status === 'open' || r.status === 'draft' ? 'bg-amber-50/50 dark:bg-amber-950/10 border-amber-200 dark:border-amber-800' : 'bg-muted/30 border-border')}
+                    onClick={() => router.push("/washstation/reports?date=" + r.date)}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">{fmtDate(r.date)}</p>
+                        <p className="text-xs text-muted-foreground truncate max-w-[140px] sm:max-w-none">{r.attendantsOnShift?.join(', ') || '—'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-foreground">GHS {((r.cashAmount || 0) + (r.mobileMoneylAmount || 0) + (r.cardAmount || 0) + (r.paystackAmount || 0)).toFixed(2)}</p>
+                        <span className={"text-xs px-2 py-0.5 rounded-full font-medium " + (r.status === 'submitted_with_outstanding' ? 'bg-orange-100 text-orange-700' : r.status === 'submitted' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>
+                          {r.status === 'submitted_with_outstanding' ? 'Outstanding' : r.status === 'submitted' ? 'Submitted' : 'Draft'}
+                        </span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-foreground">GHS {((r.cashAmount || 0) + (r.mobileMoneylAmount || 0) + (r.cardAmount || 0) + (r.paystackAmount || 0)).toFixed(2)}</p>
-                      <span className={"text-xs px-2 py-0.5 rounded-full font-medium " + (r.status === 'submitted_with_outstanding' ? 'bg-orange-100 text-orange-700' : r.status === 'submitted' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>
-                        {r.status === 'submitted_with_outstanding' ? 'Outstanding' : r.status === 'submitted' ? 'Submitted' : 'Draft'}
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                </div>
-              ))}
+                ))}
               {pastReports.filter((r) => !(r.date === today() && r.status !== 'open')).filter((r) => reportDateFilter ? r.date === reportDateFilter : true).length === 0 && (
                 <p className="text-xs text-muted-foreground text-center py-4">No reports found{reportDateFilter ? ' for selected date' : ''}.</p>
               )}
@@ -590,7 +618,6 @@ function DailyReportPageInner() {
           </div>
         )}
 
-        {/* Verification before submit */}
         {verifyOpen && (
           <ActionVerification
             open={verifyOpen}
@@ -606,6 +633,7 @@ function DailyReportPageInner() {
     </>
   );
 }
+
 export default function DailyReportPage() {
   return (
     <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>

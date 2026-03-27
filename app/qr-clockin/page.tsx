@@ -47,8 +47,48 @@ function QRClockInContent() {
     (a: any) => a._id === selectedAttendantId
   )
 
+  const handleSelectAttendant = (att: any) => {
+    setSelectedAttendantId(att._id)
+    setPin('')
+    setError(null)
+
+    // FIX: Derive action from the live isClockedIn flag returned by the backend.
+    // Previously the action was set once on click and never updated, so if
+    // Convex pushed a fresh tokenInfo (e.g. after another device clocked in),
+    // the action could be stale. Always derive from current server state.
+    setAction(att.isClockedIn ? 'clock_out' : 'clock_in')
+  }
+
   const handleSubmit = async () => {
     if (!token || !selectedAttendantId || !action || !pin) return
+
+    // FIX: Re-derive the action from the latest server data right before
+    // submitting. If the attendant's status changed between selection and
+    // submit (e.g. they clocked in on another device), this catches it and
+    // shows a clear error instead of creating a duplicate clock-in record.
+    const latestAttendant = tokenInfo?.attendants?.find(
+      (a: any) => a._id === selectedAttendantId
+    )
+    const latestAction = latestAttendant?.isClockedIn ? 'clock_out' : 'clock_in'
+
+    if (latestAction !== action) {
+      // Status changed since the attendant was selected — update UI and abort
+      setAction(latestAction)
+      setError(
+        latestAttendant?.isClockedIn
+          ? `${latestAttendant.name} is already clocked in. Use Clock Out instead.`
+          : `${latestAttendant?.name} is not clocked in. Use Clock In instead.`
+      )
+      return
+    }
+
+    // FIX: Extra client-side guard — block clock_in if already clocked in.
+    // The backend should also enforce this, but this prevents a wasted round-trip.
+    if (action === 'clock_in' && latestAttendant?.isClockedIn) {
+      setError(`${latestAttendant.name} is already clocked in. Please clock out first.`)
+      return
+    }
+
     setIsSubmitting(true)
     setError(null)
     try {
@@ -131,12 +171,7 @@ function QRClockInContent() {
               {tokenInfo?.attendants?.map((att: any) => (
                 <button
                   key={att._id}
-                  onClick={() => {
-                    setSelectedAttendantId(att._id)
-                    setAction(att.isClockedIn ? 'clock_out' : 'clock_in')
-                    setPin('')
-                    setError(null)
-                  }}
+                  onClick={() => handleSelectAttendant(att)}
                   className={`w-full flex items-center justify-between p-3 rounded-lg border-2 transition-all text-left ${
                     selectedAttendantId === att._id
                       ? 'border-primary bg-primary/5'
@@ -155,7 +190,9 @@ function QRClockInContent() {
           {/* Step 2: Show action + PIN */}
           {selectedAttendantId && action && (
             <>
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
+              <div className={`flex items-center gap-2 p-3 rounded-lg ${
+                action === 'clock_in' ? 'bg-green-50 dark:bg-green-950/30' : 'bg-orange-50 dark:bg-orange-950/30'
+              }`}>
                 {action === 'clock_in'
                   ? <LogIn className="w-4 h-4 text-green-600" />
                   : <LogOut className="w-4 h-4 text-orange-600" />
@@ -171,7 +208,7 @@ function QRClockInContent() {
                   type="password"
                   inputMode="numeric"
                   maxLength={4}
-                  placeholder="••••••"
+                  placeholder="••••"
                   value={pin}
                   onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
                   className="text-center text-xl tracking-widest"
@@ -179,7 +216,7 @@ function QRClockInContent() {
               </div>
 
               {error && (
-                <div className="flex items-center gap-2 text-red-600 text-sm">
+                <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 dark:bg-red-950/30 p-3 rounded-lg">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   {error}
                 </div>
@@ -187,8 +224,8 @@ function QRClockInContent() {
 
               <Button
                 onClick={handleSubmit}
-                disabled={isSubmitting || pin.length < 4}
-                className="w-full"
+                disabled={isSubmitting || pin.length < 4 || timeLeft === 0}
+                className={`w-full ${action === 'clock_out' ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
               >
                 {isSubmitting
                   ? <Loader2 className="w-4 h-4 animate-spin mr-2" />

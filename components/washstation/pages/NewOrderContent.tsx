@@ -40,6 +40,57 @@ function isPhoneComplete(phone: string): boolean {
   return phone.length === 10 && phone.startsWith("0")
 }
 
+// ─── Self-hosted Convex URL fixer ────────────────────────────────────────────
+// Their Convex instance returns convex-dashboard URLs but files are served from
+// convex-backend. Fix every URL before using it.
+const fixConvexUrl = (url: string | null | undefined): string | null => {
+  if (!url) return null
+  return url.replace("convex-dashboard.washlab.app", "convex-backend.washlab.app")
+}
+
+// ─── Service Image Resolver ───────────────────────────────────────────────────
+const ServiceImageResolved = ({
+  imageUrl,
+  code,
+  alt,
+  className,
+}: {
+  imageUrl?: string
+  code: string
+  alt: string
+  className: string
+}) => {
+  const isStorageId =
+    !!imageUrl &&
+    !imageUrl.startsWith("http") &&
+    !imageUrl.startsWith("/") &&
+    !imageUrl.startsWith("convex-storage:")
+
+  const rawStorageUrl = useQuery(
+    api.admin.getServiceImageUrl,
+    isStorageId ? { storageId: imageUrl as any } : "skip"
+  )
+
+  // Always fix the domain on whatever URL Convex returns
+  const storageUrl = fixConvexUrl(rawStorageUrl ?? null)
+
+  const fallbacks: Record<string, string> = {
+    wash_and_dry:  "/assets/laundry-hero-1.jpg",
+    wash_and_fold: "/assets/laundry-hero-1.jpg",
+    wash_only:     "/assets/laundry-hero-2.jpg",
+    dry_only:      "/assets/stacked-clothes.jpg",
+  }
+  const fallback = fallbacks[code] || "/assets/laundry-hero-1.jpg"
+
+  const src = !imageUrl
+    ? fallback
+    : isStorageId
+    ? (storageUrl ?? fallback)           // null while loading → show fallback
+    : fixConvexUrl(imageUrl) ?? imageUrl  // fix domain on already-full URLs too
+
+  return <img src={src} alt={alt} className={className} />
+}
+
 export function NewOrderContent() {
   const router = useRouter()
   const { stationToken, isSessionValid, sessionData } = useStationSession()
@@ -128,7 +179,6 @@ export function NewOrderContent() {
   const [extraWashLoads, setExtraWashLoads] = useState(0)
   const [extraDryLoads, setExtraDryLoads] = useState(0)
   const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null)
-  const [bigWasherIncludeDry, setBigWasherIncludeDry] = useState(false)
 
   const activeBagNumbers =
     useQuery(
@@ -226,7 +276,7 @@ export function NewOrderContent() {
 
   const handleProceedToPayment = async () => {
     if (!stationToken || !isSessionValid) { toast.error("Station session expired. Please login again."); return }
-    if (!serviceType || !selectedService) { toast.error("Please select a service"); return }
+    if (!serviceType && !selectedMachineId) { toast.error("Please select a service or machine"); return }
     if (dbServices.length === 0) { toast.error("No services available. Please contact admin."); return }
     if (!foundCustomer?._id) { toast.error("Customer not found. Please register customer first."); return }
     if (weight <= 0.1) { toast.error("Please enter a valid weight"); return }
@@ -238,7 +288,7 @@ export function NewOrderContent() {
         customerName: foundCustomer.name || newName,
         customerPhone: foundCustomer.phoneNumber || formatPhoneForBackend(phone),
         customerEmail: foundCustomer.email || newEmail || undefined,
-        serviceType: serviceType as "wash_only" | "wash_and_dry" | "dry_only",
+        serviceType: (serviceType || "wash_only") as "wash_only" | "wash_and_dry" | "dry_only",
         weight: weight,
         itemCount: itemCount || 1,
         bagCardNumber,
@@ -246,6 +296,7 @@ export function NewOrderContent() {
         isDelivery: false,
         extraWashLoads: extraWashLoads > 0 ? extraWashLoads : undefined,
         extraDryLoads: extraDryLoads > 0 ? extraDryLoads : undefined,
+        machineId: selectedMachineId ?? undefined,
         attendantId: loggedInAttendantId ?? undefined,
       })
       toast.success(`Order created successfully! Bag #${result.bagCardNumber}`)
@@ -282,12 +333,12 @@ export function NewOrderContent() {
     )
   }
 
-  const selectedService = dbServices.find((s) => s.code === serviceType)
+  const selectedService = dbServices.find((s: any) => s.code === serviceType)
 
-  const washService = dbServices.find((s: any) => s.code === "wash_only")
-  const dryService = dbServices.find((s: any) => s.code === "dry_only")
+  const washService  = dbServices.find((s: any) => s.code === "wash_only")
+  const dryService   = dbServices.find((s: any) => s.code === "dry_only")
   const baseWashPrice = washService?.basePrice ?? selectedService?.basePrice ?? 0
-  const dryPrice = dryService?.basePrice ?? selectedService?.basePrice ?? 0
+  const dryPrice      = dryService?.basePrice  ?? selectedService?.basePrice ?? 0
   const selectedMachine = (activeMachines as any[]).find((m: any) => m._id === selectedMachineId) ?? null
   const effectiveWashPrice = selectedMachine ? selectedMachine.washPrice : baseWashPrice
 
@@ -304,30 +355,21 @@ export function NewOrderContent() {
       ? loads * dryPrice
       : loads * selectedService.basePrice
     const extraWashCost = extraWashLoads * effectiveWashPrice
-    const extraDryCost = extraDryLoads * dryPrice
+    const extraDryCost  = extraDryLoads  * dryPrice
     const total = Math.round((basePrice + extraWashCost + extraDryCost) * 100) / 100
     return { basePrice: total, subtotal: total, total, totalPrice: total }
   }
 
-  const pricing = calculatePrice()
-  const rushFee = orderNotes.includes("Rush Service") ? 5 : 0
+  const pricing    = calculatePrice()
+  const rushFee    = orderNotes.includes("Rush Service") ? 5 : 0
   const finalTotal = pricing.total + rushFee
 
-  const getFallbackImage = (code: string) => {
-    const m: Record<string, string> = {
-      wash_and_dry: "/laundry-hero-1.jpg",
-      wash_and_fold: "/laundry-hero-1.jpg",
-      wash_only: "/laundry-hero-2.jpg",
-      dry_only: "/stacked-clothes.jpg",
-    }
-    return m[code] || "/laundry-hero-1.jpg"
-  }
-
+  // Keep raw imageUrl — ServiceImageResolved resolves it at render time
   const services = dbServices.map((s: any) => ({
-    id: s.code,
-    name: s.name,
-    price: `₵${s.basePrice.toFixed(2)} / load`,
-    image: s.imageUrl || getFallbackImage(s.code),
+    id:       s.code,
+    name:     s.name,
+    price:    "₵" + s.basePrice.toFixed(2) + " / load",
+    imageUrl: s.imageUrl,
   }))
 
   const formatPhoneDisplay = (p: string): string => {
@@ -444,7 +486,9 @@ export function NewOrderContent() {
               <div className='bg-muted/50 rounded-xl p-3 sm:p-4'>
                 <p className='text-xs text-muted-foreground'>LAST VISIT</p>
                 <p className='font-semibold text-foreground text-sm sm:text-base'>
-                  {foundCustomer.lastVisit || foundCustomer.lastOrderDate ? new Date(foundCustomer.lastVisit || foundCustomer.lastOrderDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No previous visit'}
+                  {foundCustomer.lastVisit || foundCustomer.lastOrderDate
+                    ? new Date(foundCustomer.lastVisit || foundCustomer.lastOrderDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : 'No previous visit'}
                 </p>
               </div>
             </div>
@@ -606,7 +650,13 @@ export function NewOrderContent() {
                         className={`rounded-xl overflow-hidden border-2 transition-all ${serviceType === service.id ? "border-primary ring-2 ring-primary/20" : "border-border hover:border-muted-foreground/30"}`}
                       >
                         <div className='aspect-video bg-muted relative overflow-hidden'>
-                          <img src={service.image} alt={service.name} className='w-full h-full object-cover' />
+                          {/* ← Uses Convex query to resolve storage IDs properly */}
+                          <ServiceImageResolved
+                            imageUrl={service.imageUrl}
+                            code={service.id}
+                            alt={service.name}
+                            className="w-full h-full object-cover"
+                          />
                           {serviceType === service.id && (
                             <div className='absolute top-2 right-2 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center z-10'>
                               <Check className='w-3 h-3 sm:w-4 sm:h-4' />
@@ -631,18 +681,20 @@ export function NewOrderContent() {
                     Machine
                   </h3>
                   <div className='flex flex-wrap gap-2'>
-
                     {(activeMachines as any[]).map((machine: any) => (
                       <button
                         key={machine._id}
-                        onClick={() => { const newId = machine._id === selectedMachineId ? null : machine._id; setSelectedMachineId(newId); if (newId) setServiceType(""); }}
+                        onClick={() => {
+                          const newId = machine._id === selectedMachineId ? null : machine._id
+                          setSelectedMachineId(newId)
+                          if (newId) setServiceType("")
+                        }}
                         className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all ${selectedMachineId === machine._id ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground hover:border-muted-foreground/30"}`}
                       >
                         {machine.name} <span className='opacity-70'>· ₵{machine.washPrice} wash</span>
                       </button>
                     ))}
                   </div>
-
                 </div>
               )}
 
@@ -785,23 +837,23 @@ export function NewOrderContent() {
               <div className='space-y-3 pb-4 border-b border-border'>
                 <div className='flex justify-between items-start gap-2'>
                   <span className='text-foreground text-sm sm:text-base truncate'>
-                    {selectedMachine ? selectedMachine.name : (selectedService?.name || services.find((s: any) => s.id === serviceType)?.name || "No service selected")}
+                    {selectedMachine
+                      ? selectedMachine.name
+                      : selectedService?.name || services.find((s: any) => s.id === serviceType)?.name || "No service selected"}
                   </span>
                   <span className='font-semibold text-foreground text-sm sm:text-base flex-shrink-0'>₵{(pricing?.totalPrice || 0).toFixed(2)}</span>
                 </div>
-                {(true) && (
-                  <div className='text-xs sm:text-sm text-muted-foreground pl-2'>
-                    {selectedMachine ? (
-                      <>{Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedMachine.washPrice} wash
-                        {(extraWashLoads > 0 || extraDryLoads > 0) && <span className='block text-primary'>+{extraWashLoads + extraDryLoads} extra load(s)</span>}
-                      </>
-                    ) : selectedService ? (
-                      <>{Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedService.basePrice.toFixed(2)}
-                        {(extraWashLoads > 0 || extraDryLoads > 0) && <span className='block text-primary'>+{extraWashLoads + extraDryLoads} extra load(s) × ₵{selectedService.basePrice.toFixed(2)}</span>}
-                      </>
-                    ) : null}
-                  </div>
-                )}
+                <div className='text-xs sm:text-sm text-muted-foreground pl-2'>
+                  {selectedMachine ? (
+                    <>{Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedMachine.washPrice} wash
+                      {(extraWashLoads > 0 || extraDryLoads > 0) && <span className='block text-primary'>+{extraWashLoads + extraDryLoads} extra load(s)</span>}
+                    </>
+                  ) : selectedService ? (
+                    <>{Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedService.basePrice.toFixed(2)}
+                      {(extraWashLoads > 0 || extraDryLoads > 0) && <span className='block text-primary'>+{extraWashLoads + extraDryLoads} extra load(s) × ₵{selectedService.basePrice.toFixed(2)}</span>}
+                    </>
+                  ) : null}
+                </div>
                 {orderNotes.includes("Rush Service") && (
                   <div className='flex justify-between'>
                     <span className='text-foreground flex items-center gap-1 text-sm sm:text-base'>Rush Fee <Clock className='w-3 h-3 sm:w-4 sm:h-4' /></span>
