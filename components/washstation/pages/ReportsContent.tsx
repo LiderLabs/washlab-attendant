@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@jordan6699/washlab-backend/api';
@@ -16,9 +16,13 @@ function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-GB', { d
 function fmt(n: number) { return `GHS ${n.toFixed(2)}`; }
 
 // ── Fault serialization helpers ───────────────────────────────────────────────
+// Store faults as JSON so machineName, faultTypes, and description are all
+// preserved through save-draft → restore round-trips.
+
 interface FaultEntry {
   machineId: string
   machineName: string
+  serialNumber?: string
   faultTypes: string[]
   description: string
 }
@@ -31,6 +35,7 @@ function deserializeFaults(raw: string | null | undefined): FaultEntry[] {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
+    // New format: array of FaultEntry objects
     if (Array.isArray(parsed)) return parsed
   } catch {
     // Legacy format: "[machineId] description" lines — best-effort parse
@@ -63,6 +68,18 @@ function DailyReportPageInner() {
     branchId ? { branchId, date: dateParam || today(), stationToken: stationToken || undefined } : 'skip'
   );
 
+  // Always sync system data
+  useEffect(() => {
+    if (!autoData) return;
+    setWasherTokens(autoData.washerTokensUsed ?? 0);
+    setSoapUnits(autoData.washerTokensUsed ?? 0);
+    setDryerTokens(autoData.dryerTokensUsed ?? 0);
+    setCashAmount(autoData.cashAmount ?? 0);
+    setMobileMoneyAmount(autoData.mobileMoneylAmount ?? 0);
+    setCardAmount(autoData.cardAmount ?? 0);
+    setPaystackAmount(autoData.paystackAmount ?? 0);
+  }, [autoData]);
+
   const existingDraft = useQuery(
     (api as any).dailyReports.getDraft,
     branchId ? { branchId, date: dateParam || today() } : 'skip'
@@ -94,20 +111,8 @@ function DailyReportPageInner() {
   const [endOfDayComment, setEndOfDayComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-
-  // FIX: Use a ref to track whether we've loaded data for the current date.
-  // Previously 'loaded' was in the useEffect dependency array that also called
-  // setLoaded(true), creating a re-run loop that could cause unexpected behavior
-  // including triggering submit flows on re-renders.
-  const loadedRef = useRef(false);
   const [loaded, setLoaded] = useState(false);
-
-  // Reset loaded state when date changes
-  useEffect(() => {
-    loadedRef.current = false;
-    setLoaded(false);
-  }, [dateParam]);
-
+  useEffect(() => { setLoaded(false); }, [dateParam]);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [reportDateFilter, setReportDateFilter] = useState('');
   const [showDraftBanner, setShowDraftBanner] = useState(false);
@@ -115,23 +120,9 @@ function DailyReportPageInner() {
   const DRAFT_KEY = `washlab_report_draft_${branchId || "unknown"}`;
   const isSubmitted = existingDraft?.status === 'submitted' || existingDraft?.status === 'submitted_with_outstanding';
 
-  // Always sync system/auto data (read-only fields) whenever autoData changes
-  useEffect(() => {
-    if (!autoData) return;
-    setWasherTokens(autoData.washerTokensUsed ?? 0);
-    setSoapUnits(autoData.washerTokensUsed ?? 0);
-    setDryerTokens(autoData.dryerTokensUsed ?? 0);
-    setCashAmount(autoData.cashAmount ?? 0);
-    setMobileMoneyAmount(autoData.mobileMoneylAmount ?? 0);
-    setCardAmount(autoData.cardAmount ?? 0);
-    setPaystackAmount(autoData.paystackAmount ?? 0);
-  }, [autoData]);
-
   // Auto-save to localStorage whenever manual fields change
-  // FIX: Removed 'loaded' from deps — use loadedRef.current instead so this
-  // effect doesn't re-trigger just because loaded state flipped.
   useEffect(() => {
-    if (!loadedRef.current || isSubmitted || !branchId) return;
+    if (!loaded || isSubmitted || !branchId) return;
     const draft = {
       date: dateParam || today(),
       soapUnits,
@@ -140,7 +131,7 @@ function DailyReportPageInner() {
       savedAt: Date.now(),
     };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {}
-  }, [soapUnits, faults, endOfDayComment, isSubmitted, branchId, dateParam]);
+  }, [soapUnits, faults, endOfDayComment, loaded, isSubmitted, branchId]);
 
   // On mount, check for a saved localStorage draft from a previous session
   useEffect(() => {
@@ -178,39 +169,36 @@ function DailyReportPageInner() {
     ? autoData.todayAttendantNames
     : (activeAttendances?.map(a => a.attendant?.name).filter(Boolean) as string[] ?? []);
 
-  // FIX: Removed 'loaded' from the dependency array. The previous version had
-  // 'loaded' in deps, which meant every time setLoaded(true) was called, this
-  // effect re-ran — potentially re-loading and resetting state mid-session, or
-  // in race conditions triggering submit-adjacent state changes. We now guard
-  // with loadedRef.current so the load only happens once per date.
   useEffect(() => {
-    // Don't reload if already loaded for this date
-    if (loadedRef.current) return;
-    // Wait until we have at least one of existingDraft or autoData
-    if (existingDraft === undefined && autoData === undefined) return;
-
-    if (existingDraft?.status === 'submitted' || existingDraft?.status === 'submitted_with_outstanding') {
-      loadedRef.current = true;
-      setLoaded(true);
-      return;
-    }
-
+    if (existingDraft && existingDraft.status === 'submitted') { setLoaded(true); return; }
     if (existingDraft) {
-      // Restore manual fields from draft
+      if (autoData) {
+        setWasherTokens(autoData.washerTokensUsed ?? 0);
+        setDryerTokens(autoData.dryerTokensUsed ?? 0);
+        setCashAmount(autoData.cashAmount ?? 0);
+        setMobileMoneyAmount(autoData.mobileMoneylAmount ?? 0);
+        setCardAmount(autoData.cardAmount ?? 0);
+        setPaystackAmount(autoData.paystackAmount ?? 0);
+      }
       setSoapUnits(existingDraft.soapUnitsUsed ?? 0);
       setEndOfDayComment(existingDraft.notes ?? '');
+
+      // ── Restore faults using deserializeFaults (handles both JSON and legacy format)
       if (existingDraft.technicalFaultNotes) {
         setFaults(deserializeFaults(existingDraft.technicalFaultNotes));
       }
-      loadedRef.current = true;
+
       setLoaded(true);
     } else if (autoData) {
-      // No draft yet — just mark as loaded (auto fields already synced above)
-      loadedRef.current = true;
+      setWasherTokens(autoData.washerTokensUsed ?? 0);
+      setDryerTokens(autoData.dryerTokensUsed ?? 0);
+      setCashAmount(autoData.cashAmount ?? 0);
+      setMobileMoneyAmount(autoData.mobileMoneylAmount ?? 0);
+      setCardAmount(autoData.cardAmount ?? 0);
+      setPaystackAmount(autoData.paystackAmount ?? 0);
       setLoaded(true);
     }
-  }, [existingDraft, autoData]);
-  // NOTE: 'loaded' intentionally excluded from deps ^^^
+  }, [existingDraft, autoData, loaded]);
 
   const handleAddFault = () => {
     if (!selectedMachineId.trim() && !faultDescription.trim()) {
@@ -218,10 +206,11 @@ function DailyReportPageInner() {
     }
     const machine = (activeMachines as any[]).find((m: any) => m._id === selectedMachineId);
     setFaults(prev => [...prev, {
-      machineId: selectedMachineId.trim(),
-      machineName: machine?.name || selectedMachineId.trim(),
-      faultTypes: selectedFaultTypes,
-      description: faultDescription.trim(),
+      machineId:    selectedMachineId.trim(),
+      machineName:  machine?.name || selectedMachineId.trim(),
+      serialNumber: machine?.serialNumber || undefined,
+      faultTypes:   selectedFaultTypes,
+      description:  faultDescription.trim(),
     }]);
     setSelectedMachineId('');
     setSelectedFaultTypes([]);
@@ -245,6 +234,7 @@ function DailyReportPageInner() {
     voucherBreakdown: autoData?.voucherBreakdown ?? [],
     washingPlanCount: 0,
     technicalFaultCount: faults.length,
+    // ── Store faults as JSON so all fields survive the round-trip ──
     technicalFaultNotes: faults.length > 0 ? serializeFaults(faults) : undefined,
     notes: endOfDayComment || undefined,
     outstandingAmount: autoData?.outstandingAmount ?? 0,
@@ -267,9 +257,6 @@ function DailyReportPageInner() {
 
   const handleSubmitConfirmed = async () => {
     if (!branchId) return;
-    // FIX: Guard against double-submission. If already submitting or already
-    // submitted, bail out immediately. This prevents any accidental re-trigger.
-    if (isSubmitting || isSubmitted) return;
     setIsSubmitting(true);
     try {
       await submitMutation(buildPayload());
@@ -279,7 +266,6 @@ function DailyReportPageInner() {
         setWasherTokens(0); setDryerTokens(0);
         setCashAmount(0); setMobileMoneyAmount(0); setCardAmount(0); setPaystackAmount(0);
         setSoapUnits(0); setFaults([]); setEndOfDayComment('');
-        loadedRef.current = false;
         setLoaded(false);
       }, 2000);
     } catch (e: any) {
@@ -473,7 +459,9 @@ function DailyReportPageInner() {
                       className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
                       <option value="">Select machine...</option>
                       {(activeMachines as any[]).map((m: any) => (
-                        <option key={m._id} value={m._id}>{m.name}</option>
+                        <option key={m._id} value={m._id}>
+                          {m.name}{m.serialNumber ? ` (SN: ${m.serialNumber})` : ''}
+                        </option>
                       ))}
                     </select>
                   ) : (
@@ -503,13 +491,21 @@ function DailyReportPageInner() {
               </div>
             )}
 
+            {/* Fault list — always shows full info */}
             {faults.length > 0 && (
               <div className="mt-3 space-y-2">
                 {faults.map((f, i) => (
                   <div key={i} className="flex items-start gap-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
                     <Wrench className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-destructive">{f.machineName || f.machineId || 'Unknown machine'}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-xs font-semibold text-destructive">{f.machineName || f.machineId || 'Unknown machine'}</p>
+                        {f.serialNumber && (
+                          <span className="text-[10px] font-mono bg-destructive/10 text-destructive px-1.5 py-0.5 rounded">
+                            SN: {f.serialNumber}
+                          </span>
+                        )}
+                      </div>
                       {f.faultTypes && f.faultTypes.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-0.5">
                           {f.faultTypes.map((ft: string) => (

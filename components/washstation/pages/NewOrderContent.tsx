@@ -98,7 +98,7 @@ export function NewOrderContent() {
 
   const branchId = (sessionData as any)?.branchId
   const branchServicesRaw = useQuery(
-    (api as any).admin.getBranchServicesPublic,
+    (api as any).admin.getBranchServices,
     branchId ? { branchId } : "skip"
   ) ?? []
   const branchServices = branchServicesRaw
@@ -689,9 +689,10 @@ export function NewOrderContent() {
                           setSelectedMachineId(newId)
                           if (newId) setServiceType("")
                         }}
-                        className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all ${selectedMachineId === machine._id ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground hover:border-muted-foreground/30"}`}
+                        className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all text-left ${selectedMachineId === machine._id ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground hover:border-muted-foreground/30"}`}
                       >
-                        {machine.name} <span className='opacity-70'>· ₵{machine.washPrice} wash</span>
+                        <span className='block font-semibold'>{machine.name}</span>
+                        <span className='block text-xs opacity-70'>₵{machine.washPrice} wash{machine.serialNumber ? ` · SN: ${machine.serialNumber}` : ''}</span>
                       </button>
                     ))}
                   </div>

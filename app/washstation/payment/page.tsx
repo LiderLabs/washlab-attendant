@@ -32,16 +32,24 @@ function calcPaystackCharge(orderAmount: number): { chargeAmount: number; fee: n
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ✅ Load Paystack v1 inline script dynamically.
-// Remove the <Script> tag from layout.tsx so it's not loaded twice.
+// Script is intentionally NOT removed on unmount — keeping it in memory means
+// subsequent visits to this page open the popup instantly with no reload delay.
 function usePaystackScript() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Already loaded
+    // Already loaded from a previous visit or from the layout preload
     if ((window as any).PaystackPop) {
       setLoaded(true);
+      return;
+    }
+
+    // Already injected into DOM but not yet executed
+    const existing = document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]');
+    if (existing) {
+      existing.addEventListener("load", () => setLoaded(true));
       return;
     }
 
@@ -52,9 +60,8 @@ function usePaystackScript() {
     script.onerror = () => console.error("Failed to load Paystack script");
     document.body.appendChild(script);
 
-    return () => {
-      if (document.body.contains(script)) document.body.removeChild(script);
-    };
+    // ✅ No cleanup — intentionally keep script in DOM across navigations
+    // so the popup opens immediately on repeat visits without re-downloading.
   }, []);
 
   return loaded;
@@ -173,7 +180,6 @@ function PaymentContent() {
     if (isFreeWash && hasPreAppliedDiscount && !voucherCode && !voucherResult?.valid) {
       setStage("finalizing");
       try {
-        // Create a zero-amount payment record first (required by finalizePaymentSafe)
         await createPayment({ orderId: order._id, amount: 0, paymentMethod: "cash" });
         await finalizePaymentSafe({ orderId: order._id, verificationId, gatewayTransactionId: undefined, confirmedPaymentMethod: "cash" });
         toast.success("Loyalty free wash completed! Order marked as paid.");
@@ -211,6 +217,7 @@ function PaymentContent() {
         return;
       }
 
+      // Cash: create record and finalize immediately
       finalizePayment({ verificationId, gatewayTransactionId: null, confirmedPaymentMethod: "cash" });
 
     } catch (err) {
@@ -218,6 +225,7 @@ function PaymentContent() {
       setStage("idle");
     }
   };
+
   // --- Voucher logic ----------------------------------------------------------
   const handleApplyVoucher = () => {
     if (!voucherCode.trim() || !order) return;
@@ -235,7 +243,6 @@ function PaymentContent() {
     if (!order || !voucherResult?.valid) return;
     setStage("finalizing");
     try {
-      // Only apply voucher if order not already marked as paid
       if (order.paymentStatus !== 'paid') {
         await applyVoucherMutation({ voucherCode: voucherCode.trim().toUpperCase(), orderId: order._id });
       }
@@ -281,52 +288,50 @@ function PaymentContent() {
     setStage("paystack");
     toast.info("Payment window opening for customer…");
 
-    // ✅ Paystack v1 API — setup() + openIframe()
-    // The "form element" console warning from v1 is harmless in React;
-    // openIframe() still works correctly without a <form>.
     let handler: any;
     try {
       handler = (window as any).PaystackPop.setup({
-      key: process.env.NEXT_PUBLIC_PAYSTACK_KEY || "pk_test_0bcc36edcd86cbe2439fc3274f5e6b6e501c4730",
-      email: order.customer?.email || order.customerEmail || "customer@washlab.com",
-      // ✅ Grossed-up amount — customer pays this, you net exactly totalDue after Paystack's 2% cut
-      amount: Math.round(paystackChargeAmount * 100),
-      currency: "GHS",
-      ref,
-      channels,
-      ...(customerPhone ? { phone: customerPhone } : {}),
+        key: process.env.NEXT_PUBLIC_PAYSTACK_KEY || "pk_test_0bcc36edcd86cbe2439fc3274f5e6b6e501c4730",
+        email: order.customer?.email || order.customerEmail || "customer@washlab.com",
+        // ✅ Grossed-up amount — customer pays this, you net exactly totalDue after Paystack's 2% cut
+        amount: Math.round(paystackChargeAmount * 100),
+        currency: "GHS",
+        ref,
+        channels,
+        ...(customerPhone ? { phone: customerPhone } : {}),
 
-      callback: function (response: any) {
-        paystackHandlerRef.current = null;
-        const paystackChannel = response?.channel ?? response?.authorization?.channel ?? "";
-        let resolvedMethod: "cash" | "card" | "mobile_money" = method as any;
-        if (paystackChannel === "mobile_money") resolvedMethod = "mobile_money";
-        else if (paystackChannel === "card") resolvedMethod = "card";
-        else if (paystackChannel === "bank" || paystackChannel === "bank_transfer") resolvedMethod = "card";
-        toast.success(`${resolvedMethod === "card" ? "Card" : "Mobile Money"} payment authorised`);
-        finalizePayment({
-          verificationId,
-          gatewayTransactionId: response.reference || response.trxref || ref,
-          confirmedPaymentMethod: resolvedMethod,
-        });
-      },
+        callback: function (response: any) {
+          paystackHandlerRef.current = null;
+          const paystackChannel = response?.channel ?? response?.authorization?.channel ?? "";
+          let resolvedMethod: "cash" | "card" | "mobile_money" = method as any;
+          if (paystackChannel === "mobile_money") resolvedMethod = "mobile_money";
+          else if (paystackChannel === "card") resolvedMethod = "card";
+          else if (paystackChannel === "bank" || paystackChannel === "bank_transfer") resolvedMethod = "card";
+          toast.success(`${resolvedMethod === "card" ? "Card" : "Mobile Money"} payment authorised`);
+          finalizePayment({
+            verificationId,
+            gatewayTransactionId: response.reference || response.trxref || ref,
+            // ✅ Use resolvedMethod from Paystack's actual response — never React state
+            confirmedPaymentMethod: resolvedMethod,
+          });
+        },
 
-      onClose: function () {
-        paystackHandlerRef.current = null;
-        pendingVerificationId.current = null;
-        setPaystackRef(null);
-        setStage("idle");
-        isPaying.current = false;
-        toast.warning("Customer closed the payment window. You can try again.");
-      },
-    });
-
+        onClose: function () {
+          paystackHandlerRef.current = null;
+          pendingVerificationId.current = null;
+          setPaystackRef(null);
+          setStage("idle");
+          isPaying.current = false;
+          toast.warning("Customer closed the payment window. You can try again.");
+        },
+      });
     } catch (setupErr) {
       toast.error("Failed to open payment window. Please try again.");
       setStage("idle");
       isPaying.current = false;
       return;
     }
+
     if (process.env.NODE_ENV !== 'production') console.log('[Paystack] About to open iframe', {
       handlerExists: !!handler,
       paystackPopExists: !!(window as any).PaystackPop,
@@ -335,6 +340,7 @@ function PaymentContent() {
       ref,
       channels,
     });
+
     paystackHandlerRef.current = handler;
     handler.openIframe();
 
@@ -350,9 +356,6 @@ function PaymentContent() {
       }
     }, 3 * 60 * 1000);
 
-    // Clear the timeout if callback or onClose fires first
-    const originalCallback = handler.callback;
-    const originalOnClose = handler.onClose;
     paystackHandlerRef.current._timeoutId = paystackTimeout;
   };
 
@@ -379,7 +382,9 @@ function PaymentContent() {
         orderId: order._id,
         verificationId,
         gatewayTransactionId: gatewayTransactionId ?? undefined,
-        confirmedPaymentMethod: confirmedPaymentMethod ?? effectivePaymentMethod,
+        // ✅ Never fall back to React state — always use the explicitly confirmed method.
+        // Default to "cash" as the safe fallback since cash never goes through Paystack.
+        confirmedPaymentMethod: confirmedPaymentMethod ?? "cash",
       });
 
       toast.dismiss("finalizing");
@@ -565,61 +570,62 @@ function PaymentContent() {
           </div>
         )}
 
-      {/* Loyalty Points - read only, customer redeems online */}
-      {order?.customerId && (
-        <div className="pt-3 border-t border-border">
-          {hasLoyaltyReward ? (
-            <div className={"flex items-center justify-between p-3 rounded-xl border " + (useLoyalty ? "bg-purple-100 dark:bg-purple-900/30 border-purple-400" : "bg-purple-50 dark:bg-purple-900/20 border-purple-200")}>
-              <div>
-                <p className="text-sm font-semibold text-purple-700 dark:text-purple-400">🎁 Loyalty Reward</p>
-                <p className="text-xs text-muted-foreground">{loyaltyPoints} pts — free wash available</p>
+        {/* Loyalty Points */}
+        {order?.customerId && (
+          <div className="pt-3 border-t border-border">
+            {hasLoyaltyReward ? (
+              <div className={"flex items-center justify-between p-3 rounded-xl border " + (useLoyalty ? "bg-purple-100 dark:bg-purple-900/30 border-purple-400" : "bg-purple-50 dark:bg-purple-900/20 border-purple-200")}>
+                <div>
+                  <p className="text-sm font-semibold text-purple-700 dark:text-purple-400">🎁 Loyalty Reward</p>
+                  <p className="text-xs text-muted-foreground">{loyaltyPoints} pts — free wash available</p>
+                </div>
+                <button
+                  onClick={() => setUseLoyalty(!useLoyalty)}
+                  disabled={isProcessing || !!voucherResult?.valid}
+                  className={"text-xs font-semibold px-3 py-1.5 rounded-lg " + (useLoyalty ? "bg-purple-600 text-white" : "bg-primary text-primary-foreground") + " disabled:opacity-40"}
+                >
+                  {useLoyalty ? "Remove" : "Apply"}
+                </button>
               </div>
-              <button
-                onClick={() => setUseLoyalty(!useLoyalty)}
-                disabled={isProcessing || !!voucherResult?.valid}
-                className={"text-xs font-semibold px-3 py-1.5 rounded-lg " + (useLoyalty ? "bg-purple-600 text-white" : "bg-primary text-primary-foreground") + " disabled:opacity-40"}
-              >
-                {useLoyalty ? "Remove" : "Apply"}
-              </button>
+            ) : (
+              <div className="flex items-center justify-between px-1">
+                <p className="text-xs text-muted-foreground">Loyalty Points</p>
+                <p className="text-xs font-medium">{loyaltyPoints}/10 pts</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Voucher */}
+        <div className="pt-3 border-t border-border">
+          {voucherResult?.valid ? (
+            <div className="flex items-center justify-between p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+              <div>
+                <p className="text-sm font-semibold text-green-700 dark:text-green-400">{voucherResult.voucher?.code}</p>
+                <p className="text-xs text-muted-foreground">-{voucherResult.discountAmount?.toFixed(2)} discount</p>
+              </div>
+              <button onClick={() => { setVoucherResult(null); setVoucherCode(""); }} className="text-muted-foreground hover:text-foreground text-xs underline">Remove</button>
             </div>
           ) : (
-            <div className="flex items-center justify-between px-1">
-              <p className="text-xs text-muted-foreground">Loyalty Points</p>
-              <p className="text-xs font-medium">{loyaltyPoints}/10 pts</p>
+            <div className="flex gap-2">
+              <select
+                value={voucherCode}
+                onChange={(e) => setVoucherCode(e.target.value)}
+                disabled={isProcessing}
+                className="flex-1 px-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+              >
+                <option value="">-- Select a voucher --</option>
+                {(activeVouchers ?? []).map((v: any) => (
+                  <option key={v._id} value={v.code}>
+                    {v.code}{v.name ? ` — ${v.name}` : ""} ({v.discountType === "percentage" ? `${v.discountValue}% off` : `₵${v.discountValue} off`})
+                  </option>
+                ))}
+              </select>
+              <button onClick={handleApplyVoucher} disabled={!voucherCode.trim() || isProcessing} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40">Apply</button>
             </div>
           )}
         </div>
-      )}
 
-      {/* Voucher */}
-      <div className="pt-3 border-t border-border">
-        {voucherResult?.valid ? (
-          <div className="flex items-center justify-between p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
-            <div>
-              <p className="text-sm font-semibold text-green-700 dark:text-green-400">{voucherResult.voucher?.code}</p>
-              <p className="text-xs text-muted-foreground">-{voucherResult.discountAmount?.toFixed(2)} discount</p>
-            </div>
-            <button onClick={() => { setVoucherResult(null); setVoucherCode(""); }} className="text-muted-foreground hover:text-foreground text-xs underline">Remove</button>
-          </div>
-        ) : (
-          <div className="flex gap-2">
-            <select
-              value={voucherCode}
-              onChange={(e) => setVoucherCode(e.target.value)}
-              disabled={isProcessing}
-              className="flex-1 px-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-            >
-              <option value="">-- Select a voucher --</option>
-              {(activeVouchers ?? []).map((v: any) => (
-                <option key={v._id} value={v.code}>
-                  {v.code}{v.name ? ` — ${v.name}` : ""} ({v.discountType === "percentage" ? `${v.discountValue}% off` : `₵${v.discountValue} off`})
-                </option>
-              ))}
-            </select>
-            <button onClick={handleApplyVoucher} disabled={!voucherCode.trim() || isProcessing} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40">Apply</button>
-          </div>
-        )}
-      </div>
         <div className="flex justify-between pt-2 border-t border-border items-center">
           <span className="font-semibold text-foreground">Total Due</span>
           <div className="text-right">
@@ -686,25 +692,18 @@ function PaymentContent() {
           </button>
         </div>
       )}
+
       <div className="grid grid-cols-3 gap-3 mb-5">
         {/* Mobile Money */}
         <button
           onClick={() => !isProcessing && setPaymentMethod("mobile_money")}
           disabled={isProcessing}
-          className={`p-3 sm:p-5 rounded-xl border-2 transition-all flex flex-col items-center gap-2 relative disabled:opacity-50 disabled:cursor-not-allowed ${
-            effectivePaymentMethod === "mobile_money"
-              ? "border-primary bg-primary/5"
-              : "border-border hover:border-muted-foreground/30"
-          }`}
+          className={`p-3 sm:p-5 rounded-xl border-2 transition-all flex flex-col items-center gap-2 relative disabled:opacity-50 disabled:cursor-not-allowed ${effectivePaymentMethod === "mobile_money" ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/30"}`}
         >
-          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center ${
-            effectivePaymentMethod === "mobile_money" ? "bg-primary text-primary-foreground" : "bg-muted"
-          }`}>
+          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center ${effectivePaymentMethod === "mobile_money" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
             <Smartphone className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
-          <span className={`font-medium text-xs sm:text-sm text-center leading-tight ${
-            effectivePaymentMethod === "mobile_money" ? "text-primary" : "text-foreground"
-          }`}>Mobile Money</span>
+          <span className={`font-medium text-xs sm:text-sm text-center leading-tight ${effectivePaymentMethod === "mobile_money" ? "text-primary" : "text-foreground"}`}>Mobile Money</span>
           {effectivePaymentMethod === "mobile_money" && (
             <div className="absolute top-1.5 right-1.5 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px]">✓</div>
           )}
@@ -714,20 +713,12 @@ function PaymentContent() {
         <button
           onClick={() => !isProcessing && setPaymentMethod("card")}
           disabled={isProcessing}
-          className={`p-3 sm:p-5 rounded-xl border-2 transition-all flex flex-col items-center gap-2 relative disabled:opacity-50 disabled:cursor-not-allowed ${
-            effectivePaymentMethod === "card"
-              ? "border-primary bg-primary/5"
-              : "border-border hover:border-muted-foreground/30"
-          }`}
+          className={`p-3 sm:p-5 rounded-xl border-2 transition-all flex flex-col items-center gap-2 relative disabled:opacity-50 disabled:cursor-not-allowed ${effectivePaymentMethod === "card" ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/30"}`}
         >
-          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center ${
-            effectivePaymentMethod === "card" ? "bg-primary text-primary-foreground" : "bg-muted"
-          }`}>
+          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center ${effectivePaymentMethod === "card" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
             <CreditCard className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
-          <span className={`font-medium text-xs sm:text-sm ${
-            effectivePaymentMethod === "card" ? "text-primary" : "text-foreground"
-          }`}>Card</span>
+          <span className={`font-medium text-xs sm:text-sm ${effectivePaymentMethod === "card" ? "text-primary" : "text-foreground"}`}>Card</span>
           {effectivePaymentMethod === "card" && (
             <div className="absolute top-1.5 right-1.5 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px]">✓</div>
           )}
@@ -770,13 +761,9 @@ function PaymentContent() {
                 <Smartphone className="w-5 h-5 text-primary" />
               </div>
               <h3 className="text-sm sm:text-base font-semibold text-foreground mb-1">Mobile Money via Paystack</h3>
-              <p className="text-muted-foreground text-xs sm:text-sm mb-2">
-                After you verify, a Paystack prompt opens for the customer to pay.
-              </p>
+              <p className="text-muted-foreground text-xs sm:text-sm mb-2">After you verify, a Paystack prompt opens for the customer to pay.</p>
               <p className="text-xl sm:text-2xl font-bold text-primary">₵{paystackChargeAmount.toFixed(2)}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Order total ₵{totalDue.toFixed(2)} + ₵{paystackFee.toFixed(2)} processing fee
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">Order total ₵{totalDue.toFixed(2)} + ₵{paystackFee.toFixed(2)} processing fee</p>
             </div>
           )}
           {effectivePaymentMethod === "card" && (
@@ -785,13 +772,9 @@ function PaymentContent() {
                 <CreditCard className="w-5 h-5 text-primary" />
               </div>
               <h3 className="text-sm sm:text-base font-semibold text-foreground mb-1">Card Payment via Paystack</h3>
-              <p className="text-muted-foreground text-xs sm:text-sm mb-2">
-                After you verify, a secure Paystack popup opens for the customer to pay.
-              </p>
+              <p className="text-muted-foreground text-xs sm:text-sm mb-2">After you verify, a secure Paystack popup opens for the customer to pay.</p>
               <p className="text-xl sm:text-2xl font-bold text-primary">₵{paystackChargeAmount.toFixed(2)}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Order total ₵{totalDue.toFixed(2)} + ₵{paystackFee.toFixed(2)} processing fee
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">Order total ₵{totalDue.toFixed(2)} + ₵{paystackFee.toFixed(2)} processing fee</p>
               <div className="mt-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
                 <CreditCard className="w-3 h-3" />
                 <span>Powered by Paystack</span>
@@ -917,5 +900,3 @@ export default function PaymentPage() {
     </Suspense>
   );
 }
-
-

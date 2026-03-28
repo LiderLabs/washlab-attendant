@@ -78,14 +78,7 @@ export default function ReconciliationPage() {
                   <span className="text-sm text-muted-foreground">Total Cash Collected</span>
                   <span className="font-bold text-xl text-primary">₵{summary.totalCash.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between items-center py-2 border-b">
-                  <span className="text-sm text-muted-foreground">Paystack Fee (1.95%)</span>
-                  <span className="text-sm text-orange-600">-₵{summary.paystackFee.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-sm font-medium">Amount After Fee</span>
-                  <span className="font-bold text-green-600">₵{summary.amountAfterFee.toFixed(2)}</span>
-                </div>
+
                 {summary.alreadyReconciled && (
                   <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 rounded-lg mt-2">
                     <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
@@ -127,8 +120,7 @@ export default function ReconciliationPage() {
               </div>
               <div className="p-3 bg-muted/50 rounded-lg text-sm space-y-1">
                 <div className="flex justify-between"><span className="text-muted-foreground">You are sending</span><span className="font-bold">₵{summary?.totalCash.toFixed(2)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Paystack fee</span><span className="text-orange-600">-₵{summary?.paystackFee.toFixed(2)}</span></div>
-                <div className="flex justify-between border-t pt-1 mt-1"><span className="font-medium">WashLab receives</span><span className="font-bold text-green-600">₵{summary?.amountAfterFee.toFixed(2)}</span></div>
+
               </div>
               <Button className="w-full gap-2" onClick={handleSubmit} disabled={loading || !momoNumber || momoNumber.length < 10}>
                 {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</> : <>Send ₵{summary?.totalCash.toFixed(2)} <ArrowRight className="w-4 h-4" /></>}

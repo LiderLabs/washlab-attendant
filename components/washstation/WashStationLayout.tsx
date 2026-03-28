@@ -1,5 +1,4 @@
 ﻿'use client';
-
 import { useState, useEffect } from 'react';
 import WashStationSidebar from './WashStationSidebar';
 import { MobileSidebar } from './MobileSidebar';
@@ -16,6 +15,22 @@ interface WashStationLayoutProps {
   onNotificationClick?: () => void;
 }
 
+// ─── Preload Paystack script the moment an attendant enters any washstation page.
+// By the time they reach the payment screen the script is already loaded,
+// so the popup opens instantly with no download delay.
+function usePreloadPaystack() {
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if ((window as any).PaystackPop) return; // already loaded and ready
+    if (document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]')) return; // already injected
+    const script = document.createElement('script');
+    script.src = 'https://js.paystack.co/v1/inline.js';
+    script.async = true;
+    document.body.appendChild(script);
+    // No cleanup — intentionally keep script loaded for the whole session
+  }, []);
+}
+
 export function WashStationLayout({
   children,
   title,
@@ -23,13 +38,13 @@ export function WashStationLayout({
   pendingCount,
   onNotificationClick,
 }: WashStationLayoutProps) {
+  usePreloadPaystack();
+
   const { getPendingOrders } = useOrders();
   const { stationToken, sessionData } = useStationSession();
   const { attendances } = useStationAttendance(stationToken);
-
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-
   const actualPendingCount =
     pendingCount !== undefined ? pendingCount : getPendingOrders().length;
 
