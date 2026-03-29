@@ -354,7 +354,9 @@ export function NewOrderContent() {
       : serviceType === "dry_only"
       ? loads * dryPrice
       : loads * selectedService.basePrice
-    const extraWashCost = extraWashLoads * effectiveWashPrice
+    // Extra wash uses selected service price, extra dry uses dry_only price
+    const extraWashUnitPrice = selectedService?.basePrice ?? effectiveWashPrice
+    const extraWashCost = extraWashLoads * extraWashUnitPrice
     const extraDryCost  = extraDryLoads  * dryPrice
     const total = Math.round((basePrice + extraWashCost + extraDryCost) * 100) / 100
     return { basePrice: total, subtotal: total, total, totalPrice: total }
@@ -646,7 +648,7 @@ export function NewOrderContent() {
                     {services.map((service: any) => (
                       <button
                         key={service.id}
-                        onClick={() => { setServiceType(service.id); setSelectedMachineId(null); }}
+                        onClick={() => { setServiceType(service.id); }}
                         className={`rounded-xl overflow-hidden border-2 transition-all ${serviceType === service.id ? "border-primary ring-2 ring-primary/20" : "border-border hover:border-muted-foreground/30"}`}
                       >
                         <div className='aspect-video bg-muted relative overflow-hidden'>
@@ -673,31 +675,7 @@ export function NewOrderContent() {
                 )}
               </div>
 
-              {/* 1b. Machine Selector (optional) */}
-              {(activeMachines as any[]).length > 0 && (
-                <div>
-                  <h3 className='font-semibold text-foreground mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base'>
-                    <span className='w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-muted text-muted-foreground text-xs flex items-center justify-center flex-shrink-0'>⚙</span>
-                    Machine
-                  </h3>
-                  <div className='flex flex-wrap gap-2'>
-                    {(activeMachines as any[]).map((machine: any) => (
-                      <button
-                        key={machine._id}
-                        onClick={() => {
-                          const newId = machine._id === selectedMachineId ? null : machine._id
-                          setSelectedMachineId(newId)
-                          if (newId) setServiceType("")
-                        }}
-                        className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all text-left ${selectedMachineId === machine._id ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground hover:border-muted-foreground/30"}`}
-                      >
-                        <span className='block font-semibold'>{machine.name}</span>
-                        <span className='block text-xs opacity-70'>₵{machine.washPrice} wash{machine.serialNumber ? ` · SN: ${machine.serialNumber}` : ''}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+
 
               {/* 2. Weight */}
               <div>
@@ -807,30 +785,34 @@ export function NewOrderContent() {
             <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 w-full lg:w-80 lg:flex-shrink-0'>
               <h3 className='font-semibold text-foreground mb-4 text-sm sm:text-base'>Order Summary</h3>
 
-              {(serviceType || selectedMachineId) && (
+              {serviceType && (
                 <div className='mb-4 p-3 bg-muted/50 rounded-xl border border-border'>
                   <p className='text-xs font-semibold text-muted-foreground mb-2'>EXTRA LOADS</p>
                   <div className='space-y-2'>
-                    {(serviceType === 'wash_and_dry' || serviceType === 'wash_only' || !!selectedMachineId) && (
-                      <div className='flex items-center justify-between'>
+                    {/* Extra Wash — price = selected service price */}
+                    <div className='flex items-center justify-between'>
+                      <div>
                         <span className='text-xs text-foreground'>Extra Wash</span>
-                        <div className='flex items-center gap-1'>
-                          <button onClick={() => setExtraWashLoads(Math.max(0, extraWashLoads - 1))} className='w-5 h-5 rounded bg-muted flex items-center justify-center text-xs font-bold hover:bg-muted/80'>−</button>
-                          <span className='text-xs font-bold w-4 text-center'>{extraWashLoads}</span>
-                          <button onClick={() => setExtraWashLoads(extraWashLoads + 1)} className='w-5 h-5 rounded bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold'>+</button>
-                        </div>
+                        {extraWashLoads > 0 && <span className='text-[10px] text-muted-foreground ml-1'>+₵{((selectedService?.basePrice ?? baseWashPrice) * extraWashLoads).toFixed(2)}</span>}
                       </div>
-                    )}
-                    {(serviceType === 'wash_and_dry' || serviceType === 'dry_only' || !!selectedMachineId) && (
-                      <div className='flex items-center justify-between'>
+                      <div className='flex items-center gap-1'>
+                        <button onClick={() => setExtraWashLoads(Math.max(0, extraWashLoads - 1))} className='w-5 h-5 rounded bg-muted flex items-center justify-center text-xs font-bold hover:bg-muted/80'>−</button>
+                        <span className='text-xs font-bold w-4 text-center'>{extraWashLoads}</span>
+                        <button onClick={() => setExtraWashLoads(extraWashLoads + 1)} className='w-5 h-5 rounded bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold'>+</button>
+                      </div>
+                    </div>
+                    {/* Extra Dry — price = dry_only branch service price */}
+                    <div className='flex items-center justify-between'>
+                      <div>
                         <span className='text-xs text-foreground'>Extra Dry</span>
-                        <div className='flex items-center gap-1'>
-                          <button onClick={() => setExtraDryLoads(Math.max(0, extraDryLoads - 1))} className='w-5 h-5 rounded bg-muted flex items-center justify-center text-xs font-bold hover:bg-muted/80'>−</button>
-                          <span className='text-xs font-bold w-4 text-center'>{extraDryLoads}</span>
-                          <button onClick={() => setExtraDryLoads(extraDryLoads + 1)} className='w-5 h-5 rounded bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold'>+</button>
-                        </div>
+                        {extraDryLoads > 0 && <span className='text-[10px] text-muted-foreground ml-1'>+₵{(dryPrice * extraDryLoads).toFixed(2)}</span>}
                       </div>
-                    )}
+                      <div className='flex items-center gap-1'>
+                        <button onClick={() => setExtraDryLoads(Math.max(0, extraDryLoads - 1))} className='w-5 h-5 rounded bg-muted flex items-center justify-center text-xs font-bold hover:bg-muted/80'>−</button>
+                        <span className='text-xs font-bold w-4 text-center'>{extraDryLoads}</span>
+                        <button onClick={() => setExtraDryLoads(extraDryLoads + 1)} className='w-5 h-5 rounded bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold'>+</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
