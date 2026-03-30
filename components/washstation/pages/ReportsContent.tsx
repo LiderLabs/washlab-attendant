@@ -239,6 +239,7 @@ function DailyReportPageInner() {
     notes: endOfDayComment || undefined,
     outstandingAmount: autoData?.outstandingAmount ?? 0,
     outstandingOrderCount: autoData?.outstandingOrderCount ?? 0,
+    outstandingRecovered: autoData?.outstandingRecovered ?? 0,
     stationToken: stationToken || undefined,
   });
 
