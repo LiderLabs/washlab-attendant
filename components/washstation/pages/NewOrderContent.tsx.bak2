@@ -340,25 +340,24 @@ export function NewOrderContent() {
   const baseWashPrice = washService?.basePrice ?? selectedService?.basePrice ?? 0
   const dryPrice      = dryService?.basePrice  ?? selectedService?.basePrice ?? 0
   const selectedMachine = (activeMachines as any[]).find((m: any) => m._id === selectedMachineId) ?? null
-  const standardCodes = ['wash_and_dry', 'wash_only', 'dry_only'];
-  const isStandardService = standardCodes.includes(serviceType);
-  const effectiveWashPrice = isStandardService ? baseWashPrice : (selectedService?.basePrice ?? baseWashPrice)
-  const effectiveExtraDryPrice = dryPrice
+  const effectiveWashPrice = selectedMachine ? selectedMachine.washPrice : baseWashPrice
 
   const calculatePrice = () => {
     if (!selectedService && !selectedMachineId) return { basePrice: 0, subtotal: 0, total: 0, totalPrice: 0 }
     const loads = Math.ceil(weight / 8)
-    const basePrice = serviceType === "wash_and_dry"
+    const basePrice = selectedMachineId
+      ? loads * effectiveWashPrice
+      : serviceType === "wash_and_dry"
       ? loads * (effectiveWashPrice + dryPrice)
       : serviceType === "wash_only"
       ? loads * effectiveWashPrice
       : serviceType === "dry_only"
       ? loads * dryPrice
-      : loads * (selectedService?.basePrice ?? effectiveWashPrice)
+      : loads * selectedService.basePrice
     // Extra wash uses branch wash price; extra dry uses dry_only price
     const extraWashUnitPrice = effectiveWashPrice
     const extraWashCost = extraWashLoads * extraWashUnitPrice
-    const extraDryCost  = extraDryLoads  * effectiveExtraDryPrice
+    const extraDryCost  = extraDryLoads  * dryPrice
     const total = Math.round((basePrice + extraWashCost + extraDryCost) * 100) / 100
     return { basePrice: total, subtotal: total, total, totalPrice: total }
   }
@@ -770,7 +769,7 @@ export function NewOrderContent() {
             <div className='bg-card border border-border rounded-xl sm:rounded-2xl p-4 sm:p-6 w-full lg:w-80 lg:flex-shrink-0'>
               <h3 className='font-semibold text-foreground mb-4 text-sm sm:text-base'>Order Summary</h3>
 
-              {(serviceType || selectedMachineId) && (
+              {serviceType && (
                 <div className='mb-4 p-3 bg-muted/50 rounded-xl border border-border'>
                   <p className='text-xs font-semibold text-muted-foreground mb-2'>EXTRA LOADS</p>
                   <div className='space-y-2'>
@@ -790,7 +789,7 @@ export function NewOrderContent() {
                     <div className='flex items-center justify-between'>
                       <div>
                         <span className='text-xs text-foreground'>Extra Dry</span>
-                        {extraDryLoads > 0 && <span className='text-[10px] text-muted-foreground ml-1'>+₵{(effectiveExtraDryPrice * extraDryLoads).toFixed(2)}</span>}
+                        {extraDryLoads > 0 && <span className='text-[10px] text-muted-foreground ml-1'>+₵{(dryPrice * extraDryLoads).toFixed(2)}</span>}
                       </div>
                       <div className='flex items-center gap-1'>
                         <button onClick={() => setExtraDryLoads(Math.max(0, extraDryLoads - 1))} className='w-5 h-5 rounded bg-muted flex items-center justify-center text-xs font-bold hover:bg-muted/80'>−</button>
@@ -814,8 +813,7 @@ export function NewOrderContent() {
                 <div className='text-xs sm:text-sm text-muted-foreground pl-2'>
                   {selectedMachine ? (
                     <>{Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedMachine.washPrice} wash
-                      {extraWashLoads > 0 && <span className='block text-primary'>+{extraWashLoads} extra wash × ₵{effectiveWashPrice.toFixed(2)}</span>}
-                      {extraDryLoads > 0 && <span className='block text-primary'>+{extraDryLoads} extra dry × ₵{effectiveExtraDryPrice.toFixed(2)}</span>}
+                      {(extraWashLoads > 0 || extraDryLoads > 0) && <span className='block text-primary'>+{extraWashLoads + extraDryLoads} extra load(s)</span>}
                     </>
                   ) : selectedService ? (
                     <>{Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedService.basePrice.toFixed(2)}

@@ -14,7 +14,8 @@ import {
   CreditCard,
   // Activity,
   Bell,
-  FileText} from 'lucide-react';
+  FileText,
+  Banknote} from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { Badge } from '@/components/ui/badge';
 import {
