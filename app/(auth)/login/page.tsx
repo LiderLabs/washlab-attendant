@@ -57,6 +57,20 @@ export default function LoginPage() {
       : "skip"
   )
 
+  // Auto-advance to branch-info once query resolves after submit
+  useEffect(() => {
+    if (!submitted) return
+    if (branchInfo === undefined) return
+    if (!branchInfo) {
+      toast({ title: "Invalid branch code", description: "The branch code you entered is not valid or inactive.", variant: "destructive" })
+      setSubmitted(false)
+      return
+    }
+    setBranchId(branchInfo._id)
+    setStep("branch-info")
+    setSubmitted(false)
+  }, [branchInfo, submitted])
+
   const loginStation = useMutation(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api as any).stations?.loginStation as any
@@ -75,25 +89,7 @@ export default function LoginPage() {
     }
 
     setSubmitted(true)
-
-    // Wait for query result
-    if (branchInfo === undefined) {
-      return
-    }
-
-    if (!branchInfo) {
-      toast({
-        title: "Invalid branch code",
-        description: "The branch code you entered is not valid or inactive.",
-        variant: "destructive",
-      })
-      setSubmitted(false)
-      return
-    }
-
-    setBranchId(branchInfo._id)
-    setStep("branch-info")
-    setSubmitted(false)
+    // useEffect handles the rest once branchInfo resolves
   }
 
   const handleContinueToSignIn = async () => {

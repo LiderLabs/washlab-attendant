@@ -555,32 +555,16 @@ export function NewOrderContent() {
             </div>
             <div className='mb-6 sm:mb-8'>
               <div className='flex items-center justify-between mb-2'>
-                <label className='text-xs font-medium text-muted-foreground'>EMAIL ADDRESS</label>
-                <button
-                  type='button'
-                  onClick={() => { setSkipEmail((p) => !p); if (!skipEmail) setNewEmail("") }}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                    skipEmail
-                      ? "bg-muted text-foreground border-border"
-                      : "text-muted-foreground border-border hover:border-muted-foreground/50"
-                  }`}
-                >
-                  {skipEmail ? "✓ No email — add one" : "No email"}
-                </button>
+                <label className='text-xs font-medium text-muted-foreground'>EMAIL ADDRESS <span className='text-muted-foreground/50'>(optional)</span></label>
               </div>
-              {skipEmail ? (
-                <div className='flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-muted/50 border border-dashed border-border rounded-xl'>
-                  <span className='text-xs text-muted-foreground'>Phone only — customer can add email later when creating an account.</span>
-                </div>
-              ) : (
-                <Input
-                  type='email'
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder='name@example.com'
-                  className='w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted border-0 rounded-xl text-foreground placeholder:text-muted-foreground text-sm sm:text-base'
-                />
-              )}
+              <Input
+                type='email'
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder='name@example.com (leave blank if none)'
+                className='w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted border-0 rounded-xl text-foreground placeholder:text-muted-foreground text-sm sm:text-base'
+              />
+              <p className='text-xs text-muted-foreground mt-1'>Leave blank — system will handle it automatically.</p>
             </div>
             <div className='flex flex-col sm:flex-row gap-3'>
               <Button type="button" onClick={goBack} variant='outline' className='flex-1 h-11 sm:h-12 rounded-xl'>
