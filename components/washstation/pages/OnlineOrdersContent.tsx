@@ -40,7 +40,7 @@ export function OnlineOrdersContent() {
   const [notes, setNotes] = useState("")
   const [extraWashLoads, setExtraWashLoads] = useState(0)
   const [extraDryLoads, setExtraDryLoads] = useState(0)
-  const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null)
+  const [overriddenServiceType, setOverriddenServiceType] = useState<string | null>(null)
 
   const activeBagNumbers =
     useQuery(api.stations.getActiveBagNumbers, stationToken ? { stationToken } : "skip") ?? []
@@ -67,7 +67,7 @@ export function OnlineOrdersContent() {
   ) as { pricingPerKg: number; deliveryFee: number } | undefined
 
   const branchServices = useQuery(
-    (api as any).admin.getBranchServicesPublic,
+    (api as any).admin.getBranchServices,
     (selectedOrder?.branchId || (branchInfo as any)?.branchId) ? { branchId: selectedOrder?.branchId || (branchInfo as any).branchId } : "skip"
   ) ?? []
   const activeMachines = useQuery(
@@ -179,7 +179,7 @@ export function OnlineOrdersContent() {
     const whitesExtraLoad = selectedOrder.whitesSeparate ? WHITES_EXTRA_LOAD : 0
     const totalLoads = numberOfLoads + whitesExtraLoad
     const basePrice = totalLoads * pricePerLoad
-    const extraWashCost = extraWashLoads * effectiveWashPrice
+    const extraWashCost = extraWashLoads * effectiveExtraWashPrice
     const extraDryCost = extraDryLoads * dryPrice
     const deliveryFee = selectedOrder.isDelivery && branchInfo ? branchInfo.deliveryFee : 0
     return { numberOfLoads, whitesExtraLoad, totalLoads, pricePerLoad, basePrice, deliveryFee, extraWashCost, extraDryCost, total: basePrice + extraWashCost + extraDryCost + deliveryFee }
@@ -522,28 +522,42 @@ export function OnlineOrdersContent() {
           )}
         </div>
 
-        {/* Machine Selector (optional) */}
-        {(activeMachines as any[]).length > 0 && (
+        {/* Service Override */}
+        {(branchServices as any[]).length > 0 && (
           <div className="bg-card border border-border rounded-xl p-4">
-            <h3 className="font-semibold text-sm text-foreground mb-1">Machine <span className="text-xs font-normal text-muted-foreground">(optional)</span></h3>
-            <p className="text-xs text-muted-foreground mb-3">Select if using a non-standard machine</p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setSelectedMachineId(null)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${selectedMachineId === null ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground"}`}
-              >
-                Standard
-              </button>
-              {(activeMachines as any[]).map((machine: any) => (
-                <button
-                  key={machine._id}
-                  onClick={() => setSelectedMachineId(machine._id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${selectedMachineId === machine._id ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground"}`}
-                >
-                  {machine.name} · ₵{machine.washPrice} wash
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-semibold text-sm text-foreground">Service Override <span className="text-xs font-normal text-muted-foreground">(attendant only)</span></h3>
+              {overriddenServiceType && overriddenServiceType !== selectedOrder.serviceType && (
+                <button onClick={() => setOverriddenServiceType(null)} className="text-xs text-destructive hover:underline">
+                  Revert to original
                 </button>
-              ))}
+              )}
             </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              Switch to any service including staff-only ones. Original: <strong>{getServiceName(selectedOrder.serviceType)}</strong>
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(branchServices as any[]).map((svc: any) => {
+                const isActive = (overriddenServiceType || selectedOrder.serviceType) === svc.code
+                return (
+                  <button
+                    key={svc._id || svc.code}
+                    onClick={() => setOverriddenServiceType(svc.code === selectedOrder.serviceType ? null : svc.code)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${isActive ? "border-primary bg-primary/10 text-primary" : "border-border bg-muted text-muted-foreground"}`}
+                  >
+                    {svc.name} · ₵{(svc.price ?? svc.basePrice ?? 0).toFixed(2)}
+                    {!svc.showOnCustomerSide && <span className="ml-1 opacity-60">(staff)</span>}
+                  </button>
+                )
+              })}
+            </div>
+            {overriddenServiceType && overriddenServiceType !== selectedOrder.serviceType && (
+              <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 rounded-lg">
+                <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                  ⚠️ Service overridden — pricing and history will reflect the new service
+                </p>
+              </div>
+            )}
           </div>
         )}
 
