@@ -174,17 +174,23 @@ export function InventoryContent() {
                     style={{ width: `${stockPct}%` }}
                   />
                 </div>
-                {/* Thresholds */}
-                <div className="grid grid-cols-2 gap-1 mt-1">
-                  <div className="flex items-center justify-between text-xs px-2 py-1 bg-red-50 dark:bg-red-950/20 rounded">
-                    <span className="text-red-600">Critical below</span>
-                    <span className="font-semibold text-red-700">{item.minStock} {item.unit}</span>
+                {/* Thresholds - only show when at/below threshold */}
+                {(item.currentStock <= item.minStock || item.currentStock <= item.reorderPoint) && (
+                  <div className="grid grid-cols-2 gap-1 mt-1">
+                    {item.currentStock <= item.minStock && (
+                      <div className="flex items-center justify-between text-xs px-2 py-1 bg-red-50 dark:bg-red-950/20 rounded">
+                        <span className="text-red-600">Critical below</span>
+                        <span className="font-semibold text-red-700">{item.minStock} {item.unit}</span>
+                      </div>
+                    )}
+                    {item.currentStock <= item.reorderPoint && (
+                      <div className="flex items-center justify-between text-xs px-2 py-1 bg-amber-50 dark:bg-amber-950/20 rounded">
+                        <span className="text-amber-600">Reorder at</span>
+                        <span className="font-semibold text-amber-700">{item.reorderPoint} {item.unit}</span>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center justify-between text-xs px-2 py-1 bg-amber-50 dark:bg-amber-950/20 rounded">
-                    <span className="text-amber-600">Reorder at</span>
-                    <span className="font-semibold text-amber-700">{item.reorderPoint} {item.unit}</span>
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Scoops info */}
@@ -224,7 +230,7 @@ export function InventoryContent() {
                   size="sm"
                   className="w-full gap-2"
                   onClick={() => handleRequestClick(item)}
-                  disabled={item.status === 'ordered'}
+                  disabled={item.status === 'ordered' || item.currentStock > item.reorderPoint}
                 >
                   <Package className="w-3.5 h-3.5" />
                   {item.status === 'ordered' ? 'Request Sent' : 'Request Order'}
