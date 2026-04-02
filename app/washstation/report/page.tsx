@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@jordan6699/washlab-backend/api';
 import { WashStationLayout } from '@/components/washstation/WashStationLayout';
@@ -55,6 +55,7 @@ export default function DailyReportPage() {
   const [notes, setNotes] = useState('');
   const [serviceBreakdown, setServiceBreakdown] = useState<Array<{ serviceType: string; label: string; count: number; tokensUsed: number }>>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -96,7 +97,7 @@ export default function DailyReportPage() {
       setServiceBreakdown(autoData.serviceBreakdown ?? []);
       setLoaded(true);
     }
-  }, [existingDraft, autoData, loaded]);
+  }, [existingDraft, autoData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const buildPayload = () => ({
     branchId,
