@@ -112,6 +112,7 @@ export function NewOrderContent() {
     code: s.code,
     name: s.name,
     basePrice: s.price ?? s.pricingPerKg ?? s.basePrice ?? 50,
+    extraWashPrice: s.extraWashPrice,
     pricingType: s.pricingType ?? "per_load",
     imageUrl: s.imageUrl,
     isActive: s.isActive,
