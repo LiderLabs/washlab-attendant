@@ -157,6 +157,17 @@ export function OnlineOrdersContent() {
     return anyService?.price ?? 50
   }
 
+  const getExtraWashPrice = (): number => {
+    const serviceCode = selectedOrder?.serviceType === "wash_and_dry" ? "wash_and_dry" : "wash_only"
+    const match = (branchServices as any[]).find(s => s.code === serviceCode)
+    return match?.extraWashPrice ?? getPricePerLoad(serviceCode)
+  }
+  const getExtraDryPrice = (): number => {
+    const serviceCode = selectedOrder?.serviceType === "wash_and_dry" ? "wash_and_dry" : "dry_only"
+    const match = (branchServices as any[]).find(s => s.code === serviceCode)
+    return match?.extraDryPrice ?? getPricePerLoad(serviceCode)
+  }
+
   const numWeight = parseFloat(weight) || 0
 
   const getPricingBreakdown = () => {
@@ -179,8 +190,8 @@ export function OnlineOrdersContent() {
     const whitesExtraLoad = selectedOrder.whitesSeparate ? WHITES_EXTRA_LOAD : 0
     const totalLoads = numberOfLoads + whitesExtraLoad
     const basePrice = totalLoads * pricePerLoad
-    const extraWashCost = extraWashLoads * effectiveWashPrice
-    const extraDryCost = extraDryLoads * dryPrice
+    const extraWashCost = extraWashLoads * getExtraWashPrice()
+    const extraDryCost = extraDryLoads * getExtraDryPrice()
     const deliveryFee = selectedOrder.isDelivery && branchInfo ? branchInfo.deliveryFee : 0
     return { numberOfLoads, whitesExtraLoad, totalLoads, pricePerLoad, basePrice, deliveryFee, extraWashCost, extraDryCost, total: basePrice + extraWashCost + extraDryCost + deliveryFee }
   }
@@ -606,13 +617,13 @@ export function OnlineOrdersContent() {
                   )}
                   {extraWashLoads > 0 && (
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>+{extraWashLoads} extra wash × GHS {getPricePerLoad("wash_only").toFixed(2)}</span>
+                      <span>+{extraWashLoads} extra wash × GHS {getExtraWashPrice().toFixed(2)}</span>
                       <span>GHS {pricing.extraWashCost.toFixed(2)}</span>
                     </div>
                   )}
                   {extraDryLoads > 0 && (
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>+{extraDryLoads} extra dry × GHS {getPricePerLoad("dry_only").toFixed(2)}</span>
+                      <span>+{extraDryLoads} extra dry × GHS {getExtraDryPrice().toFixed(2)}</span>
                       <span>GHS {pricing.extraDryCost.toFixed(2)}</span>
                     </div>
                   )}

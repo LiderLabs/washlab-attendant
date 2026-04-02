@@ -113,6 +113,7 @@ export function NewOrderContent() {
     name: s.name,
     basePrice: s.price ?? s.pricingPerKg ?? s.basePrice ?? 50,
     extraWashPrice: s.extraWashPrice,
+    extraDryPrice: s.extraDryPrice,
     pricingType: s.pricingType ?? "per_load",
     imageUrl: s.imageUrl,
     isActive: s.isActive,
@@ -341,6 +342,8 @@ export function NewOrderContent() {
   const dryService   = dbServices.find((s: any) => s.code === "dry_only")
   const baseWashPrice = washService?.basePrice ?? selectedService?.basePrice ?? 0
   const dryPrice      = dryService?.basePrice  ?? selectedService?.basePrice ?? 0
+  const extraWashUnitPrice = (serviceType === "wash_and_dry" ? dbServices.find((s:any) => s.code === "wash_and_dry") : washService)?.extraWashPrice ?? baseWashPrice
+  const extraDryUnitPrice  = (serviceType === "wash_and_dry" ? dbServices.find((s:any) => s.code === "wash_and_dry") : dryService)?.extraDryPrice ?? dryPrice
   const selectedMachine = (activeMachines as any[]).find((m: any) => m._id === selectedMachineId) ?? null
   const standardCodes = ['wash_and_dry', 'wash_only', 'dry_only'];
   const isStandardService = standardCodes.includes(serviceType);
@@ -357,10 +360,8 @@ export function NewOrderContent() {
       : serviceType === "dry_only"
       ? loads * dryPrice
       : loads * (selectedService?.basePrice ?? effectiveWashPrice)
-    // Extra wash uses branch wash price; extra dry uses dry_only price
-    const extraWashUnitPrice = effectiveWashPrice
     const extraWashCost = extraWashLoads * extraWashUnitPrice
-    const extraDryCost  = extraDryLoads  * effectiveExtraDryPrice
+    const extraDryCost  = extraDryLoads  * extraDryUnitPrice
     const total = Math.round((basePrice + extraWashCost + extraDryCost) * 100) / 100
     return { basePrice: total, subtotal: total, total, totalPrice: total }
   }
@@ -369,7 +370,6 @@ export function NewOrderContent() {
   const rushFee    = orderNotes.includes("Rush Service") ? 5 : 0
   const finalTotal = pricing.total + rushFee
 
-  // Keep raw imageUrl — ServiceImageResolved resolves it at render time
   const services = dbServices.map((s: any) => ({
     id:       s.code,
     name:     s.name,
@@ -568,14 +568,13 @@ export function NewOrderContent() {
                 disabled={skipEmail}
                 className='w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted border-0 rounded-xl text-foreground placeholder:text-muted-foreground text-sm sm:text-base disabled:opacity-60'
               />
-              <div className='flex items-center justify-between mt-2'>
-                <p className='text-xs text-muted-foreground'>Leave blank to auto-assign a washlab email.</p>
+              <div className='flex items-center justify-end mt-2'>
                 <button
                   type="button"
                   onClick={() => { setSkipEmail(!skipEmail); setNewEmail(""); }}
                   className={`text-xs font-medium px-2 py-1 rounded-lg transition-colors ${skipEmail ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground hover:text-foreground"}`}
                 >
-                  {skipEmail ? "✓ No Email (using washlab.app)" : "No Email"}
+                  {skipEmail ? "✓ No Email" : "No Email"}
                 </button>
               </div>
             </div>
@@ -649,7 +648,6 @@ export function NewOrderContent() {
                         className={`rounded-xl overflow-hidden border-2 transition-all ${serviceType === service.id ? "border-primary ring-2 ring-primary/20" : "border-border hover:border-muted-foreground/30"}`}
                       >
                         <div className='aspect-video bg-muted relative overflow-hidden'>
-                          {/* ← Uses Convex query to resolve storage IDs properly */}
                           <ServiceImageResolved
                             imageUrl={service.imageUrl}
                             code={service.id}
@@ -671,8 +669,6 @@ export function NewOrderContent() {
                   </div>
                 )}
               </div>
-
-
 
               {/* 2. Weight */}
               <div>
@@ -786,11 +782,10 @@ export function NewOrderContent() {
                 <div className='mb-4 p-3 bg-muted/50 rounded-xl border border-border'>
                   <p className='text-xs font-semibold text-muted-foreground mb-2'>EXTRA LOADS</p>
                   <div className='space-y-2'>
-                    {/* Extra Wash — price = selected service price */}
                     <div className='flex items-center justify-between'>
                       <div>
                         <span className='text-xs text-foreground'>Extra Wash</span>
-                        {extraWashLoads > 0 && <span className='text-[10px] text-muted-foreground ml-1'>+₵{(effectiveWashPrice * extraWashLoads).toFixed(2)}</span>}
+                        {extraWashLoads > 0 && <span className='text-[10px] text-muted-foreground ml-1'>+₵{(extraWashUnitPrice * extraWashLoads).toFixed(2)}</span>}
                       </div>
                       <div className='flex items-center gap-1'>
                         <button onClick={() => setExtraWashLoads(Math.max(0, extraWashLoads - 1))} className='w-5 h-5 rounded bg-muted flex items-center justify-center text-xs font-bold hover:bg-muted/80'>−</button>
@@ -798,11 +793,10 @@ export function NewOrderContent() {
                         <button onClick={() => setExtraWashLoads(extraWashLoads + 1)} className='w-5 h-5 rounded bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold'>+</button>
                       </div>
                     </div>
-                    {/* Extra Dry — price = dry_only branch service price */}
                     <div className='flex items-center justify-between'>
                       <div>
                         <span className='text-xs text-foreground'>Extra Dry</span>
-                        {extraDryLoads > 0 && <span className='text-[10px] text-muted-foreground ml-1'>+₵{(effectiveExtraDryPrice * extraDryLoads).toFixed(2)}</span>}
+                        {extraDryLoads > 0 && <span className='text-[10px] text-muted-foreground ml-1'>+₵{(extraDryUnitPrice * extraDryLoads).toFixed(2)}</span>}
                       </div>
                       <div className='flex items-center gap-1'>
                         <button onClick={() => setExtraDryLoads(Math.max(0, extraDryLoads - 1))} className='w-5 h-5 rounded bg-muted flex items-center justify-center text-xs font-bold hover:bg-muted/80'>−</button>
@@ -826,13 +820,13 @@ export function NewOrderContent() {
                 <div className='text-xs sm:text-sm text-muted-foreground pl-2'>
                   {selectedMachine ? (
                     <>{Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedMachine.washPrice} wash
-                      {extraWashLoads > 0 && <span className='block text-primary'>+{extraWashLoads} extra wash × ₵{effectiveWashPrice.toFixed(2)}</span>}
-                      {extraDryLoads > 0 && <span className='block text-primary'>+{extraDryLoads} extra dry × ₵{effectiveExtraDryPrice.toFixed(2)}</span>}
+                      {extraWashLoads > 0 && <span className='block text-primary'>+{extraWashLoads} extra wash × ₵{extraWashUnitPrice.toFixed(2)}</span>}
+                      {extraDryLoads > 0 && <span className='block text-primary'>+{extraDryLoads} extra dry × ₵{extraDryUnitPrice.toFixed(2)}</span>}
                     </>
                   ) : selectedService ? (
                     <>{Math.ceil(weight / 8)} load{Math.ceil(weight / 8) !== 1 ? "s" : ""} × ₵{selectedService.basePrice.toFixed(2)}
                       {extraWashLoads > 0 && <span className='block text-primary'>+{extraWashLoads} extra wash × ₵{effectiveWashPrice.toFixed(2)}</span>}
-                      {extraDryLoads > 0 && <span className='block text-primary'>+{extraDryLoads} extra dry × ₵{dryPrice.toFixed(2)}</span>}
+                      {extraDryLoads > 0 && <span className='block text-primary'>+{extraDryLoads} extra dry × ₵{extraDryUnitPrice.toFixed(2)}</span>}
                     </>
                   ) : null}
                 </div>
