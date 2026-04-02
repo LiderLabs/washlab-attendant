@@ -86,7 +86,7 @@ export function OrdersTable({ orders, stationToken, onCollectPayment }: OrdersTa
                     Call
                   </button>
                 )}
-                {unpaid && (
+                {unpaid && order.status !== 'completed' && order.status !== 'delivered' && (
                   <Link
                     href={`/washstation/orders/${order._id}/edit`}
                     onClick={(e) => e.stopPropagation()}
