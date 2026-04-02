@@ -164,7 +164,7 @@ export function OnlineOrdersContent() {
       return { numberOfLoads: 0, whitesExtraLoad: 0, totalLoads: 0, pricePerLoad: 0, basePrice: 0, deliveryFee: 0, extraWashCost: 0, extraDryCost: 0, total: selectedOrder?.finalPrice || 0 }
     }
     const serviceType = selectedOrder.serviceType || "wash_and_dry"
-    const selectedMachine = (activeMachines as any[]).find((m: any) => m._id === selectedMachineId) ?? null
+    const selectedMachine = null
     const baseWashPrice = getPricePerLoad("wash_only")
     const dryPrice = getPricePerLoad("dry_only")
     const effectiveWashPrice = selectedMachine ? selectedMachine.washPrice : baseWashPrice
@@ -179,7 +179,7 @@ export function OnlineOrdersContent() {
     const whitesExtraLoad = selectedOrder.whitesSeparate ? WHITES_EXTRA_LOAD : 0
     const totalLoads = numberOfLoads + whitesExtraLoad
     const basePrice = totalLoads * pricePerLoad
-    const extraWashCost = extraWashLoads * effectiveExtraWashPrice
+    const extraWashCost = extraWashLoads * effectiveWashPrice
     const extraDryCost = extraDryLoads * dryPrice
     const deliveryFee = selectedOrder.isDelivery && branchInfo ? branchInfo.deliveryFee : 0
     return { numberOfLoads, whitesExtraLoad, totalLoads, pricePerLoad, basePrice, deliveryFee, extraWashCost, extraDryCost, total: basePrice + extraWashCost + extraDryCost + deliveryFee }
