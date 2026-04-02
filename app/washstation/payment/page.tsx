@@ -83,7 +83,7 @@ function PaymentContent() {
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>("mobile_money");
   const [showVerification, setShowVerification] = useState(false);
-  const [mobileView, setMobileView] = useState<"summary" | "payment">("payment");
+  const [mobileView, setMobileView] = useState<"summary" | "payment">("summary");
 
   const [stage, setStage] = useState<Stage>("idle");
   const isProcessing = stage !== "idle";
@@ -540,10 +540,6 @@ function PaymentContent() {
             <span className="text-foreground">₵{deliveryFee.toFixed(2)}</span>
           </div>
         )}
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Tax (0%)</span>
-          <span className="text-foreground">₵0.00</span>
-        </div>
 
         {hasPreAppliedDiscount && (
           <div className="flex justify-between text-sm text-green-600">
