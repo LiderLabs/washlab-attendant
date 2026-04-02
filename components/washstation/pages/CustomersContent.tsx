@@ -253,7 +253,7 @@ export function CustomersContent() {
                       <td className="py-3 font-medium text-foreground">{order.id}</td>
                       <td className="py-3 text-muted-foreground">{order.date}</td>
                       <td className="py-3 text-muted-foreground">{order.items}</td>
-                      <td className="py-3 font-medium text-foreground">${order.total.toFixed(2)}</td>
+                      <td className="py-3 font-medium text-foreground">₵{order.total.toFixed(2)}</td>
                       <td className="py-3">
                         <span className="px-2 py-1 bg-success/10 text-success text-xs rounded-full">
                           ● {order.status}
