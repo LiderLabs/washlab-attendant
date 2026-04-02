@@ -254,7 +254,8 @@ export function NewOrderContent() {
 
   const handleRegisterNewCustomer = async () => {
     if (!newName.trim()) { toast.error("Please enter customer name"); return }
-    const finalEmail = (!skipEmail && newEmail.trim()) ? newEmail.trim() : undefined
+    const phoneEmail = phone.slice(1) + "@washlab.app"
+    const finalEmail = skipEmail ? phoneEmail : (newEmail.trim() ? newEmail.trim() : phoneEmail)
     try {
       const customerId = await createGuestCustomer({
         name: newName,
@@ -561,12 +562,22 @@ export function NewOrderContent() {
               </div>
               <Input
                 type='email'
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                placeholder='name@example.com (leave blank if none)'
-                className='w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted border-0 rounded-xl text-foreground placeholder:text-muted-foreground text-sm sm:text-base'
+                value={skipEmail ? phone.slice(1) + "@washlab.app" : newEmail}
+                onChange={(e) => { setSkipEmail(false); setNewEmail(e.target.value); }}
+                placeholder='name@example.com'
+                disabled={skipEmail}
+                className='w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted border-0 rounded-xl text-foreground placeholder:text-muted-foreground text-sm sm:text-base disabled:opacity-60'
               />
-              <p className='text-xs text-muted-foreground mt-1'>Leave blank — system will handle it automatically.</p>
+              <div className='flex items-center justify-between mt-2'>
+                <p className='text-xs text-muted-foreground'>Leave blank to auto-assign a washlab email.</p>
+                <button
+                  type="button"
+                  onClick={() => { setSkipEmail(!skipEmail); setNewEmail(""); }}
+                  className={`text-xs font-medium px-2 py-1 rounded-lg transition-colors ${skipEmail ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+                >
+                  {skipEmail ? "✓ No Email (using washlab.app)" : "No Email"}
+                </button>
+              </div>
             </div>
             <div className='flex flex-col sm:flex-row gap-3'>
               <Button type="button" onClick={goBack} variant='outline' className='flex-1 h-11 sm:h-12 rounded-xl'>
