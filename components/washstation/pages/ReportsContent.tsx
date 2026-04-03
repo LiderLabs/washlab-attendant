@@ -264,7 +264,9 @@ function DailyReportPageInner() {
   };
 
   const totalRecorded = cashAmount + mobileMoneyAmount + cardAmount + paystackAmount;
-  // Tokens Used Value = sum of actual paid order prices (washer + dryer revenue from paid orders only)
+
+  // paidTokenRevenue = washerTokenRevenue + dryerTokenRevenue
+  // Both calculated from exact branchService prices, paid orders only
   const totalTokenRevenue = autoData?.paidTokenRevenue ?? autoData?.expectedRevenue ?? totalRecorded;
   const discrepancy = Math.round((totalRecorded - totalTokenRevenue) * 100) / 100;
 
@@ -334,12 +336,14 @@ function DailyReportPageInner() {
             <div className="bg-muted/40 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Washer Tokens</p>
               <p className="text-2xl font-bold text-foreground">{washerTokens}</p>
-              <p className="text-xs text-muted-foreground mt-1">{fmt(washerTokens * (autoData?.avgWasherPrice ?? autoData?.washerPrice ?? 25))}</p>
+              {/* Revenue from washer loads only — uses exact branchService price, not hardcoded */}
+              <p className="text-xs text-muted-foreground mt-1">{fmt(autoData?.washerTokenRevenue ?? 0)}</p>
             </div>
             <div className="bg-muted/40 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Dryer Tokens</p>
               <p className="text-2xl font-bold text-foreground">{dryerTokens}</p>
-              <p className="text-xs text-muted-foreground mt-1">{fmt(dryerTokens * (autoData?.avgDryerPrice ?? autoData?.dryerPrice ?? 25))}</p>
+              {/* Revenue from dryer loads only — uses exact branchService extraDryPrice */}
+              <p className="text-xs text-muted-foreground mt-1">{fmt(autoData?.dryerTokenRevenue ?? 0)}</p>
             </div>
           </div>
 
@@ -352,6 +356,7 @@ function DailyReportPageInner() {
               <span className="text-lg font-bold text-green-700 dark:text-green-300">{autoData?.freeWashCount ?? 0}</span>
             </div>
           )}
+
           {(autoData?.voucherBreakdown ?? []).length > 0 && (
             <div className="bg-muted/30 border border-border rounded-xl p-3 mb-3 space-y-2">
               <div className="flex items-center gap-1.5 mb-2">
@@ -374,6 +379,7 @@ function DailyReportPageInner() {
               ))}
             </div>
           )}
+
           {(autoData?.outstandingOrderCount ?? 0) > 0 && (
             <div className="flex items-start sm:items-center justify-between p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl mb-3 gap-2">
               <div className="flex items-start sm:items-center gap-2">
@@ -386,14 +392,16 @@ function DailyReportPageInner() {
               <span className="text-lg font-bold text-amber-700 dark:text-amber-300">GHS {(autoData?.outstandingAmount ?? 0).toFixed(2)}</span>
             </div>
           )}
+
           <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/30 rounded-xl mb-3">
             <div>
               <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Tokens Used Value</span>
-              <p className="text-xs text-blue-600 dark:text-blue-400">{(autoData?.washerTokensUsed ?? 0) + (autoData?.dryerTokensUsed ?? 0)} tokens used</p>
+              <p className="text-xs text-blue-600 dark:text-blue-400">{(autoData?.washerTokensUsed ?? 0) + (autoData?.dryerTokensUsed ?? 0)} tokens · paid orders only</p>
             </div>
-            {/* paidTokenRevenue = washerTokenRevenue + dryerTokenRevenue from paid orders only */}
+            {/* washerTokenRevenue + dryerTokenRevenue — exact service prices, paid orders only */}
             <span className="text-lg font-bold text-blue-700 dark:text-blue-300">{fmt(totalTokenRevenue)}</span>
           </div>
+
           <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-950/30 rounded-xl mb-5">
             <div>
               <span className="text-sm font-medium text-green-700 dark:text-green-300">Expected Revenue</span>
