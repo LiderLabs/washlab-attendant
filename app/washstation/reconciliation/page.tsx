@@ -21,11 +21,22 @@ export default function ReconciliationPage() {
   const [result, setResult] = useState(null)
 
   const summary = useQuery((api as any).cashReconciliation.getTodayCashSummary, stationToken ? { stationToken } : 'skip')
-  const outstanding = useQuery((api as any).cashReconciliation.getReconciliationHistory, stationToken ? { stationToken, limit: 50 } : 'skip')
   const initiate = useAction((api as any).cashReconciliation.initiateCashReconciliation)
   const save = useMutation((api as any).cashReconciliation.saveReconciliation)
 
   const amountToSend = summary?.outstandingCash ?? summary?.totalCash ?? 0
+
+  // Get the branch ID from summary so we can fetch the full daily breakdown
+  const branchId = summary?.branchId
+  const dailyBreakdown = useQuery(
+    (api as any).cashReconciliation.getDailyBreakdownForAdmin,
+    branchId ? { branchId } : 'skip'
+  ) as { date: string; total: number; orderCount: number }[] | undefined
+
+  // Outstanding days = all days with cash, filtered to only show days that haven't been fully sent
+  // We show the full breakdown so the attendant knows which days are contributing to the outstanding total
+  const totalEverSent = summary?.totalEverSent ?? 0
+  const totalEverCollected = summary?.totalEverCollected ?? 0
 
   const handleSubmit = async () => {
     if (!momoNumber || momoNumber.length < 10) { toast.error('Please enter a valid MoMo number'); return }
@@ -79,25 +90,39 @@ export default function ReconciliationPage() {
           </CardContent>
         </Card>
 
-        {/* Outstanding breakdown by date */}
-        {summary && amountToSend > 0 && Array.isArray(outstanding) && outstanding.filter((r: any) => r.status !== 'completed').length > 0 && (
+        {/* Full day-by-day breakdown of outstanding cash */}
+        {summary && amountToSend > 0 && (
           <Card>
             <CardHeader className='pb-3'>
               <CardTitle className='text-base'>Outstanding Amounts</CardTitle>
+              <p className='text-xs text-muted-foreground'>All days contributing to the ₵{amountToSend.toFixed(2)} outstanding</p>
             </CardHeader>
             <CardContent className='space-y-2'>
-              {Array.isArray(outstanding) && outstanding
-                .filter((r: any) => r.status !== 'completed')
-                .sort((a: any, b: any) => b.date.localeCompare(a.date))
-                .map((r: any) => (
-                  <div key={r._id} className='flex items-center justify-between p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900 text-sm'>
+              {dailyBreakdown === undefined ? (
+                <div className='flex justify-center py-4'><Loader2 className='w-5 h-5 animate-spin text-muted-foreground' /></div>
+              ) : dailyBreakdown.length === 0 ? (
+                <p className='text-sm text-muted-foreground'>No cash orders found</p>
+              ) : (
+                dailyBreakdown.map((d) => (
+                  <div key={d.date} className='flex items-center justify-between p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900 text-sm'>
                     <div>
-                      <p className='font-medium text-foreground'>{r.date}</p>
-                      <p className='text-xs text-muted-foreground'>{r.orderCount || 0} orders</p>
+                      <p className='font-medium text-foreground'>{d.date}</p>
+                      <p className='text-xs text-muted-foreground'>{d.orderCount} order{d.orderCount !== 1 ? 's' : ''}</p>
                     </div>
-                    <span className='font-bold text-red-600'>₵{(r.totalCashOrders || 0).toFixed(2)}</span>
+                    <span className='font-bold text-red-600'>₵{d.total.toFixed(2)}</span>
                   </div>
-                ))}
+                ))
+              )}
+              <div className='flex justify-between items-center pt-2 border-t font-semibold text-sm'>
+                <span>Total Collected</span>
+                <span className='text-foreground'>₵{totalEverCollected.toFixed(2)}</span>
+              </div>
+              {totalEverSent > 0 && (
+                <div className='flex justify-between items-center font-semibold text-sm'>
+                  <span>Already Sent</span>
+                  <span className='text-green-600'>- ₵{totalEverSent.toFixed(2)}</span>
+                </div>
+              )}
               <div className='flex justify-between items-center pt-2 border-t font-semibold text-sm'>
                 <span>Total to Send</span>
                 <span className='text-red-600 text-base'>₵{amountToSend.toFixed(2)}</span>
@@ -142,8 +167,6 @@ export default function ReconciliationPage() {
             </CardContent>
           </Card>
         )}
-
-
 
       </div>
     </WashStationLayout>
