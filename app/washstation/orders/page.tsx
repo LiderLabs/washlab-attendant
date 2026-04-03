@@ -1,6 +1,8 @@
 ﻿'use client';
 
 import { useState } from 'react';
+import { useQuery } from "convex/react"
+import { api } from "@jordan6699/washlab-backend/api"
 import { WashStationLayout } from '@/components/washstation/WashStationLayout';
 import { useStationSession } from '@/hooks/useStationSession';
 import { useStationOrders, type OrderStatus } from '@/hooks/useStationOrders';
@@ -19,10 +21,14 @@ const statusOptions: { value: OrderStatus | "all" | "completed"; label: string }
 ]
 
 export default function OrdersPage() {
-  const { stationToken, isSessionValid } = useStationSession()
+  const { stationToken, isSessionValid, sessionData } = useStationSession()
   const [selectedStatus, setSelectedStatus] = useState<OrderStatus | "all" | "completed">("all")
   const [searchQuery, setSearchQuery] = useState("")
   const router = useRouter()
+
+  const branchId = sessionData?.branchId
+  const branchServicesRaw = useQuery((api as any).admin.getBranchServices, branchId ? { branchId } : 'skip')
+  const branchServices = branchServicesRaw ?? []
 
   const { orders: allOrders, isLoading, loadMore, hasMore } = useStationOrders(stationToken, {
     ...(selectedStatus !== "all" && selectedStatus !== "completed" ? { status: selectedStatus as OrderStatus } : {}),
@@ -85,7 +91,7 @@ export default function OrdersPage() {
         <div className="mt-6">
           {isLoading ? <LoadingSpinner text="Loading orders..." /> : filteredOrders && filteredOrders.length > 0 ? (
             <>
-              <OrdersTable orders={filteredOrders} stationToken={stationToken} onOrderClick={(orderId) => router.push(`/washstation/orders/${orderId}`)} onCollectPayment={(orderId) => router.push(`/washstation/payment?orderId=${orderId}`)} />
+              <OrdersTable orders={filteredOrders} stationToken={stationToken} branchServices={branchServices} onOrderClick={(orderId) => router.push(`/washstation/orders/${orderId}`)} onCollectPayment={(orderId) => router.push(`/washstation/payment?orderId=${orderId}`)} />
 
             </>
           ) : (

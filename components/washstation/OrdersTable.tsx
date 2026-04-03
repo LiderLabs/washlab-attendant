@@ -18,6 +18,7 @@ interface OrdersTableProps {
   stationToken?: string | null;
   onOrderClick?: (orderId: Id<'orders'>) => void;
   onCollectPayment?: (orderId: Id<'orders'>) => void;
+  branchServices?: any[];
 }
 
 interface Order {
@@ -56,21 +57,25 @@ const getStatusBadge = (status: OrderStatus) => {
   return statusConfig[status] || statusConfig.pending_dropoff;
 };
 
-function formatServiceType(serviceType?: string): string {
+function formatServiceType(serviceType?: string, services?: any[]): string {
   if (!serviceType) return 'Wash & Fold';
+  if (services && services.length > 0) {
+    const match = services.find((s: any) => s.code === serviceType);
+    if (match?.name) return match.name;
+  }
   const s = serviceType.toLowerCase();
   if (s.includes('wash') && s.includes('dry')) return 'Wash & Dry';
   if (s.includes('wash')) return 'Wash Only';
   if (s.includes('dry')) return 'Dry Only';
-  return serviceType.replace(/_/g, ' ').replace(/\band\b/gi, '&').replace(/\s+&\s+/g, ' & ');
+  return serviceType.replace(/_/g, ' ').replace(/and/gi, '&').replace(/s+&s+/g, ' & ');
 }
 
-export function OrdersTable({ orders, stationToken, onCollectPayment }: OrdersTableProps) {
+export function OrdersTable({ orders, stationToken, onCollectPayment, branchServices }: OrdersTableProps) {
   const tableRows = useMemo(
     () =>
       orders.map((order) => {
         const weight = order.actualWeight || order.estimatedWeight || 0;
-        const serviceType = formatServiceType(order.serviceType);
+        const serviceType = formatServiceType(order.serviceType, branchServices);
         const unpaid = order.paymentStatus !== 'paid';
         return (
           <TableRow key={order._id} className="hover:bg-muted/30 transition-colors">
