@@ -342,8 +342,8 @@ export function NewOrderContent() {
   const dryService   = dbServices.find((s: any) => s.code === "dry_only")
   const baseWashPrice = washService?.basePrice ?? selectedService?.basePrice ?? 0
   const dryPrice      = dryService?.basePrice  ?? selectedService?.basePrice ?? 0
-  const extraWashUnitPrice = (serviceType === "wash_and_dry" ? dbServices.find((s:any) => s.code === "wash_and_dry") : washService)?.extraWashPrice ?? baseWashPrice
-  const extraDryUnitPrice  = (serviceType === "wash_and_dry" ? dbServices.find((s:any) => s.code === "wash_and_dry") : dryService)?.extraDryPrice ?? dryPrice
+const extraWashUnitPrice = selectedService?.extraWashPrice ?? (serviceType === "wash_and_dry" ? dbServices.find((s:any) => s.code === "wash_and_dry") : washService)?.extraWashPrice ?? baseWashPrice
+ const extraDryUnitPrice  = selectedService?.extraDryPrice ?? (serviceType === "wash_and_dry" ? dbServices.find((s:any) => s.code === "wash_and_dry") : dryService)?.extraDryPrice ?? dryPrice
   const selectedMachine = (activeMachines as any[]).find((m: any) => m._id === selectedMachineId) ?? null
   const standardCodes = ['wash_and_dry', 'wash_only', 'dry_only'];
   const isStandardService = standardCodes.includes(serviceType);
