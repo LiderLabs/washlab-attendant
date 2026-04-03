@@ -334,14 +334,12 @@ function DailyReportPageInner() {
             <div className="bg-muted/40 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Washer Tokens</p>
               <p className="text-2xl font-bold text-foreground">{washerTokens}</p>
-              {/* Shows actual washer revenue from paid orders at correct service price */}
-              <p className="text-xs text-muted-foreground mt-1">{fmt(autoData?.washerTokenRevenue ?? 0)}</p>
+              <p className="text-xs text-muted-foreground mt-1">{fmt(washerTokens * (autoData?.washerPrice ?? 25))}</p>
             </div>
             <div className="bg-muted/40 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Dryer Tokens</p>
               <p className="text-2xl font-bold text-foreground">{dryerTokens}</p>
-              {/* Shows actual dryer revenue from paid orders at correct service price */}
-              <p className="text-xs text-muted-foreground mt-1">{fmt(autoData?.dryerTokenRevenue ?? 0)}</p>
+              <p className="text-xs text-muted-foreground mt-1">{fmt(dryerTokens * (autoData?.dryerPrice ?? 25))}</p>
             </div>
           </div>
 
