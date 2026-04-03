@@ -15,10 +15,6 @@ function today() { return new Date().toISOString().split('T')[0]; }
 function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
 function fmt(n: number) { return `GHS ${n.toFixed(2)}`; }
 
-// ── Fault serialization helpers ───────────────────────────────────────────────
-// Store faults as JSON so machineName, faultTypes, and description are all
-// preserved through save-draft → restore round-trips.
-
 interface FaultEntry {
   machineId: string
   machineName: string
@@ -35,10 +31,8 @@ function deserializeFaults(raw: string | null | undefined): FaultEntry[] {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
-    // New format: array of FaultEntry objects
     if (Array.isArray(parsed)) return parsed
   } catch {
-    // Legacy format: "[machineId] description" lines — best-effort parse
     const lines = raw.split('\n').filter(Boolean)
     return lines.map((l: string) => {
       const match = l.match(/^\[(.+?)\]\s*(.*)$/)
@@ -68,7 +62,6 @@ function DailyReportPageInner() {
     branchId ? { branchId, date: dateParam || today(), stationToken: stationToken || undefined } : 'skip'
   );
 
-  // Always sync system data
   useEffect(() => {
     if (!autoData) return;
     setWasherTokens(autoData.washerTokensUsed ?? 0);
@@ -120,7 +113,6 @@ function DailyReportPageInner() {
   const DRAFT_KEY = `washlab_report_draft_${branchId || "unknown"}`;
   const isSubmitted = existingDraft?.status === 'submitted' || existingDraft?.status === 'submitted_with_outstanding';
 
-  // Auto-save to localStorage whenever manual fields change
   useEffect(() => {
     if (!loaded || isSubmitted || !branchId) return;
     const draft = {
@@ -133,7 +125,6 @@ function DailyReportPageInner() {
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {}
   }, [soapUnits, faults, endOfDayComment, loaded, isSubmitted, branchId]);
 
-  // On mount, check for a saved localStorage draft from a previous session
   useEffect(() => {
     if (!branchId) return;
     try {
@@ -182,12 +173,9 @@ function DailyReportPageInner() {
       }
       setSoapUnits(existingDraft.soapUnitsUsed ?? 0);
       setEndOfDayComment(existingDraft.notes ?? '');
-
-      // ── Restore faults using deserializeFaults (handles both JSON and legacy format)
       if (existingDraft.technicalFaultNotes) {
         setFaults(deserializeFaults(existingDraft.technicalFaultNotes));
       }
-
       setLoaded(true);
     } else if (autoData) {
       setWasherTokens(autoData.washerTokensUsed ?? 0);
@@ -234,7 +222,6 @@ function DailyReportPageInner() {
     voucherBreakdown: autoData?.voucherBreakdown ?? [],
     washingPlanCount: 0,
     technicalFaultCount: faults.length,
-    // ── Store faults as JSON so all fields survive the round-trip ──
     technicalFaultNotes: faults.length > 0 ? serializeFaults(faults) : undefined,
     notes: endOfDayComment || undefined,
     outstandingAmount: autoData?.outstandingAmount ?? 0,
@@ -277,7 +264,8 @@ function DailyReportPageInner() {
   };
 
   const totalRecorded = cashAmount + mobileMoneyAmount + cardAmount + paystackAmount;
-  const totalTokenRevenue = autoData?.tokenRevenue ?? totalRecorded;
+  // Tokens Used Value = sum of actual paid order prices (washer + dryer revenue from paid orders only)
+  const totalTokenRevenue = autoData?.paidTokenRevenue ?? autoData?.expectedRevenue ?? totalRecorded;
   const discrepancy = Math.round((totalRecorded - totalTokenRevenue) * 100) / 100;
 
   return (
@@ -346,12 +334,14 @@ function DailyReportPageInner() {
             <div className="bg-muted/40 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Washer Tokens</p>
               <p className="text-2xl font-bold text-foreground">{washerTokens}</p>
-              <p className="text-xs text-muted-foreground mt-1">{fmt(washerTokens * (autoData?.washerPrice ?? 25))}</p>
+              {/* Shows actual washer revenue from paid orders at correct service price */}
+              <p className="text-xs text-muted-foreground mt-1">{fmt(autoData?.washerTokenRevenue ?? 0)}</p>
             </div>
             <div className="bg-muted/40 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Dryer Tokens</p>
               <p className="text-2xl font-bold text-foreground">{dryerTokens}</p>
-              <p className="text-xs text-muted-foreground mt-1">{fmt(dryerTokens * (autoData?.dryerPrice ?? 25))}</p>
+              {/* Shows actual dryer revenue from paid orders at correct service price */}
+              <p className="text-xs text-muted-foreground mt-1">{fmt(autoData?.dryerTokenRevenue ?? 0)}</p>
             </div>
           </div>
 
@@ -403,6 +393,7 @@ function DailyReportPageInner() {
               <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Tokens Used Value</span>
               <p className="text-xs text-blue-600 dark:text-blue-400">{(autoData?.washerTokensUsed ?? 0) + (autoData?.dryerTokensUsed ?? 0)} tokens used</p>
             </div>
+            {/* paidTokenRevenue = washerTokenRevenue + dryerTokenRevenue from paid orders only */}
             <span className="text-lg font-bold text-blue-700 dark:text-blue-300">{fmt(totalTokenRevenue)}</span>
           </div>
           <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-950/30 rounded-xl mb-5">
@@ -437,7 +428,6 @@ function DailyReportPageInner() {
         <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
           <h2 className="font-semibold text-foreground">Manual Entries</h2>
 
-          {/* Soap Used */}
           <div>
             <label className="text-sm text-muted-foreground font-medium block mb-1.5">Soap Used</label>
             <div className="relative">
@@ -448,7 +438,6 @@ function DailyReportPageInner() {
             </div>
           </div>
 
-          {/* Technical Faults */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-3">Technical Faults</h3>
             {!isSubmitted && (
@@ -492,7 +481,6 @@ function DailyReportPageInner() {
               </div>
             )}
 
-            {/* Fault list — always shows full info */}
             {faults.length > 0 && (
               <div className="mt-3 space-y-2">
                 {faults.map((f, i) => (
@@ -528,7 +516,6 @@ function DailyReportPageInner() {
             )}
           </div>
 
-          {/* End of Day Comment */}
           <div>
             <label className="text-sm text-muted-foreground font-medium block mb-1.5">End of Day Comment</label>
             <Textarea value={endOfDayComment} onChange={e => setEndOfDayComment(e.target.value)}
@@ -537,7 +524,6 @@ function DailyReportPageInner() {
           </div>
         </div>
 
-        {/* Actions */}
         {!isSubmitted && (
           <div className="flex flex-col sm:flex-row gap-3 pb-6">
             <Button variant="outline" onClick={handleSaveDraft} disabled={isSaving || isSubmitting} className="flex-1">
@@ -560,7 +546,6 @@ function DailyReportPageInner() {
           </div>
         )}
 
-        {/* Past Reports */}
         {pastReports && pastReports.length > 0 && (
           <div className="bg-card border border-border rounded-2xl p-5">
             <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
