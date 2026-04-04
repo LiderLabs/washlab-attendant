@@ -30,6 +30,7 @@ interface OrderCardProps {
     estimatedLoads?: number
     whitesSeparate?: boolean
     totalPrice?: number
+    services?: any[]
     customer?: {
       name: string
       phoneNumber: string
@@ -49,6 +50,19 @@ interface OrderCardProps {
     }>
   }
   onClick?: () => void
+}
+
+function formatServiceType(serviceType?: string, services?: any[]): string {
+  if (!serviceType) return 'Service'
+  if (services && services.length > 0) {
+    const match = services.find((s: any) => s.code === serviceType)
+    if (match?.name) return match.name
+  }
+  const s = serviceType.toLowerCase()
+  if (s.includes('wash') && s.includes('dry')) return 'Wash & Dry'
+  if (s.includes('wash')) return 'Wash Only'
+  if (s.includes('dry')) return 'Dry Only'
+  return serviceType.replace(/_/g, ' ').replace(/\band\b/gi, '&').replace(/\s+&\s+/g, ' & ')
 }
 
 export function OrderCard({ order, onClick }: OrderCardProps) {
@@ -114,6 +128,8 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
     toast.success('WhatsApp notification sent!')
   }
 
+  const serviceName = formatServiceType(order.serviceType, order.services)
+
   return (
     <Card
       className="hover:shadow-md transition-all cursor-pointer"
@@ -130,7 +146,7 @@ export function OrderCard({ order, onClick }: OrderCardProps) {
         {order.serviceType && (
           <div className="flex flex-wrap gap-2 mt-2">
             <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium">
-              {order.serviceType === 'wash_and_dry' ? 'Wash & Dry' : order.serviceType === 'wash_only' ? 'Wash Only' : 'Dry Only'}
+              {serviceName}
               {order.estimatedLoads ? ` · ${order.estimatedLoads} load${order.estimatedLoads > 1 ? 's' : ''}` : ''}
             </span>
             {order.whitesSeparate && (

@@ -27,6 +27,7 @@ interface OrderListProps {
   isLoading?: boolean;
   onOrderClick?: (orderId: Id<'orders'>) => void;
   emptyMessage?: string;
+  branchServices?: any[];
 }
 
 export function OrderList({
@@ -34,6 +35,7 @@ export function OrderList({
   isLoading = false,
   onOrderClick,
   emptyMessage = 'No orders found',
+  branchServices = [],
 }: OrderListProps) {
   if (isLoading) {
     return (
@@ -58,7 +60,7 @@ export function OrderList({
       {orders.map((order) => (
         <OrderCard
           key={order._id}
-          order={order}
+          order={{ ...order, services: branchServices }}
           onClick={() => onOrderClick?.(order._id)}
         />
       ))}

@@ -24,11 +24,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useEffect, useState } from 'react';
+import { useQuery } from 'convex/react';
+import { api } from '@jordan6699/washlab-backend/api';
 
 export function DashboardContent() {
   const router = useRouter();
   const { stationToken, sessionData, isLoading: sessionLoading } = useStationSession();
   const isSessionValid = sessionData?.valid ?? false;
+  const branchId = sessionData?.branchId;
 
   const todayStart = startOfToday().getTime();
   const todayEnd = endOfToday().getTime();
@@ -45,6 +48,12 @@ export function DashboardContent() {
   );
 
   const { orders: recentOrders } = useStationOrders(stationToken);
+
+  // Fetch branch services for correct service name display
+  const branchServices = useQuery(
+    (api as any).admin.getBranchServices,
+    branchId ? { branchId } : 'skip'
+  ) ?? [];
 
   const isLoading = statsLoading || ordersLoading;
 
@@ -184,6 +193,7 @@ export function DashboardContent() {
           ) : ordersToShow && ordersToShow.length > 0 ? (
             <OrderList
               orders={ordersToShow}
+              branchServices={branchServices}
               onOrderClick={(orderId) => router.push(`/washstation/orders/${orderId}`)}
             />
           ) : (
