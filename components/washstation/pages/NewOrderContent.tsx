@@ -40,9 +40,19 @@ function isPhoneComplete(phone: string): boolean {
   return phone.length === 10 && phone.startsWith("0")
 }
 
+/**
+ * Canonical washlab placeholder email.
+ * phone is always the local 10-digit format: "0XXXXXXXXX"
+ * Result: "0XXXXXXXXX@washlab.app"  e.g. "0256971012@washlab.app"
+ *
+ * This MUST stay consistent with the migration script and any
+ * other place in the codebase that generates placeholder emails.
+ */
+function phoneToPlaceholderEmail(localPhone: string): string {
+  return `${localPhone}@washlab.app`
+}
+
 // ─── Self-hosted Convex URL fixer ────────────────────────────────────────────
-// Their Convex instance returns convex-dashboard URLs but files are served from
-// convex-backend. Fix every URL before using it.
 const fixConvexUrl = (url: string | null | undefined): string | null => {
   if (!url) return null
   return url.replace("convex-dashboard.washlab.app", "convex-backend.washlab.app")
@@ -71,7 +81,6 @@ const ServiceImageResolved = ({
     isStorageId ? { storageId: imageUrl as any } : "skip"
   )
 
-  // Always fix the domain on whatever URL Convex returns
   const storageUrl = fixConvexUrl(rawStorageUrl ?? null)
 
   const fallbacks: Record<string, string> = {
@@ -85,8 +94,8 @@ const ServiceImageResolved = ({
   const src = !imageUrl
     ? fallback
     : isStorageId
-    ? (storageUrl ?? fallback)           // null while loading → show fallback
-    : fixConvexUrl(imageUrl) ?? imageUrl  // fix domain on already-full URLs too
+    ? (storageUrl ?? fallback)
+    : fixConvexUrl(imageUrl) ?? imageUrl
 
   return <img src={src} alt={alt} className={className} />
 }
@@ -255,8 +264,12 @@ export function NewOrderContent() {
 
   const handleRegisterNewCustomer = async () => {
     if (!newName.trim()) { toast.error("Please enter customer name"); return }
-    const phoneEmail = phone.slice(1) + "@washlab.app"
-    const finalEmail = skipEmail ? phoneEmail : (newEmail.trim() ? newEmail.trim() : phoneEmail)
+
+    const placeholderEmail = phoneToPlaceholderEmail(phone)
+    const finalEmail = skipEmail
+      ? placeholderEmail
+      : (newEmail.trim() ? newEmail.trim() : placeholderEmail)
+
     try {
       const customerId = await createGuestCustomer({
         name: newName,
@@ -337,13 +350,12 @@ export function NewOrderContent() {
   }
 
   const selectedService = dbServices.find((s: any) => s.code === serviceType)
-
   const washService  = dbServices.find((s: any) => s.code === "wash_only")
   const dryService   = dbServices.find((s: any) => s.code === "dry_only")
   const baseWashPrice = washService?.basePrice ?? selectedService?.basePrice ?? 0
   const dryPrice      = dryService?.basePrice  ?? selectedService?.basePrice ?? 0
-const extraWashUnitPrice = selectedService?.extraWashPrice ?? (serviceType === "wash_and_dry" ? dbServices.find((s:any) => s.code === "wash_and_dry") : washService)?.extraWashPrice ?? baseWashPrice
- const extraDryUnitPrice  = selectedService?.extraDryPrice ?? (serviceType === "wash_and_dry" ? dbServices.find((s:any) => s.code === "wash_and_dry") : dryService)?.extraDryPrice ?? dryPrice
+  const extraWashUnitPrice = selectedService?.extraWashPrice ?? (serviceType === "wash_and_dry" ? dbServices.find((s:any) => s.code === "wash_and_dry") : washService)?.extraWashPrice ?? baseWashPrice
+  const extraDryUnitPrice  = selectedService?.extraDryPrice ?? (serviceType === "wash_and_dry" ? dbServices.find((s:any) => s.code === "wash_and_dry") : dryService)?.extraDryPrice ?? dryPrice
   const selectedMachine = (activeMachines as any[]).find((m: any) => m._id === selectedMachineId) ?? null
   const standardCodes = ['wash_and_dry', 'wash_only', 'dry_only'];
   const isStandardService = standardCodes.includes(serviceType);
@@ -383,6 +395,9 @@ const extraWashUnitPrice = selectedService?.extraWashPrice ?? (serviceType === "
     if (p.length <= 6) return `${p.slice(0, 3)} ${p.slice(3)}`
     return `${p.slice(0, 3)} ${p.slice(3, 6)} ${p.slice(6)}`
   }
+
+  // Email is considered "resolved" if they've either typed one or clicked No Email
+  const emailResolved = skipEmail || newEmail.trim().length > 0
 
   const NumberPad = ({
     onDigit, onClear, onBackspace,
@@ -530,6 +545,8 @@ const extraWashUnitPrice = selectedService?.extraWashPrice ?? (serviceType === "
             <p className='text-sm sm:text-base text-muted-foreground mb-4 sm:mb-6'>
               Create profile for order processing.
             </p>
+
+            {/* Phone */}
             <div className='mb-4'>
               <label className='text-xs font-medium text-muted-foreground mb-2 block'>MOBILE NUMBER</label>
               <div className='flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-muted rounded-xl'>
@@ -540,6 +557,8 @@ const extraWashUnitPrice = selectedService?.extraWashPrice ?? (serviceType === "
                 <span className='ml-auto text-muted-foreground flex-shrink-0'>🔒</span>
               </div>
             </div>
+
+            {/* Name */}
             <div className='mb-4'>
               <label className='text-xs font-medium text-muted-foreground mb-2 block'>
                 FULL NAME <span className='text-destructive'>*</span>
@@ -556,28 +575,56 @@ const extraWashUnitPrice = selectedService?.extraWashPrice ?? (serviceType === "
               </div>
               <p className='text-xs text-muted-foreground mt-1'>Enter the customer&apos;s first and last name.</p>
             </div>
+
+            {/* Email */}
             <div className='mb-6 sm:mb-8'>
               <div className='flex items-center justify-between mb-2'>
-                <label className='text-xs font-medium text-muted-foreground'>EMAIL ADDRESS <span className='text-muted-foreground/50'>(optional)</span></label>
+                <label className='text-xs font-medium text-muted-foreground'>
+                  EMAIL ADDRESS <span className='text-destructive'>*</span>
+                </label>
+                {!emailResolved && (
+                  <span className='text-xs text-destructive font-medium'>
+                    Enter email or tap "No Email"
+                  </span>
+                )}
               </div>
               <Input
                 type='email'
-                value={skipEmail ? phone.slice(1) + "@washlab.app" : newEmail}
+                value={skipEmail ? phoneToPlaceholderEmail(phone) : newEmail}
                 onChange={(e) => { setSkipEmail(false); setNewEmail(e.target.value); }}
                 placeholder='name@example.com'
                 disabled={skipEmail}
-                className='w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted border-0 rounded-xl text-foreground placeholder:text-muted-foreground text-sm sm:text-base disabled:opacity-60'
+                className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-muted border-2 rounded-xl text-foreground placeholder:text-muted-foreground text-sm sm:text-base disabled:opacity-70 transition-colors ${
+                  skipEmail
+                    ? 'border-primary/40'
+                    : newEmail.trim()
+                    ? 'border-success/60'
+                    : 'border-destructive/40'
+                }`}
               />
-              <div className='flex items-center justify-end mt-2'>
+              <div className='flex items-center justify-between mt-2'>
+                <p className='text-xs text-muted-foreground'>
+                  {skipEmail
+                    ? `✓ Using: ${phoneToPlaceholderEmail(phone)}`
+                    : newEmail.trim()
+                    ? '✓ Email entered'
+                    : 'No email? Tap the button →'}
+                </p>
                 <button
                   type="button"
                   onClick={() => { setSkipEmail(!skipEmail); setNewEmail(""); }}
-                  className={`text-xs font-medium px-2 py-1 rounded-lg transition-colors ${skipEmail ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border ${
+                    skipEmail
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-muted text-muted-foreground hover:text-foreground border-border hover:border-muted-foreground"
+                  }`}
                 >
                   {skipEmail ? "✓ No Email" : "No Email"}
                 </button>
               </div>
             </div>
+
+            {/* Actions */}
             <div className='flex flex-col sm:flex-row gap-3'>
               <Button type="button" onClick={goBack} variant='outline' className='flex-1 h-11 sm:h-12 rounded-xl'>
                 <ArrowLeft className='w-4 h-4 mr-2' /> Back
@@ -585,8 +632,8 @@ const extraWashUnitPrice = selectedService?.extraWashPrice ?? (serviceType === "
               <Button
                 type="button"
                 onClick={handleRegisterNewCustomer}
-                disabled={!newName.trim()}
-                className='flex-1 h-11 sm:h-12 bg-primary text-primary-foreground rounded-xl font-semibold'
+                disabled={!newName.trim() || !emailResolved}
+                className='flex-1 h-11 sm:h-12 bg-primary text-primary-foreground rounded-xl font-semibold disabled:opacity-50 disabled:pointer-events-none'
               >
                 Create & Continue <ArrowRight className='w-4 h-4 ml-2' />
               </Button>

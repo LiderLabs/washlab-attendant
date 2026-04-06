@@ -33,8 +33,6 @@ export default function ReconciliationPage() {
     branchId ? { branchId } : 'skip'
   ) as { date: string; total: number; orderCount: number }[] | undefined
 
-  // Outstanding days = all days with cash, filtered to only show days that haven't been fully sent
-  // We show the full breakdown so the attendant knows which days are contributing to the outstanding total
   const totalEverSent = summary?.totalEverSent ?? 0
   const totalEverCollected = summary?.totalEverCollected ?? 0
 
@@ -43,7 +41,13 @@ export default function ReconciliationPage() {
     if (!summary || amountToSend <= 0) { toast.error('No outstanding cash to send'); return }
     setLoading(true)
     try {
-      const res = await initiate({ stationToken, senderMomoNumber: momoNumber, amount: amountToSend, attendantId: activeAttendance?.attendant?._id })
+      const res = await initiate({
+        stationToken,
+        senderMomoNumber: momoNumber,
+        amount: amountToSend,
+        attendantId: activeAttendance?.attendant?._id,
+        branchEmail: summary?.branchEmail || undefined,
+      })
       await save({ stationToken, senderMomoNumber: momoNumber, amountSent: amountToSend, paystackReference: res.reference, status: 'processing' })
       setResult(res)
       toast.success('Payment request sent! Check your phone.')
