@@ -32,8 +32,6 @@ function calcPaystackCharge(orderAmount: number): { chargeAmount: number; fee: n
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ✅ Load Paystack v1 inline script dynamically.
-// Script is intentionally NOT removed on unmount — keeping it in memory means
-// subsequent visits to this page open the popup instantly with no reload delay.
 function usePaystackScript() {
   const [loaded, setLoaded] = useState(false);
 
@@ -76,13 +74,13 @@ function PaymentContent() {
   const finalizePaymentSafe = useMutation((api as any).payments.finalizePaymentSafe);
   const saveGatewayReference = useMutation((api as any).payments.saveGatewayReference);
 
-  // ✅ FIX: Call payments.fail when attendant closes the Paystack popup.
-  // This marks the stale payment record as "failed" so the next createPayment
-  // call soft-deletes it and creates a fresh one — ensuring processedBy,
-  // verificationId, and all attendant fields are always written correctly.
-  const failPayment = useMutation((api as any).payments.fail);
+  // ✅ Use resetToPending instead of fail on Paystack popup close.
+  // This keeps the payment record alive (just resets status to "pending") so
+  // finalizePaymentSafe can always find it on the next attempt.
+  // "fail" is now reserved for real gateway errors, not attendant cancels.
+  const resetToPending = useMutation((api as any).payments.resetToPending);
 
-  // ✅ FIX: Track the current in-flight payment ID so we can fail it on cancel.
+  // Track the current in-flight payment ID so onClose can reset it.
   const currentPaymentId = useRef<any>(null);
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>("mobile_money");
@@ -184,10 +182,10 @@ function PaymentContent() {
     if (isFreeWash && hasPreAppliedDiscount && !voucherCode && !voucherResult?.valid) {
       setStage("finalizing");
       try {
-        await createPayment({ orderId: order._id, amount: 0, paymentMethod: "cash" });
-        await finalizePaymentSafe({ orderId: order._id, verificationId, gatewayTransactionId: undefined, confirmedPaymentMethod: "cash" });
+        await createPayment({ orderId: order!._id, amount: 0, paymentMethod: "cash" });
+        await finalizePaymentSafe({ orderId: order!._id, verificationId, gatewayTransactionId: undefined, confirmedPaymentMethod: "cash" });
         toast.success("Loyalty free wash completed! Order marked as paid.");
-        router.push(`/washstation/order-complete?orderId=${order._id}&paymentMethod=loyalty&amountPaid=0&changeDue=0`);
+        router.push(`/washstation/order-complete?orderId=${order!._id}&paymentMethod=loyalty&amountPaid=0&changeDue=0`);
       } catch (e: any) {
         toast.error(e?.message || "Failed to complete order");
         setStage("idle");
@@ -207,18 +205,16 @@ function PaymentContent() {
     }
 
     try {
-      // Record the order amount (not the grossed-up charge) in the DB.
-      // ✅ FIX: If the previous attempt was cancelled (Paystack closed without paying),
-      // payments.fail marked that record as "failed". payments.create now detects
-      // "failed" status and soft-deletes it, so this call always creates a fresh
-      // record — ensuring processedBy and verificationId are never stale.
+      // ✅ create() now reuses the existing pending/processing record on retry
+      // (resetting it to pending) instead of soft-deleting and recreating.
+      // This means finalizePaymentSafe will always find the record.
       const paymentId = await createPayment({
         orderId: order._id,
         amount: totalDue,
         paymentMethod: effectivePaymentMethod,
       });
 
-      // ✅ FIX: Store the new payment ID so onClose can fail it if needed.
+      // Store payment ID so onClose can reset it back to pending if cancelled.
       currentPaymentId.current = paymentId;
 
       if (effectivePaymentMethod !== "cash") {
@@ -228,7 +224,7 @@ function PaymentContent() {
         return;
       }
 
-      // Cash: create record and finalize immediately
+      // Cash: finalize immediately
       finalizePayment({ verificationId, gatewayTransactionId: null, confirmedPaymentMethod: "cash" });
 
     } catch (err) {
@@ -275,7 +271,7 @@ function PaymentContent() {
     paymentId?: any
   ) => {
     if (!order || !paystackLoaded) return;
-    // Force-clear any stale handler from a previous failed attempt
+    // Force-clear any stale handler from a previous attempt
     if (paystackHandlerRef.current) {
       try { clearTimeout(paystackHandlerRef.current._timeoutId); } catch {}
       paystackHandlerRef.current = null;
@@ -319,7 +315,7 @@ function PaymentContent() {
           else if (paystackChannel === "bank" || paystackChannel === "bank_transfer") resolvedMethod = "card";
           toast.success(`${resolvedMethod === "card" ? "Card" : "Mobile Money"} payment authorised`);
 
-          // ✅ FIX: Payment succeeded — clear the tracked ID (no need to fail it).
+          // Payment succeeded — clear the tracked ID (no reset needed).
           currentPaymentId.current = null;
 
           finalizePayment({
@@ -336,13 +332,14 @@ function PaymentContent() {
           setStage("idle");
           isPaying.current = false;
 
-          // ✅ FIX: Mark the stale payment as "failed" so the next attempt via
-          // createPayment always starts with a completely fresh payment record.
-          // This fixes processedBy, verificationId, and all attendant fields
-          // being blank or stale on retry after a cancelled Paystack popup.
+          // ✅ Reset the payment back to "pending" so the record stays alive.
+          // On retry, createPayment will find this pending record and reuse it,
+          // and finalizePaymentSafe will still be able to find and complete it.
+          // This replaces the old "fail → soft-delete → recreate" approach that
+          // caused "Payment record not found" errors.
           if (currentPaymentId.current) {
-            failPayment({ paymentId: currentPaymentId.current }).catch((e) => {
-              console.warn("Failed to mark payment as failed on close:", e);
+            resetToPending({ paymentId: currentPaymentId.current }).catch((e) => {
+              console.warn("Failed to reset payment to pending on close:", e);
             });
             currentPaymentId.current = null;
           }
@@ -358,15 +355,6 @@ function PaymentContent() {
       return;
     }
 
-    if (process.env.NODE_ENV !== 'production') console.log('[Paystack] About to open iframe', {
-      handlerExists: !!handler,
-      paystackPopExists: !!(window as any).PaystackPop,
-      amount: Math.round(paystackChargeAmount * 100),
-      email: order.customer?.email || order.customerEmail,
-      ref,
-      channels,
-    });
-
     paystackHandlerRef.current = handler;
     handler.openIframe();
 
@@ -379,9 +367,9 @@ function PaymentContent() {
         setStage("idle");
         isPaying.current = false;
 
-        // ✅ FIX: Also fail the payment on timeout so the next attempt is fresh.
+        // ✅ Also reset on timeout — same logic as onClose.
         if (currentPaymentId.current) {
-          failPayment({ paymentId: currentPaymentId.current }).catch(() => {});
+          resetToPending({ paymentId: currentPaymentId.current }).catch(() => {});
           currentPaymentId.current = null;
         }
 
@@ -430,7 +418,6 @@ function PaymentContent() {
       setPaystackRef(null);
       setStage("idle");
       isPaying.current = false;
-      // ✅ FIX: Clear tracked payment ID on successful completion.
       currentPaymentId.current = null;
 
       router.push(
@@ -442,9 +429,8 @@ function PaymentContent() {
       setStage("idle");
       isPaying.current = false;
       pendingVerificationId.current = null;
-      // ✅ FIX: Don't clear currentPaymentId here — it's still the active record.
-      // If finalize fails, the attendant can retry and the same payment record
-      // will be reused (it's still in pending/processing, not failed).
+      // Don't clear currentPaymentId here — the record is still pending/processing
+      // and can be retried. The attendant can click "Verify & Pay" again.
     }
   };
 
@@ -455,11 +441,9 @@ function PaymentContent() {
     pendingVerificationId.current = null;
     setStage("idle");
     isPaying.current = false;
-    // ✅ FIX: If verification is cancelled before Paystack even opens, also
-    // clear the tracked payment ID (it may have been set by createPayment).
-    // Note: we do NOT fail it here — the payment record is still "pending"
-    // and can be reused if the attendant re-verifies immediately after.
-    // payments.create will return the same pending ID on the next attempt.
+    // ✅ If verification is cancelled before Paystack even opens, clear the
+    // tracked payment ID. The payment record stays as "pending" in the DB —
+    // createPayment will reuse it on the next attempt without resetting.
     currentPaymentId.current = null;
     toast.info("Verification cancelled. Payment not processed.");
   };
