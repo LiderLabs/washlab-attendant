@@ -40,13 +40,11 @@ function usePaystackScript() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Already loaded from a previous visit or from the layout preload
     if ((window as any).PaystackPop) {
       setLoaded(true);
       return;
     }
 
-    // Already injected into DOM but not yet executed
     const existing = document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]');
     if (existing) {
       existing.addEventListener("load", () => setLoaded(true));
@@ -59,9 +57,6 @@ function usePaystackScript() {
     script.onload = () => setLoaded(true);
     script.onerror = () => console.error("Failed to load Paystack script");
     document.body.appendChild(script);
-
-    // ✅ No cleanup — intentionally keep script in DOM across navigations
-    // so the popup opens immediately on repeat visits without re-downloading.
   }, []);
 
   return loaded;
@@ -80,6 +75,15 @@ function PaymentContent() {
   const initiatePayment = useMutation((api as any).payments.initiate);
   const finalizePaymentSafe = useMutation((api as any).payments.finalizePaymentSafe);
   const saveGatewayReference = useMutation((api as any).payments.saveGatewayReference);
+
+  // ✅ FIX: Call payments.fail when attendant closes the Paystack popup.
+  // This marks the stale payment record as "failed" so the next createPayment
+  // call soft-deletes it and creates a fresh one — ensuring processedBy,
+  // verificationId, and all attendant fields are always written correctly.
+  const failPayment = useMutation((api as any).payments.fail);
+
+  // ✅ FIX: Track the current in-flight payment ID so we can fail it on cancel.
+  const currentPaymentId = useRef<any>(null);
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>("mobile_money");
   const [showVerification, setShowVerification] = useState(false);
@@ -203,12 +207,19 @@ function PaymentContent() {
     }
 
     try {
-      // Record the order amount (not the grossed-up charge) in the DB
+      // Record the order amount (not the grossed-up charge) in the DB.
+      // ✅ FIX: If the previous attempt was cancelled (Paystack closed without paying),
+      // payments.fail marked that record as "failed". payments.create now detects
+      // "failed" status and soft-deletes it, so this call always creates a fresh
+      // record — ensuring processedBy and verificationId are never stale.
       const paymentId = await createPayment({
         orderId: order._id,
         amount: totalDue,
         paymentMethod: effectivePaymentMethod,
       });
+
+      // ✅ FIX: Store the new payment ID so onClose can fail it if needed.
+      currentPaymentId.current = paymentId;
 
       if (effectivePaymentMethod !== "cash") {
         await initiatePayment({ paymentId });
@@ -222,6 +233,7 @@ function PaymentContent() {
 
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to start payment");
+      currentPaymentId.current = null;
       setStage("idle");
     }
   };
@@ -281,7 +293,6 @@ function PaymentContent() {
 
     const channels = method === "card" ? ["card"] : ["mobile_money"];
     const rawPhone = order.customer?.phoneNumber || order.customerPhoneNumber || "";
-    // Paystack expects local format e.g. 0551234987
     const cleanPhone = rawPhone.replace(/[\s\-]/g, "").replace(/^\+233/, "0").replace(/^233/, "0");
     const customerPhone = cleanPhone.startsWith("0") ? cleanPhone : "0" + cleanPhone;
 
@@ -293,7 +304,6 @@ function PaymentContent() {
       handler = (window as any).PaystackPop.setup({
         key: process.env.NEXT_PUBLIC_PAYSTACK_KEY || "pk_test_0bcc36edcd86cbe2439fc3274f5e6b6e501c4730",
         email: order.customer?.email || order.customerEmail || "customer@washlab.com",
-        // ✅ Grossed-up amount — customer pays this, you net exactly totalDue after Paystack's 2% cut
         amount: Math.round(paystackChargeAmount * 100),
         currency: "GHS",
         ref,
@@ -308,10 +318,13 @@ function PaymentContent() {
           else if (paystackChannel === "card") resolvedMethod = "card";
           else if (paystackChannel === "bank" || paystackChannel === "bank_transfer") resolvedMethod = "card";
           toast.success(`${resolvedMethod === "card" ? "Card" : "Mobile Money"} payment authorised`);
+
+          // ✅ FIX: Payment succeeded — clear the tracked ID (no need to fail it).
+          currentPaymentId.current = null;
+
           finalizePayment({
             verificationId,
             gatewayTransactionId: response.reference || response.trxref || ref,
-            // ✅ Use resolvedMethod from Paystack's actual response — never React state
             confirmedPaymentMethod: resolvedMethod,
           });
         },
@@ -322,6 +335,18 @@ function PaymentContent() {
           setPaystackRef(null);
           setStage("idle");
           isPaying.current = false;
+
+          // ✅ FIX: Mark the stale payment as "failed" so the next attempt via
+          // createPayment always starts with a completely fresh payment record.
+          // This fixes processedBy, verificationId, and all attendant fields
+          // being blank or stale on retry after a cancelled Paystack popup.
+          if (currentPaymentId.current) {
+            failPayment({ paymentId: currentPaymentId.current }).catch((e) => {
+              console.warn("Failed to mark payment as failed on close:", e);
+            });
+            currentPaymentId.current = null;
+          }
+
           toast.warning("Customer closed the payment window. You can try again.");
         },
       });
@@ -329,6 +354,7 @@ function PaymentContent() {
       toast.error("Failed to open payment window. Please try again.");
       setStage("idle");
       isPaying.current = false;
+      currentPaymentId.current = null;
       return;
     }
 
@@ -352,6 +378,13 @@ function PaymentContent() {
         setPaystackRef(null);
         setStage("idle");
         isPaying.current = false;
+
+        // ✅ FIX: Also fail the payment on timeout so the next attempt is fresh.
+        if (currentPaymentId.current) {
+          failPayment({ paymentId: currentPaymentId.current }).catch(() => {});
+          currentPaymentId.current = null;
+        }
+
         toast.error("Payment timed out. Please try again.");
       }
     }, 3 * 60 * 1000);
@@ -382,8 +415,6 @@ function PaymentContent() {
         orderId: order._id,
         verificationId,
         gatewayTransactionId: gatewayTransactionId ?? undefined,
-        // ✅ Never fall back to React state — always use the explicitly confirmed method.
-        // Default to "cash" as the safe fallback since cash never goes through Paystack.
         confirmedPaymentMethod: confirmedPaymentMethod ?? "cash",
       });
 
@@ -399,6 +430,8 @@ function PaymentContent() {
       setPaystackRef(null);
       setStage("idle");
       isPaying.current = false;
+      // ✅ FIX: Clear tracked payment ID on successful completion.
+      currentPaymentId.current = null;
 
       router.push(
         `/washstation/order-complete?orderId=${order._id}&paymentMethod=${effectivePaymentMethod}&amountPaid=${customerFacingAmount}&changeDue=0`
@@ -409,6 +442,9 @@ function PaymentContent() {
       setStage("idle");
       isPaying.current = false;
       pendingVerificationId.current = null;
+      // ✅ FIX: Don't clear currentPaymentId here — it's still the active record.
+      // If finalize fails, the attendant can retry and the same payment record
+      // will be reused (it's still in pending/processing, not failed).
     }
   };
 
@@ -419,6 +455,12 @@ function PaymentContent() {
     pendingVerificationId.current = null;
     setStage("idle");
     isPaying.current = false;
+    // ✅ FIX: If verification is cancelled before Paystack even opens, also
+    // clear the tracked payment ID (it may have been set by createPayment).
+    // Note: we do NOT fail it here — the payment record is still "pending"
+    // and can be reused if the attendant re-verifies immediately after.
+    // payments.create will return the same pending ID on the next attempt.
+    currentPaymentId.current = null;
     toast.info("Verification cancelled. Payment not processed.");
   };
 
