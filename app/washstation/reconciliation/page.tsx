@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useQuery, useAction, useMutation } from 'convex/react'
+import { useState, useEffect, useRef } from 'react'
+import { useQuery, useMutation, useAction } from 'convex/react'
 import { api } from '@jordan6699/washlab-backend/api'
 import { useStationSession } from '@/hooks/useStationSession'
 import { useStationAttendance } from '@/hooks/useStationAttendance'
@@ -11,35 +11,157 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
-import { Banknote, Clock, AlertCircle, Loader2, ArrowRight } from 'lucide-react'
+import {
+  Banknote, Loader2, ArrowRight, CheckCircle2,
+  ShoppingCart, Plus, Trash2, History, TrendingUp, Smartphone, KeyRound,
+} from 'lucide-react'
+import Link from 'next/link'
+import { format } from 'date-fns'
+
+interface Deduction {
+  id: string
+  amount: number
+  reason: string
+}
+
+// idle       → form shown, waiting for input
+// loading    → initiate action in flight / waiting for phone approval
+// otp        → Paystack needs OTP, show input field
+// submitting → submitOtp action in flight
+// success    → payment done, show confirmation
+type FlowStep = 'idle' | 'loading' | 'otp' | 'submitting' | 'success'
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    completed: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+    processing: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+    pending: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
+    failed: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+    paid: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+  }
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${map[status] ?? 'bg-muted text-muted-foreground'}`}>
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
+  )
+}
 
 export default function ReconciliationPage() {
   const { stationToken } = useStationSession()
   const { attendance: activeAttendance } = useStationAttendance(stationToken)
+
+  const [flowStep, setFlowStep] = useState<FlowStep>('idle')
   const [momoNumber, setMomoNumber] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState(null)
+  const [otp, setOtp] = useState('')
+  const [pendingReference, setPendingReference] = useState('')
+  const [result, setResult] = useState<{ amount: number; momoNumber: string; reference: string } | null>(null)
+  const [paidAmount, setPaidAmount] = useState(0)
+  const [polling, setPolling] = useState(false)
 
-  const summary = useQuery((api as any).cashReconciliation.getTodayCashSummary, stationToken ? { stationToken } : 'skip')
+  const [deductions, setDeductions] = useState<Deduction[]>([])
+  const [deductionAmount, setDeductionAmount] = useState('')
+  const [deductionReason, setDeductionReason] = useState('')
+  const [savingDeduction, setSavingDeduction] = useState(false)
+  const [showDeductionForm, setShowDeductionForm] = useState(false)
+
+  const pollingRef = useRef<NodeJS.Timeout | null>(null)
+
+  const summary = useQuery(
+    (api as any).cashReconciliation.getTodayCashSummary,
+    stationToken ? { stationToken } : 'skip'
+  )
+  const todayOrders = useQuery(
+    (api as any).cashReconciliation.getTodayCashOrders,
+    stationToken ? { stationToken } : 'skip'
+  )
   const initiate = useAction((api as any).cashReconciliation.initiateCashReconciliation)
+  const submitOtpAction = useAction((api as any).cashReconciliation.submitOtp)
+  const verify = useAction((api as any).cashReconciliation.verifyAndComplete)
   const save = useMutation((api as any).cashReconciliation.saveReconciliation)
+  const saveDeduction = useMutation((api as any).cashReconciliation.saveCashDeduction)
 
-  const amountToSend = summary?.outstandingCash ?? summary?.totalCash ?? 0
+  const totalDeductions = deductions.reduce((s, d) => s + d.amount, 0)
+  const rawOutstanding = summary?.outstandingCash ?? 0
+  const effectiveOutstanding = Math.max(0, rawOutstanding - paidAmount)
+  const amountToSend = effectiveOutstanding
 
-  // Get the branch ID from summary so we can fetch the full daily breakdown
-  const branchId = summary?.branchId
-  const dailyBreakdown = useQuery(
-    (api as any).cashReconciliation.getDailyBreakdownForAdmin,
-    branchId ? { branchId } : 'skip'
-  ) as { date: string; total: number; orderCount: number }[] | undefined
+  // ── Stop polling helper ───────────────────────────────────────────────────
+  const stopPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
+    setPolling(false)
+  }
 
-  const totalEverSent = summary?.totalEverSent ?? 0
-  const totalEverCollected = summary?.totalEverCollected ?? 0
+  // ── Polling effect — runs whenever pendingReference is set ────────────────
+  useEffect(() => {
+    if (!pendingReference || flowStep === 'success') return
 
+    setPolling(true)
+    pollingRef.current = setInterval(async () => {
+      try {
+        const res = await verify({ reference: pendingReference })
+
+        if (res.status === 'completed') {
+          stopPolling()
+          await save({
+            stationToken,
+            senderMomoNumber: momoNumber,
+            amountSent: amountToSend,
+            paystackReference: pendingReference,
+            status: 'completed',
+          })
+          setPaidAmount(amountToSend)
+          setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
+          setFlowStep('success')
+          toast.success('Payment confirmed!')
+        } else if (res.status === 'failed' || res.status === 'reversed') {
+          stopPolling()
+          toast.error('Payment failed. Please try again.')
+          setFlowStep('idle')
+          setPendingReference('')
+        }
+        // any other status (pending, pay_offline, etc.) — keep polling
+      } catch (_e) {
+        // silent — keep polling
+      }
+    }, 5000)
+
+    return () => stopPolling()
+  }, [pendingReference])
+
+  // ── Deduction handlers ────────────────────────────────────────────────────
+  const handleAddDeduction = async () => {
+    const amt = parseFloat(deductionAmount)
+    if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return }
+    if (!deductionReason.trim()) { toast.error('Enter a reason'); return }
+    if (amt > rawOutstanding) { toast.error('Deduction exceeds outstanding cash'); return }
+    setSavingDeduction(true)
+    try {
+      await saveDeduction({ stationToken, amount: amt, reason: deductionReason.trim() })
+      setDeductions(prev => [...prev, { id: crypto.randomUUID(), amount: amt, reason: deductionReason.trim() }])
+      setDeductionAmount('')
+      setDeductionReason('')
+      setShowDeductionForm(false)
+      toast.success('Deduction saved')
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to save deduction')
+    } finally {
+      setSavingDeduction(false)
+    }
+  }
+
+  const handleRemoveDeduction = (id: string) => {
+    setDeductions(prev => prev.filter(d => d.id !== id))
+  }
+
+  // ── Step 1: Send charge request ──────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!momoNumber || momoNumber.length < 10) { toast.error('Please enter a valid MoMo number'); return }
+    if (!momoNumber || momoNumber.length < 10) { toast.error('Enter a valid MoMo number'); return }
     if (!summary || amountToSend <= 0) { toast.error('No outstanding cash to send'); return }
-    setLoading(true)
+
+    setFlowStep('loading')
     try {
       const res = await initiate({
         stationToken,
@@ -48,126 +170,427 @@ export default function ReconciliationPage() {
         attendantId: activeAttendance?.attendant?._id,
         branchEmail: summary?.branchEmail || undefined,
       })
-      await save({ stationToken, senderMomoNumber: momoNumber, amountSent: amountToSend, paystackReference: res.reference, status: 'processing' })
-      setResult(res)
-      toast.success('Payment request sent! Check your phone.')
+
+      // Paystack needs OTP — show the input field
+      if (res.status === 'send_otp') {
+        setPendingReference(res.reference)
+        setFlowStep('otp')
+        toast.info('OTP sent to phone — enter it below')
+        return
+      }
+
+      // No OTP needed — save as processing and start polling for confirmation
+      await save({
+        stationToken,
+        senderMomoNumber: momoNumber,
+        amountSent: amountToSend,
+        paystackReference: res.reference,
+        status: 'processing',
+      })
+      setPendingReference(res.reference) // triggers the polling useEffect
+      // flowStep stays 'loading' — spinner shown while waiting for phone approval
+
     } catch (e: any) {
-      toast.error(e?.message || 'Failed to initiate reconciliation')
-    } finally {
-      setLoading(false)
+      toast.error(e?.message || 'Failed to initiate payment')
+      setFlowStep('idle')
+    }
+  }
+
+  // ── Step 2: Submit OTP (only shown when needed) ──────────────────────────
+  const handleSubmitOtp = async () => {
+    if (!otp.trim()) { toast.error('Enter the OTP'); return }
+
+    setFlowStep('submitting')
+    try {
+      const res = await submitOtpAction({ reference: pendingReference, otp: otp.trim() })
+
+      if (res.status === 'success') {
+        // Paystack confirmed immediately after OTP
+        stopPolling()
+        await save({
+          stationToken,
+          senderMomoNumber: momoNumber,
+          amountSent: amountToSend,
+          paystackReference: pendingReference,
+          status: 'completed',
+        })
+        setPaidAmount(amountToSend)
+        setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
+        setFlowStep('success')
+        toast.success('Payment confirmed!')
+      } else if (res.status === 'pay_offline') {
+        // Save as processing and let polling finish it
+        await save({
+          stationToken,
+          senderMomoNumber: momoNumber,
+          amountSent: amountToSend,
+          paystackReference: pendingReference,
+          status: 'processing',
+        })
+        setFlowStep('loading') // polling already running via useEffect
+        toast.info('Check your phone to approve the payment')
+      } else {
+        // OTP not accepted — ask again
+        toast.error(res.displayText || 'OTP not accepted, please try again')
+        setOtp('')
+        setFlowStep('otp')
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to submit OTP')
+      setFlowStep('otp')
     }
   }
 
   return (
     <WashStationLayout title='Cash Reconciliation'>
-      <div className='max-w-xl mx-auto space-y-5'>
+      <div className='space-y-6'>
 
-        {/* Summary Card */}
+        {/* ── Header ── */}
+        <div className='flex items-center justify-between'>
+          <div>
+            <h2 className='text-xl font-bold text-foreground'>Cash Reconciliation</h2>
+            <p className='text-sm text-muted-foreground'>{format(new Date(), 'EEEE, d MMMM yyyy')}</p>
+          </div>
+          <Link href='/washstation/outstanding'>
+            <Button variant='outline' size='sm' className='gap-2'>
+              <History className='w-3.5 h-3.5' />
+              History
+            </Button>
+          </Link>
+        </div>
+
+        {/* ── Summary cards ── */}
+        <div className='grid grid-cols-3 gap-4'>
+          <Card className='p-5'>
+            <p className='text-xs text-muted-foreground mb-1'>Today's Orders</p>
+            <p className='text-3xl font-bold'>{summary === undefined ? '—' : summary.orderCount}</p>
+          </Card>
+          <Card className='p-5'>
+            <p className='text-xs text-muted-foreground mb-1'>Cash Collected Today</p>
+            <p className='text-3xl font-bold'>
+              {summary === undefined ? '—' : `₵${summary.totalCash.toFixed(2)}`}
+            </p>
+          </Card>
+          <Card className={`p-5 ${effectiveOutstanding > 0 ? 'border-red-200 bg-red-50/50 dark:bg-red-950/10' : 'border-green-200 bg-green-50/50 dark:bg-green-950/10'}`}>
+            <p className='text-xs text-muted-foreground mb-1'>Total Outstanding</p>
+            <p className={`text-3xl font-bold ${effectiveOutstanding > 0 ? 'text-red-600' : 'text-green-600'}`}>
+              {summary === undefined ? '—' : `₵${effectiveOutstanding.toFixed(2)}`}
+            </p>
+          </Card>
+        </div>
+
+        {/* ── Today's orders table ── */}
         <Card>
           <CardHeader className='pb-3'>
-            <CardTitle className='flex items-center gap-2 text-base'>
-              <Banknote className='w-5 h-5 text-primary' />
-              Cash Summary
+            <CardTitle className='text-base flex items-center gap-2'>
+              <Banknote className='w-4 h-4 text-primary' />
+              Today's Cash Orders
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className='p-0'>
             {summary === undefined ? (
-              <div className='flex justify-center py-6'><Loader2 className='w-6 h-6 animate-spin text-muted-foreground' /></div>
+              <div className='flex justify-center py-12'>
+                <Loader2 className='w-5 h-5 animate-spin text-muted-foreground' />
+              </div>
+            ) : !todayOrders || todayOrders.length === 0 ? (
+              <div className='flex flex-col items-center justify-center py-12 text-muted-foreground'>
+                <Banknote className='w-10 h-10 mb-3 opacity-20' />
+                <p className='text-sm'>No cash orders today</p>
+              </div>
             ) : (
-              <div className='space-y-2'>
-                <div className='flex justify-between items-center py-2 border-b'>
-                  <span className='text-sm text-muted-foreground'>Today's Cash Orders</span>
-                  <span className='font-bold'>{summary.orderCount} orders · ₵{summary.totalCash.toFixed(2)}</span>
-                </div>
-                <div className='flex justify-between items-center py-2'>
-                  <span className='text-sm font-semibold'>Outstanding (to send)</span>
-                  <span className={'font-bold text-xl ' + (amountToSend > 0 ? 'text-red-600' : 'text-green-600')}>₵{amountToSend.toFixed(2)}</span>
-                </div>
-                {summary.orderCount === 0 && amountToSend === 0 && (
-                  <div className='flex items-center gap-2 p-3 bg-muted rounded-lg mt-2'>
-                    <AlertCircle className='w-4 h-4 text-muted-foreground shrink-0' />
-                    <p className='text-sm text-muted-foreground'>No cash orders recorded yet.</p>
-                  </div>
-                )}
+              <div className='overflow-x-auto'>
+                <table className='w-full text-sm'>
+                  <thead>
+                    <tr className='border-b border-border bg-muted/40'>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Order Number</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Customer</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Service</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Amount</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Status</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {todayOrders.map((order: any) => (
+                      <tr key={order._id} className='border-b border-border last:border-0 hover:bg-muted/20 transition-colors'>
+                        <td className='px-4 py-3'>
+                          <span className='font-mono font-semibold text-sm text-primary'>{order.orderNumber}</span>
+                        </td>
+                        <td className='px-4 py-3'>
+                          <p className='font-medium text-foreground'>{order.customerName || '—'}</p>
+                          <p className='text-xs text-muted-foreground'>{order.customerPhoneNumber || ''}</p>
+                        </td>
+                        <td className='px-4 py-3 text-muted-foreground text-sm whitespace-nowrap'>
+                          {order.serviceType || '—'}
+                        </td>
+                        <td className='px-4 py-3'>
+                          <span className='font-bold text-foreground'>₵{(order.finalPrice ?? 0).toFixed(2)}</span>
+                        </td>
+                        <td className='px-4 py-3'>
+                          <StatusBadge status={order.paymentStatus} />
+                        </td>
+                        <td className='px-4 py-3 text-muted-foreground text-sm whitespace-nowrap'>
+                          {format(new Date(order.createdAt), 'h:mm a')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className='bg-muted/40 border-t border-border'>
+                      <td colSpan={3} className='px-4 py-3 font-semibold text-sm'>Total ({todayOrders.length} orders)</td>
+                      <td colSpan={3} className='px-4 py-3 font-bold text-sm'>₵{summary.totalCash.toFixed(2)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Full day-by-day breakdown of outstanding cash */}
-        {summary && amountToSend > 0 && (
-          <Card>
-            <CardHeader className='pb-3'>
-              <CardTitle className='text-base'>Outstanding Amounts</CardTitle>
-              <p className='text-xs text-muted-foreground'>All days contributing to the ₵{amountToSend.toFixed(2)} outstanding</p>
-            </CardHeader>
-            <CardContent className='space-y-2'>
-              {dailyBreakdown === undefined ? (
-                <div className='flex justify-center py-4'><Loader2 className='w-5 h-5 animate-spin text-muted-foreground' /></div>
-              ) : dailyBreakdown.length === 0 ? (
-                <p className='text-sm text-muted-foreground'>No cash orders found</p>
-              ) : (
-                dailyBreakdown.map((d) => (
-                  <div key={d.date} className='flex items-center justify-between p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900 text-sm'>
-                    <div>
-                      <p className='font-medium text-foreground'>{d.date}</p>
-                      <p className='text-xs text-muted-foreground'>{d.orderCount} order{d.orderCount !== 1 ? 's' : ''}</p>
-                    </div>
-                    <span className='font-bold text-red-600'>₵{d.total.toFixed(2)}</span>
-                  </div>
-                ))
-              )}
-              <div className='flex justify-between items-center pt-2 border-t font-semibold text-sm'>
-                <span>Total Collected</span>
-                <span className='text-foreground'>₵{totalEverCollected.toFixed(2)}</span>
-              </div>
-              {totalEverSent > 0 && (
-                <div className='flex justify-between items-center font-semibold text-sm'>
-                  <span>Already Sent</span>
-                  <span className='text-green-600'>- ₵{totalEverSent.toFixed(2)}</span>
-                </div>
-              )}
-              <div className='flex justify-between items-center pt-2 border-t font-semibold text-sm'>
-                <span>Total to Send</span>
-                <span className='text-red-600 text-base'>₵{amountToSend.toFixed(2)}</span>
+        {/* ── Waiting for phone approval ── */}
+        {flowStep === 'loading' && polling && (
+          <Card className='border-blue-200 bg-blue-50/50 dark:bg-blue-950/10'>
+            <CardContent className='flex items-center gap-4 py-6'>
+              <Loader2 className='w-8 h-8 animate-spin text-blue-600 shrink-0' />
+              <div>
+                <p className='font-semibold text-blue-800 dark:text-blue-300 text-lg'>Waiting for approval…</p>
+                <p className='text-sm text-blue-700 dark:text-blue-400'>
+                  A payment request of <span className='font-bold'>₵{amountToSend.toFixed(2)}</span> was sent to <span className='font-mono font-semibold'>{momoNumber}</span>. Approve it on your phone.
+                </p>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Send Form */}
-        {summary && amountToSend > 0 && !result && (
-          <Card>
-            <CardHeader className='pb-3'>
-              <CardTitle className='text-base'>Send Outstanding Cash via MoMo</CardTitle>
-              <p className='text-xs text-muted-foreground'>Enter your MoMo number to send ₵{amountToSend.toFixed(2)} to WashLab</p>
-            </CardHeader>
-            <CardContent className='space-y-4'>
-              <div className='space-y-1.5'>
-                <Label className='text-sm'>Your MoMo Number</Label>
-                <Input type='tel' placeholder='e.g. 0241234567' value={momoNumber} onChange={(e) => setMomoNumber(e.target.value.replace(/\D/g, '').slice(0, 10))} inputMode='numeric' maxLength={10} className='h-10' />
-              </div>
-              <Button className='w-full gap-2' onClick={handleSubmit} disabled={loading || !momoNumber || momoNumber.length < 10}>
-                {loading ? <><Loader2 className='w-4 h-4 animate-spin' /> Processing...</> : <>Send ₵{amountToSend.toFixed(2)} <ArrowRight className='w-4 h-4' /></>}
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Success state */}
-        {result && amountToSend > 0 && (
-          <Card className='border-green-200 bg-green-50 dark:bg-green-900/20'>
-            <CardContent className='pt-6 space-y-3'>
+        {/* ── OTP step — shown only when Paystack requests it ── */}
+        {flowStep === 'otp' || flowStep === 'submitting' ? (
+          <Card className='border-blue-200 bg-blue-50/50 dark:bg-blue-950/10'>
+            <CardContent className='pt-6 space-y-4'>
               <div className='flex items-center gap-3'>
-                <div className='w-10 h-10 rounded-full bg-green-100 flex items-center justify-center'>
-                  <Clock className='w-5 h-5 text-green-600' />
+                <div className='w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center'>
+                  <KeyRound className='w-6 h-6 text-blue-600' />
                 </div>
                 <div>
-                  <p className='font-semibold text-green-800 dark:text-green-300'>Payment Request Sent!</p>
-                  <p className='text-sm text-green-700 dark:text-green-400'>{(result as any).displayText}</p>
+                  <p className='font-semibold text-blue-800 dark:text-blue-300 text-lg'>OTP Required</p>
+                  <p className='text-sm text-blue-700 dark:text-blue-400'>
+                    An OTP was sent to <span className='font-mono font-semibold'>{momoNumber}</span>. Enter it below.
+                  </p>
                 </div>
               </div>
-              <p className='text-xs text-muted-foreground'>Once you approve on your phone, the reconciliation will be confirmed automatically.</p>
+              <div>
+                <Label className='text-sm mb-1.5 block'>One-Time Password (OTP)</Label>
+                <Input
+                  type='number'
+                  inputMode='numeric'
+                  placeholder='Enter OTP'
+                  value={otp}
+                  onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
+                  className='h-12 text-center text-xl tracking-widest font-mono'
+                  disabled={flowStep === 'submitting'}
+                  autoFocus
+                />
+              </div>
+              <div className='flex gap-3'>
+                <Button
+                  variant='outline'
+                  className='flex-1'
+                  onClick={() => { stopPolling(); setFlowStep('idle'); setOtp(''); setPendingReference('') }}
+                  disabled={flowStep === 'submitting'}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className='flex-1 gap-2'
+                  onClick={handleSubmitOtp}
+                  disabled={!otp.trim() || flowStep === 'submitting'}
+                >
+                  {flowStep === 'submitting' ? (
+                    <><Loader2 className='w-4 h-4 animate-spin' /> Verifying…</>
+                  ) : (
+                    <>Submit OTP <ArrowRight className='w-4 h-4' /></>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {/* ── Bottom section — hidden during OTP, loading and success ── */}
+        {summary && flowStep !== 'success' && flowStep !== 'otp' && flowStep !== 'submitting' && flowStep !== 'loading' && (
+          <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
+
+            {/* Cash deductions */}
+            {effectiveOutstanding > 0 && (
+              <Card>
+                <CardHeader className='pb-3'>
+                  <div className='flex items-center justify-between'>
+                    <CardTitle className='text-base flex items-center gap-2'>
+                      <ShoppingCart className='w-4 h-4 text-orange-500' />
+                      Cash Used
+                    </CardTitle>
+                    {!showDeductionForm && (
+                      <Button variant='outline' size='sm' className='gap-1.5' onClick={() => setShowDeductionForm(true)}>
+                        <Plus className='w-3.5 h-3.5' />
+                        Add
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className='space-y-3'>
+                  {deductions.length > 0 && (
+                    <div className='space-y-2'>
+                      {deductions.map(d => (
+                        <div key={d.id} className='flex items-center justify-between p-3 rounded-lg bg-orange-50/50 dark:bg-orange-950/10 border border-orange-200 dark:border-orange-800 text-sm'>
+                          <p className='font-medium text-foreground'>{d.reason}</p>
+                          <div className='flex items-center gap-2'>
+                            <span className='font-bold text-orange-600'>- ₵{d.amount.toFixed(2)}</span>
+                            <button onClick={() => handleRemoveDeduction(d.id)} className='text-muted-foreground hover:text-red-500 transition-colors'>
+                              <Trash2 className='w-3.5 h-3.5' />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      <div className='flex justify-between text-sm font-semibold pt-1 border-t border-border'>
+                        <span className='text-muted-foreground'>Total deductions</span>
+                        <span className='text-orange-600'>- ₵{totalDeductions.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
+                  {showDeductionForm && (
+                    <div className='space-y-3 p-3 rounded-lg bg-muted/40 border border-border'>
+                      <div className='grid grid-cols-2 gap-2'>
+                        <div>
+                          <Label className='text-xs mb-1 block'>Amount (₵)</Label>
+                          <Input type='number' placeholder='0.00' value={deductionAmount} onChange={e => setDeductionAmount(e.target.value)} className='h-9 text-sm' />
+                        </div>
+                        <div>
+                          <Label className='text-xs mb-1 block'>Reason</Label>
+                          <Input placeholder='e.g. Detergent' value={deductionReason} onChange={e => setDeductionReason(e.target.value)} className='h-9 text-sm' />
+                        </div>
+                      </div>
+                      <div className='flex gap-2'>
+                        <Button size='sm' onClick={handleAddDeduction} disabled={savingDeduction} className='flex-1'>
+                          {savingDeduction ? <Loader2 className='w-3.5 h-3.5 animate-spin' /> : 'Save Deduction'}
+                        </Button>
+                        <Button size='sm' variant='ghost' onClick={() => { setShowDeductionForm(false); setDeductionAmount(''); setDeductionReason('') }}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {deductions.length === 0 && !showDeductionForm && (
+                    <p className='text-sm text-muted-foreground text-center py-4'>No deductions added</p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Send via MoMo */}
+            {amountToSend > 0 && (
+              <Card>
+                <CardHeader className='pb-3'>
+                  <CardTitle className='text-base flex items-center gap-2'>
+                    <TrendingUp className='w-4 h-4 text-primary' />
+                    Send Cash via MoMo
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className='space-y-4'>
+                  <div className='space-y-1.5 text-sm bg-muted/40 rounded-lg p-3'>
+                    <div className='flex justify-between'>
+                      <span className='text-muted-foreground'>Outstanding</span>
+                      <span className='font-medium'>₵{effectiveOutstanding.toFixed(2)}</span>
+                    </div>
+                    {totalDeductions > 0 && (
+                      <div className='flex justify-between'>
+                        <span className='text-muted-foreground'>Deductions</span>
+                        <span className='font-medium text-orange-600'>- ₵{totalDeductions.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className='flex justify-between pt-1.5 border-t border-border font-semibold'>
+                      <span>Amount to send</span>
+                      <span className='text-red-600 text-base'>₵{amountToSend.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className='text-sm mb-1.5 block'>Your MoMo Number</Label>
+                    <Input
+                      type='tel'
+                      placeholder='e.g. 0241234567'
+                      value={momoNumber}
+                      onChange={e => setMomoNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      inputMode='numeric'
+                      maxLength={10}
+                      className='h-10'
+                    />
+                  </div>
+
+                  <Button
+                    className='w-full gap-2'
+                    onClick={handleSubmit}
+                    disabled={!momoNumber || momoNumber.length < 10}
+                  >
+                    <Smartphone className='w-4 h-4' />
+                    Send ₵{amountToSend.toFixed(2)} via MoMo
+                    <ArrowRight className='w-4 h-4' />
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Already settled */}
+            {amountToSend === 0 && (
+              <Card className='border-green-200 bg-green-50/50 dark:bg-green-950/10'>
+                <CardContent className='flex items-center gap-3 py-6'>
+                  <CheckCircle2 className='w-8 h-8 text-green-600 shrink-0' />
+                  <div>
+                    <p className='font-semibold text-green-800 dark:text-green-300'>All settled!</p>
+                    <p className='text-sm text-green-700 dark:text-green-400'>No outstanding cash to send.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+          </div>
+        )}
+
+        {/* ── Success screen ── */}
+        {flowStep === 'success' && result && (
+          <Card className='border-green-200 bg-green-50/50 dark:bg-green-950/10'>
+            <CardContent className='pt-6 space-y-4'>
+              <div className='flex items-center gap-3'>
+                <div className='w-12 h-12 rounded-full bg-green-100 flex items-center justify-center'>
+                  <CheckCircle2 className='w-6 h-6 text-green-600' />
+                </div>
+                <div>
+                  <p className='font-semibold text-green-800 dark:text-green-300 text-lg'>Payment Confirmed!</p>
+                  <p className='text-sm text-green-700 dark:text-green-400'>MoMo payment confirmed by Paystack.</p>
+                </div>
+              </div>
+              <div className='text-sm bg-white/60 dark:bg-black/20 rounded-lg p-3 space-y-1.5'>
+                <div className='flex justify-between'>
+                  <span className='text-muted-foreground'>Amount sent</span>
+                  <span className='font-bold'>₵{result.amount.toFixed(2)}</span>
+                </div>
+                <div className='flex justify-between'>
+                  <span className='text-muted-foreground'>From</span>
+                  <span className='font-mono'>{result.momoNumber}</span>
+                </div>
+                <div className='flex justify-between'>
+                  <span className='text-muted-foreground'>Reference</span>
+                  <span className='font-mono text-xs'>{result.reference}</span>
+                </div>
+                <div className='flex justify-between'>
+                  <span className='text-muted-foreground'>Date</span>
+                  <span>{format(new Date(), 'd MMM yyyy, h:mm a')}</span>
+                </div>
+                {deductions.length > 0 && (
+                  <div className='flex justify-between'>
+                    <span className='text-muted-foreground'>Deductions</span>
+                    <span className='text-orange-600'>- ₵{totalDeductions.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         )}
