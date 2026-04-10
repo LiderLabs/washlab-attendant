@@ -24,11 +24,6 @@ interface Deduction {
   reason: string
 }
 
-// idle       → form shown, waiting for input
-// loading    → initiate action in flight / waiting for phone approval
-// otp        → Paystack needs OTP, show input field
-// submitting → submitOtp action in flight
-// success    → payment done, show confirmation
 type FlowStep = 'idle' | 'loading' | 'otp' | 'submitting' | 'success'
 
 function StatusBadge({ status }: { status: string }) {
@@ -65,6 +60,8 @@ export default function ReconciliationPage() {
   const [showDeductionForm, setShowDeductionForm] = useState(false)
 
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
+  // Track whether we've already saved this reference so polling never saves twice
+  const savedRef = useRef<string | null>(null)
 
   const summary = useQuery(
     (api as any).cashReconciliation.getTodayCashSummary,
@@ -81,11 +78,17 @@ export default function ReconciliationPage() {
   const saveDeduction = useMutation((api as any).cashReconciliation.saveCashDeduction)
 
   const totalDeductions = deductions.reduce((s, d) => s + d.amount, 0)
-  const rawOutstanding = summary?.outstandingCash ?? 0
+
+  // Use todaySent + todayDeducted from backend so we can recalculate
+  // outstanding ourselves. outstandingCash is clamped to 0 by the backend
+  // which hides the send form when duplicate records inflate todaySent.
+  const todayCash      = summary?.totalCash     ?? 0
+  const todaySent      = summary?.todaySent      ?? 0
+  const todayDeducted  = summary?.todayDeducted  ?? 0
+  const rawOutstanding = Math.max(0, todayCash - todaySent - todayDeducted)
   const effectiveOutstanding = Math.max(0, rawOutstanding - paidAmount)
   const amountToSend = effectiveOutstanding
 
-  // ── Stop polling helper ───────────────────────────────────────────────────
   const stopPolling = () => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current)
@@ -94,7 +97,7 @@ export default function ReconciliationPage() {
     setPolling(false)
   }
 
-  // ── Polling effect — runs whenever pendingReference is set ────────────────
+  // Polling — only saves once via savedRef guard
   useEffect(() => {
     if (!pendingReference || flowStep === 'success') return
 
@@ -105,13 +108,17 @@ export default function ReconciliationPage() {
 
         if (res.status === 'completed') {
           stopPolling()
-          await save({
-            stationToken,
-            senderMomoNumber: momoNumber,
-            amountSent: amountToSend,
-            paystackReference: pendingReference,
-            status: 'completed',
-          })
+          // Only save if we haven't already saved this reference
+          if (savedRef.current !== pendingReference) {
+            savedRef.current = pendingReference
+            await save({
+              stationToken,
+              senderMomoNumber: momoNumber,
+              amountSent: amountToSend,
+              paystackReference: pendingReference,
+              status: 'completed',
+            })
+          }
           setPaidAmount(amountToSend)
           setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
           setFlowStep('success')
@@ -122,7 +129,6 @@ export default function ReconciliationPage() {
           setFlowStep('idle')
           setPendingReference('')
         }
-        // any other status (pending, pay_offline, etc.) — keep polling
       } catch (_e) {
         // silent — keep polling
       }
@@ -131,7 +137,7 @@ export default function ReconciliationPage() {
     return () => stopPolling()
   }, [pendingReference])
 
-  // ── Deduction handlers ────────────────────────────────────────────────────
+  // Deduction handlers
   const handleAddDeduction = async () => {
     const amt = parseFloat(deductionAmount)
     if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return }
@@ -156,7 +162,7 @@ export default function ReconciliationPage() {
     setDeductions(prev => prev.filter(d => d.id !== id))
   }
 
-  // ── Step 1: Send charge request ──────────────────────────────────────────
+  // Step 1: initiate — NO save here, only start polling
   const handleSubmit = async () => {
     if (!momoNumber || momoNumber.length < 10) { toast.error('Enter a valid MoMo number'); return }
     if (!summary || amountToSend <= 0) { toast.error('No outstanding cash to send'); return }
@@ -171,7 +177,6 @@ export default function ReconciliationPage() {
         branchEmail: summary?.branchEmail || undefined,
       })
 
-      // Paystack needs OTP — show the input field
       if (res.status === 'send_otp') {
         setPendingReference(res.reference)
         setFlowStep('otp')
@@ -179,16 +184,9 @@ export default function ReconciliationPage() {
         return
       }
 
-      // No OTP needed — save as processing and start polling for confirmation
-      await save({
-        stationToken,
-        senderMomoNumber: momoNumber,
-        amountSent: amountToSend,
-        paystackReference: res.reference,
-        status: 'processing',
-      })
-      setPendingReference(res.reference) // triggers the polling useEffect
-      // flowStep stays 'loading' — spinner shown while waiting for phone approval
+      // Start polling — save will happen only when polling confirms completion
+      setPendingReference(res.reference)
+      // flowStep stays 'loading' while waiting for phone approval
 
     } catch (e: any) {
       toast.error(e?.message || 'Failed to initiate payment')
@@ -196,7 +194,7 @@ export default function ReconciliationPage() {
     }
   }
 
-  // ── Step 2: Submit OTP (only shown when needed) ──────────────────────────
+  // Step 2: OTP submit — saves once on confirmation, then polling is blocked by savedRef
   const handleSubmitOtp = async () => {
     if (!otp.trim()) { toast.error('Enter the OTP'); return }
 
@@ -205,32 +203,26 @@ export default function ReconciliationPage() {
       const res = await submitOtpAction({ reference: pendingReference, otp: otp.trim() })
 
       if (res.status === 'success') {
-        // Paystack confirmed immediately after OTP
         stopPolling()
-        await save({
-          stationToken,
-          senderMomoNumber: momoNumber,
-          amountSent: amountToSend,
-          paystackReference: pendingReference,
-          status: 'completed',
-        })
+        if (savedRef.current !== pendingReference) {
+          savedRef.current = pendingReference
+          await save({
+            stationToken,
+            senderMomoNumber: momoNumber,
+            amountSent: amountToSend,
+            paystackReference: pendingReference,
+            status: 'completed',
+          })
+        }
         setPaidAmount(amountToSend)
         setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
         setFlowStep('success')
         toast.success('Payment confirmed!')
       } else if (res.status === 'pay_offline') {
-        // Save as processing and let polling finish it
-        await save({
-          stationToken,
-          senderMomoNumber: momoNumber,
-          amountSent: amountToSend,
-          paystackReference: pendingReference,
-          status: 'processing',
-        })
-        setFlowStep('loading') // polling already running via useEffect
+        // Let polling handle the save
+        setFlowStep('loading')
         toast.info('Check your phone to approve the payment')
       } else {
-        // OTP not accepted — ask again
         toast.error(res.displayText || 'OTP not accepted, please try again')
         setOtp('')
         setFlowStep('otp')
@@ -245,7 +237,7 @@ export default function ReconciliationPage() {
     <WashStationLayout title='Cash Reconciliation'>
       <div className='space-y-6'>
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div className='flex items-center justify-between'>
           <div>
             <h2 className='text-xl font-bold text-foreground'>Cash Reconciliation</h2>
@@ -259,7 +251,7 @@ export default function ReconciliationPage() {
           </Link>
         </div>
 
-        {/* ── Summary cards ── */}
+        {/* Summary cards */}
         <div className='grid grid-cols-3 gap-4'>
           <Card className='p-5'>
             <p className='text-xs text-muted-foreground mb-1'>Today's Orders</p>
@@ -279,7 +271,7 @@ export default function ReconciliationPage() {
           </Card>
         </div>
 
-        {/* ── Today's orders table ── */}
+        {/* Today's orders table */}
         <Card>
           <CardHeader className='pb-3'>
             <CardTitle className='text-base flex items-center gap-2'>
@@ -302,36 +294,26 @@ export default function ReconciliationPage() {
                 <table className='w-full text-sm'>
                   <thead>
                     <tr className='border-b border-border bg-muted/40'>
-                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Order Number</th>
-                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Customer</th>
-                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Service</th>
-                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Amount</th>
-                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Status</th>
-                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Time</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground'>Order Number</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground'>Customer</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground'>Service</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground'>Amount</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground'>Status</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground'>Time</th>
                     </tr>
                   </thead>
                   <tbody>
                     {todayOrders.map((order: any) => (
-                      <tr key={order._id} className='border-b border-border last:border-0 hover:bg-muted/20 transition-colors'>
+                      <tr key={order._id} className='border-b border-border last:border-0 hover:bg-muted/20'>
+                        <td className='px-4 py-3 font-mono font-semibold text-primary'>{order.orderNumber}</td>
                         <td className='px-4 py-3'>
-                          <span className='font-mono font-semibold text-sm text-primary'>{order.orderNumber}</span>
-                        </td>
-                        <td className='px-4 py-3'>
-                          <p className='font-medium text-foreground'>{order.customerName || '—'}</p>
+                          <p className='font-medium'>{order.customerName || '—'}</p>
                           <p className='text-xs text-muted-foreground'>{order.customerPhoneNumber || ''}</p>
                         </td>
-                        <td className='px-4 py-3 text-muted-foreground text-sm whitespace-nowrap'>
-                          {order.serviceType || '—'}
-                        </td>
-                        <td className='px-4 py-3'>
-                          <span className='font-bold text-foreground'>₵{(order.finalPrice ?? 0).toFixed(2)}</span>
-                        </td>
-                        <td className='px-4 py-3'>
-                          <StatusBadge status={order.paymentStatus} />
-                        </td>
-                        <td className='px-4 py-3 text-muted-foreground text-sm whitespace-nowrap'>
-                          {format(new Date(order.createdAt), 'h:mm a')}
-                        </td>
+                        <td className='px-4 py-3 text-muted-foreground'>{order.serviceType || '—'}</td>
+                        <td className='px-4 py-3 font-bold'>₵{(order.finalPrice ?? 0).toFixed(2)}</td>
+                        <td className='px-4 py-3'><StatusBadge status={order.paymentStatus} /></td>
+                        <td className='px-4 py-3 text-muted-foreground'>{format(new Date(order.createdAt), 'h:mm a')}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -347,7 +329,7 @@ export default function ReconciliationPage() {
           </CardContent>
         </Card>
 
-        {/* ── Waiting for phone approval ── */}
+        {/* Waiting for phone approval */}
         {flowStep === 'loading' && polling && (
           <Card className='border-blue-200 bg-blue-50/50 dark:bg-blue-950/10'>
             <CardContent className='flex items-center gap-4 py-6'>
@@ -355,15 +337,15 @@ export default function ReconciliationPage() {
               <div>
                 <p className='font-semibold text-blue-800 dark:text-blue-300 text-lg'>Waiting for approval…</p>
                 <p className='text-sm text-blue-700 dark:text-blue-400'>
-                  A payment request of <span className='font-bold'>₵{amountToSend.toFixed(2)}</span> was sent to <span className='font-mono font-semibold'>{momoNumber}</span>. Approve it on your phone.
+                  A request of <span className='font-bold'>₵{amountToSend.toFixed(2)}</span> was sent to <span className='font-mono font-semibold'>{momoNumber}</span>. Approve it on your phone.
                 </p>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* ── OTP step — shown only when Paystack requests it ── */}
-        {flowStep === 'otp' || flowStep === 'submitting' ? (
+        {/* OTP step */}
+        {(flowStep === 'otp' || flowStep === 'submitting') && (
           <Card className='border-blue-200 bg-blue-50/50 dark:bg-blue-950/10'>
             <CardContent className='pt-6 space-y-4'>
               <div className='flex items-center gap-3'>
@@ -373,53 +355,36 @@ export default function ReconciliationPage() {
                 <div>
                   <p className='font-semibold text-blue-800 dark:text-blue-300 text-lg'>OTP Required</p>
                   <p className='text-sm text-blue-700 dark:text-blue-400'>
-                    An OTP was sent to <span className='font-mono font-semibold'>{momoNumber}</span>. Enter it below.
+                    Enter the OTP sent to <span className='font-mono font-semibold'>{momoNumber}</span>.
                   </p>
                 </div>
               </div>
-              <div>
-                <Label className='text-sm mb-1.5 block'>One-Time Password (OTP)</Label>
-                <Input
-                  type='number'
-                  inputMode='numeric'
-                  placeholder='Enter OTP'
-                  value={otp}
-                  onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
-                  className='h-12 text-center text-xl tracking-widest font-mono'
-                  disabled={flowStep === 'submitting'}
-                  autoFocus
-                />
-              </div>
+              <Input
+                type='number'
+                inputMode='numeric'
+                placeholder='Enter OTP'
+                value={otp}
+                onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
+                className='h-12 text-center text-xl tracking-widest font-mono'
+                disabled={flowStep === 'submitting'}
+                autoFocus
+              />
               <div className='flex gap-3'>
-                <Button
-                  variant='outline'
-                  className='flex-1'
-                  onClick={() => { stopPolling(); setFlowStep('idle'); setOtp(''); setPendingReference('') }}
-                  disabled={flowStep === 'submitting'}
-                >
+                <Button variant='outline' className='flex-1' onClick={() => { stopPolling(); setFlowStep('idle'); setOtp(''); setPendingReference('') }} disabled={flowStep === 'submitting'}>
                   Cancel
                 </Button>
-                <Button
-                  className='flex-1 gap-2'
-                  onClick={handleSubmitOtp}
-                  disabled={!otp.trim() || flowStep === 'submitting'}
-                >
-                  {flowStep === 'submitting' ? (
-                    <><Loader2 className='w-4 h-4 animate-spin' /> Verifying…</>
-                  ) : (
-                    <>Submit OTP <ArrowRight className='w-4 h-4' /></>
-                  )}
+                <Button className='flex-1 gap-2' onClick={handleSubmitOtp} disabled={!otp.trim() || flowStep === 'submitting'}>
+                  {flowStep === 'submitting' ? <><Loader2 className='w-4 h-4 animate-spin' /> Verifying…</> : <>Submit OTP <ArrowRight className='w-4 h-4' /></>}
                 </Button>
               </div>
             </CardContent>
           </Card>
-        ) : null}
+        )}
 
-        {/* ── Bottom section — hidden during OTP, loading and success ── */}
+        {/* Send form + deductions */}
         {summary && flowStep !== 'success' && flowStep !== 'otp' && flowStep !== 'submitting' && flowStep !== 'loading' && (
           <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
 
-            {/* Cash deductions */}
             {effectiveOutstanding > 0 && (
               <Card>
                 <CardHeader className='pb-3'>
@@ -430,8 +395,7 @@ export default function ReconciliationPage() {
                     </CardTitle>
                     {!showDeductionForm && (
                       <Button variant='outline' size='sm' className='gap-1.5' onClick={() => setShowDeductionForm(true)}>
-                        <Plus className='w-3.5 h-3.5' />
-                        Add
+                        <Plus className='w-3.5 h-3.5' /> Add
                       </Button>
                     )}
                   </div>
@@ -440,11 +404,11 @@ export default function ReconciliationPage() {
                   {deductions.length > 0 && (
                     <div className='space-y-2'>
                       {deductions.map(d => (
-                        <div key={d.id} className='flex items-center justify-between p-3 rounded-lg bg-orange-50/50 dark:bg-orange-950/10 border border-orange-200 dark:border-orange-800 text-sm'>
-                          <p className='font-medium text-foreground'>{d.reason}</p>
+                        <div key={d.id} className='flex items-center justify-between p-3 rounded-lg bg-orange-50/50 dark:bg-orange-950/10 border border-orange-200 text-sm'>
+                          <p className='font-medium'>{d.reason}</p>
                           <div className='flex items-center gap-2'>
                             <span className='font-bold text-orange-600'>- ₵{d.amount.toFixed(2)}</span>
-                            <button onClick={() => handleRemoveDeduction(d.id)} className='text-muted-foreground hover:text-red-500 transition-colors'>
+                            <button onClick={() => handleRemoveDeduction(d.id)} className='text-muted-foreground hover:text-red-500'>
                               <Trash2 className='w-3.5 h-3.5' />
                             </button>
                           </div>
@@ -470,11 +434,9 @@ export default function ReconciliationPage() {
                       </div>
                       <div className='flex gap-2'>
                         <Button size='sm' onClick={handleAddDeduction} disabled={savingDeduction} className='flex-1'>
-                          {savingDeduction ? <Loader2 className='w-3.5 h-3.5 animate-spin' /> : 'Save Deduction'}
+                          {savingDeduction ? <Loader2 className='w-3.5 h-3.5 animate-spin' /> : 'Save'}
                         </Button>
-                        <Button size='sm' variant='ghost' onClick={() => { setShowDeductionForm(false); setDeductionAmount(''); setDeductionReason('') }}>
-                          Cancel
-                        </Button>
+                        <Button size='sm' variant='ghost' onClick={() => { setShowDeductionForm(false); setDeductionAmount(''); setDeductionReason('') }}>Cancel</Button>
                       </div>
                     </div>
                   )}
@@ -485,7 +447,6 @@ export default function ReconciliationPage() {
               </Card>
             )}
 
-            {/* Send via MoMo */}
             {amountToSend > 0 && (
               <Card>
                 <CardHeader className='pb-3'>
@@ -511,7 +472,6 @@ export default function ReconciliationPage() {
                       <span className='text-red-600 text-base'>₵{amountToSend.toFixed(2)}</span>
                     </div>
                   </div>
-
                   <div>
                     <Label className='text-sm mb-1.5 block'>Your MoMo Number</Label>
                     <Input
@@ -524,12 +484,7 @@ export default function ReconciliationPage() {
                       className='h-10'
                     />
                   </div>
-
-                  <Button
-                    className='w-full gap-2'
-                    onClick={handleSubmit}
-                    disabled={!momoNumber || momoNumber.length < 10}
-                  >
+                  <Button className='w-full gap-2' onClick={handleSubmit} disabled={!momoNumber || momoNumber.length < 10}>
                     <Smartphone className='w-4 h-4' />
                     Send ₵{amountToSend.toFixed(2)} via MoMo
                     <ArrowRight className='w-4 h-4' />
@@ -538,7 +493,6 @@ export default function ReconciliationPage() {
               </Card>
             )}
 
-            {/* Already settled */}
             {amountToSend === 0 && (
               <Card className='border-green-200 bg-green-50/50 dark:bg-green-950/10'>
                 <CardContent className='flex items-center gap-3 py-6'>
@@ -550,11 +504,10 @@ export default function ReconciliationPage() {
                 </CardContent>
               </Card>
             )}
-
           </div>
         )}
 
-        {/* ── Success screen ── */}
+        {/* Success */}
         {flowStep === 'success' && result && (
           <Card className='border-green-200 bg-green-50/50 dark:bg-green-950/10'>
             <CardContent className='pt-6 space-y-4'>
@@ -564,7 +517,7 @@ export default function ReconciliationPage() {
                 </div>
                 <div>
                   <p className='font-semibold text-green-800 dark:text-green-300 text-lg'>Payment Confirmed!</p>
-                  <p className='text-sm text-green-700 dark:text-green-400'>MoMo payment confirmed by Paystack.</p>
+                  <p className='text-sm text-green-700 dark:text-green-400'>MoMo payment confirmed.</p>
                 </div>
               </div>
               <div className='text-sm bg-white/60 dark:bg-black/20 rounded-lg p-3 space-y-1.5'>
