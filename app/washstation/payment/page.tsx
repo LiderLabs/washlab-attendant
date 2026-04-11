@@ -1,27 +1,27 @@
 'use client';
 
-import { useState, Suspense, useEffect, useRef } from 'react';
+import { useState, Suspense, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { WashStationLayout } from "@/components/washstation/WashStationLayout";
 import { useStationSession } from "@/hooks/useStationSession"
 import { useAttendantSession } from "@/hooks/use-attendant-session";
 import { useStationOrder } from "@/hooks/useStationOrders";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "@devlider001/washlab-backend/api";
 import { Id } from "@devlider001/washlab-backend/dataModel";
 import { ActionVerification } from "@/components/washstation/ActionVerification";
 import {
   Banknote, Smartphone, CreditCard,
   ArrowRight, ArrowLeft, Clock, CheckCircle2, Loader2, ShieldCheck,
+  AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 
 
 type PaymentMethodType = "cash" | "mobile_money" | "card";
-type Stage = "idle" | "verification" | "paystack" | "finalizing";
+type Stage = "idle" | "verification" | "paystack" | "finalizing" | "recovering";
 
-// ─── Paystack fee config ──────────────────────────────────────────────────────
 const PAYSTACK_FEE_RATE = 0.02;
 
 function calcPaystackCharge(orderAmount: number): { chargeAmount: number; fee: number } {
@@ -29,26 +29,14 @@ function calcPaystackCharge(orderAmount: number): { chargeAmount: number; fee: n
   const fee = parseFloat((chargeAmount - orderAmount).toFixed(2));
   return { chargeAmount, fee };
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
-// ✅ Load Paystack v1 inline script dynamically.
 function usePaystackScript() {
   const [loaded, setLoaded] = useState(false);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
-
-    if ((window as any).PaystackPop) {
-      setLoaded(true);
-      return;
-    }
-
+    if ((window as any).PaystackPop) { setLoaded(true); return; }
     const existing = document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]');
-    if (existing) {
-      existing.addEventListener("load", () => setLoaded(true));
-      return;
-    }
-
+    if (existing) { existing.addEventListener("load", () => setLoaded(true)); return; }
     const script = document.createElement("script");
     script.src = "https://js.paystack.co/v1/inline.js";
     script.async = true;
@@ -56,7 +44,6 @@ function usePaystackScript() {
     script.onerror = () => console.error("Failed to load Paystack script");
     document.body.appendChild(script);
   }, []);
-
   return loaded;
 }
 
@@ -65,41 +52,44 @@ function PaymentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const { stationToken, isSessionValid } = useStationSession()
+  const { stationToken, isSessionValid } = useStationSession();
   const { attendantId: loggedInAttendantId } = useAttendantSession();
   const paystackLoaded = usePaystackScript();
 
-  const createPayment = useMutation((api as any).payments.create);
-  const initiatePayment = useMutation((api as any).payments.initiate);
-  const finalizePaymentSafe = useMutation((api as any).payments.finalizePaymentSafe);
+  const createPayment        = useMutation((api as any).payments.create);
+  const initiatePayment      = useMutation((api as any).payments.initiate);
+  const finalizePaymentSafe  = useMutation((api as any).payments.finalizePaymentSafe);
   const saveGatewayReference = useMutation((api as any).payments.saveGatewayReference);
+  const resetToPending       = useMutation((api as any).payments.resetToPending);
+  const verifyAndRecoverPayment = useAction((api as any).paymentsRecovery.verifyAndRecoverPayment);
 
-  // ✅ Use resetToPending instead of fail on Paystack popup close.
-  // This keeps the payment record alive (just resets status to "pending") so
-  // finalizePaymentSafe can always find it on the next attempt.
-  // "fail" is now reserved for real gateway errors, not attendant cancels.
-  const resetToPending = useMutation((api as any).payments.resetToPending);
-
-  // Track the current in-flight payment ID so onClose can reset it.
-  const currentPaymentId = useRef<any>(null);
+  const currentPaymentId   = useRef<any>(null);
+  const hasAutoRecovered   = useRef(false);
+  const isPaying           = useRef(false);
+  const paystackHandlerRef = useRef<any>(null);
+  const pendingVerificationId = useRef<Id<"biometricVerifications"> | null>(null);
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>("mobile_money");
   const [showVerification, setShowVerification] = useState(false);
-  const [mobileView, setMobileView] = useState<"summary" | "payment">("summary");
+  const [mobileView, setMobileView]   = useState<"summary" | "payment">("summary");
+  const [stage, setStage]             = useState<Stage>("idle");
+  const [paystackRef, setPaystackRef] = useState<string | null>(null);
 
-  const [stage, setStage] = useState<Stage>("idle");
   const isProcessing = stage !== "idle";
 
-  const [paystackRef, setPaystackRef] = useState<string | null>(null);
-  const pendingVerificationId = useRef<Id<"biometricVerifications"> | null>(null);
-  const paystackHandlerRef = useRef<any>(null);
-  const isPaying = useRef(false);
+  const [voucherCode, setVoucherCode]     = useState("");
+  const [voucherResult, setVoucherResult] = useState<null | {
+    valid: boolean;
+    discountAmount?: number;
+    finalPrice?: number;
+    voucher?: { code: string; name?: string; discountType: string; discountValue: number };
+  }>(null);
 
-  const [voucherCode, setVoucherCode] = useState("");
-  const [voucherResult, setVoucherResult] = useState<null | { valid: boolean; discountAmount?: number; finalPrice?: number; voucher?: { code: string; name?: string; discountType: string; discountValue: number } }>(null);
-  const applyVoucherMutation = useMutation((api as any).vouchers.applyToOrder);
+  const applyVoucherMutation  = useMutation((api as any).vouchers.applyToOrder);
+  const redeemLoyaltyMutation = useMutation((api as any).loyalty.redeemPointsForAttendant);
+
   const orderIdParam = searchParams?.get("orderId");
-  const returnTo = searchParams?.get("return");
+  const returnTo     = searchParams?.get("return");
 
   const { order, isLoading: isLoadingOrder } = useStationOrder(
     stationToken,
@@ -116,37 +106,101 @@ function PaymentContent() {
     (api as any).loyalty.getPointsForAttendant,
     order?.customerId && stationToken ? { customerId: order.customerId, stationToken } : "skip"
   );
-  const loyaltyPoints = customerLoyaltyPoints?.points ?? 0;
+
+  // Polls the payment record — drives the recovery banner and auto-recovery
+  const savedPaymentStatus = useQuery(
+    (api as any).paymentsRecovery.getPaymentStatusForOrder,
+    order && order.paymentStatus !== "paid" ? { orderId: order._id } : "skip"
+  );
+
+  const loyaltyPoints    = customerLoyaltyPoints?.points ?? 0;
   const hasLoyaltyReward = loyaltyPoints >= 10;
   const [useLoyalty, setUseLoyalty] = useState(false);
-  const redeemLoyaltyMutation = useMutation((api as any).loyalty.redeemPointsForAttendant);
 
   const voucherValidation = useQuery(
     (api as any).vouchers.validate,
-    voucherCode.length >= 6 && order ? { code: voucherCode.toUpperCase(), orderTotal: order.totalPrice ?? 1, branchId: order.branchId } : "skip"
+    voucherCode.length >= 6 && order
+      ? { code: voucherCode.toUpperCase(), orderTotal: order.totalPrice ?? 1, branchId: order.branchId }
+      : "skip"
   );
 
-  const deliveryFee = order?.deliveryFee || 0;
-  const basePrice = order?.basePrice || 0;
-  const subtotal = basePrice + deliveryFee;
-  const baseTotalDue = order?.finalPrice != null ? order.finalPrice : (order?.totalPrice ?? (subtotal > 0 ? subtotal : 0));
+  const deliveryFee           = order?.deliveryFee || 0;
+  const basePrice             = order?.basePrice || 0;
+  const subtotal              = basePrice + deliveryFee;
+  const baseTotalDue          = order?.finalPrice != null ? order.finalPrice : (order?.totalPrice ?? (subtotal > 0 ? subtotal : 0));
   const hasPreAppliedDiscount = order?.finalPrice != null && order?.totalPrice != null && order.finalPrice < order.totalPrice;
-  const totalDue = (voucherResult?.valid && voucherResult?.finalPrice !== undefined) ? voucherResult.finalPrice : baseTotalDue;
-  const loyaltyDiscount = useLoyalty && hasLoyaltyReward ? baseTotalDue : 0;
-  const totalDueWithLoyalty = useLoyalty && hasLoyaltyReward ? 0 : totalDue;
-  const isFreeWash = (voucherResult?.valid && totalDue === 0) || (useLoyalty && hasLoyaltyReward) || (hasPreAppliedDiscount && baseTotalDue === 0);
+  const totalDue              = (voucherResult?.valid && voucherResult?.finalPrice !== undefined) ? voucherResult.finalPrice : baseTotalDue;
+  const totalDueWithLoyalty   = useLoyalty && hasLoyaltyReward ? 0 : totalDue;
+  const isFreeWash            = (voucherResult?.valid && totalDue === 0) || (useLoyalty && hasLoyaltyReward) || (hasPreAppliedDiscount && baseTotalDue === 0);
 
   const effectivePaymentMethod: PaymentMethodType = paymentMethod;
-
-  // ─── Paystack fee calculation ─────────────────────────────────────────────
   const isPaystackMethod = effectivePaymentMethod !== "cash";
+
   const { chargeAmount: paystackChargeAmount, fee: paystackFee } = isPaystackMethod
     ? calcPaystackCharge(totalDueWithLoyalty)
     : { chargeAmount: totalDueWithLoyalty, fee: 0 };
-  const customerFacingAmount = isPaystackMethod ? paystackChargeAmount : totalDue;
-  // ─────────────────────────────────────────────────────────────────────────
 
-  // ─── Step 1: Attendant clicks "Verify & Pay" ─────────────────────────────
+  const customerFacingAmount = isPaystackMethod ? paystackChargeAmount : totalDue;
+
+  // ─── Recovery ────────────────────────────────────────────────────────────────
+  // Called automatically on load (if stuck) and manually via the banner button.
+
+  const runRecovery = useCallback(async (gatewayReference?: string | null) => {
+    if (!order || stage === "recovering") return;
+    setStage("recovering");
+    try {
+      const result = await verifyAndRecoverPayment({
+        orderId: order._id,
+        ...(gatewayReference ? { gatewayReference } : {}),
+      });
+
+      if (result.recovered) {
+        toast.success(
+          `Payment recovered! ${
+            result.method === "mobile_money" ? "Mobile Money" :
+            result.method === "card" ? "Card" : "Cash"
+          } — ₵${result.amount?.toFixed(2)}`
+        );
+        router.push(
+          `/washstation/order-complete?orderId=${order._id}&paymentMethod=${result.method}&amountPaid=${result.amount}&changeDue=0`
+        );
+      } else if (result.alreadyPaid) {
+        toast.info("Payment was already recorded.");
+        router.push(`/washstation/orders/${order._id}`);
+      } else if (result.noReference) {
+        toast.warning("No payment reference found — the customer may not have reached Paystack yet.");
+        setStage("idle");
+      } else {
+        toast.error(result.error ?? "Payment not confirmed by Paystack.");
+        setStage("idle");
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Recovery check failed. Please try again.");
+      setStage("idle");
+    }
+  }, [order, stage, verifyAndRecoverPayment, router]);
+
+  // Auto-recover once on page load if payment is stuck with a saved Paystack ref
+  useEffect(() => {
+    if (
+      !order ||
+      hasAutoRecovered.current ||
+      order.paymentStatus === "paid" ||
+      !savedPaymentStatus ||
+      stage !== "idle"
+    ) return;
+
+    const isStuck = savedPaymentStatus.status === "processing" && savedPaymentStatus.hasGatewayRef;
+    if (isStuck) {
+      hasAutoRecovered.current = true;
+      toast.loading("Checking payment with Paystack…", { id: "auto-recover" });
+      runRecovery(savedPaymentStatus.gatewayReference).then(() => {
+        toast.dismiss("auto-recover");
+      });
+    }
+  }, [order, savedPaymentStatus, stage, runRecovery]);
+
+  // ─── Step 1: Attendant clicks "Verify & Pay" ─────────────────────────────────
 
   const handleCompletePayment = () => {
     if (!order) { toast.error("Order not found"); return; }
@@ -159,13 +213,15 @@ function PaymentContent() {
     setShowVerification(true);
   };
 
-  // ─── Step 2: Verification passed ─────────────────────────────────────────
+  // ─── Step 2: Verification passed ─────────────────────────────────────────────
 
   const handleVerificationSuccess = async (
     attendantId: Id<"attendants">,
     verificationId: Id<"biometricVerifications">
   ) => {
     setShowVerification(false);
+
+    // Loyalty free wash
     if (useLoyalty && hasLoyaltyReward && order) {
       setStage("finalizing");
       try {
@@ -178,7 +234,8 @@ function PaymentContent() {
       }
       return;
     }
-    // Pre-applied loyalty (customer redeemed online) — finalPrice already 0, just finalize
+
+    // Pre-applied discount free wash (no voucher code entered)
     if (isFreeWash && hasPreAppliedDiscount && !voucherCode && !voucherResult?.valid) {
       setStage("finalizing");
       try {
@@ -192,10 +249,12 @@ function PaymentContent() {
       }
       return;
     }
+
+    // Voucher free wash
     if (isFreeWash) { await handleConfirmVoucher(verificationId); return; }
     if (!order) { toast.error("Order not found"); setStage("idle"); return; }
 
-    // Apply non-free-wash voucher to record usage in voucherUsages
+    // Partial voucher discount — record it first (non-blocking)
     if (voucherResult?.valid && voucherResult.voucher?.discountType !== "free_wash") {
       try {
         await applyVoucherMutation({ voucherCode: voucherCode.trim().toUpperCase(), orderId: order._id });
@@ -205,16 +264,11 @@ function PaymentContent() {
     }
 
     try {
-      // ✅ create() now reuses the existing pending/processing record on retry
-      // (resetting it to pending) instead of soft-deleting and recreating.
-      // This means finalizePaymentSafe will always find the record.
       const paymentId = await createPayment({
         orderId: order._id,
         amount: totalDue,
         paymentMethod: effectivePaymentMethod,
       });
-
-      // Store payment ID so onClose can reset it back to pending if cancelled.
       currentPaymentId.current = paymentId;
 
       if (effectivePaymentMethod !== "cash") {
@@ -224,9 +278,7 @@ function PaymentContent() {
         return;
       }
 
-      // Cash: finalize immediately
       finalizePayment({ verificationId, gatewayTransactionId: null, confirmedPaymentMethod: "cash" });
-
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to start payment");
       currentPaymentId.current = null;
@@ -234,7 +286,8 @@ function PaymentContent() {
     }
   };
 
-  // --- Voucher logic ----------------------------------------------------------
+  // ─── Voucher helpers ──────────────────────────────────────────────────────────
+
   const handleApplyVoucher = () => {
     if (!voucherCode.trim() || !order) return;
     if (voucherValidation === undefined) { toast.info("Checking voucher..."); return; }
@@ -251,7 +304,7 @@ function PaymentContent() {
     if (!order || !voucherResult?.valid) return;
     setStage("finalizing");
     try {
-      if (order.paymentStatus !== 'paid') {
+      if (order.paymentStatus !== "paid") {
         await applyVoucherMutation({ voucherCode: voucherCode.trim().toUpperCase(), orderId: order._id });
       }
       toast.success("Voucher applied! Order marked as paid.");
@@ -262,16 +315,18 @@ function PaymentContent() {
     }
   };
 
+  // ─── Step 3: Open Paystack popup ─────────────────────────────────────────────
+  // CRITICAL: saveGatewayReference is now AWAITED before opening the popup.
+  // Previously it was fire-and-forget — if it failed, recovery had no ref to
+  // verify against, so stuck payments could never be recovered automatically.
 
-  // ─── Step 3: Open Paystack popup (v1 API) ────────────────────────────────
-
-  const openPaystack = (
+  const openPaystack = async (
     method: "card" | "mobile_money",
     verificationId: Id<"biometricVerifications">,
     paymentId?: any
   ) => {
     if (!order || !paystackLoaded) return;
-    // Force-clear any stale handler from a previous attempt
+
     if (paystackHandlerRef.current) {
       try { clearTimeout(paystackHandlerRef.current._timeoutId); } catch {}
       paystackHandlerRef.current = null;
@@ -280,16 +335,22 @@ function PaymentContent() {
 
     const ref = `washlab_${order._id}_${Date.now()}`;
     setPaystackRef(ref);
-    // Save reference to DB immediately so webhook can match it even if frontend dies
+
+    // ✅ AWAIT this — the ref MUST be saved before the popup opens so that
+    // if the network drops after the customer pays, recovery can find this ref.
     if (paymentId) {
-      saveGatewayReference({ paymentId, gatewayReference: ref }).catch((e) =>
-        console.warn("Failed to save gateway ref:", e)
-      );
+      try {
+        await saveGatewayReference({ paymentId, gatewayReference: ref });
+      } catch (e) {
+        // Non-fatal: log and continue. Recovery may be harder without the ref
+        // but payment can still succeed normally.
+        console.warn("[Payment] Failed to save gateway ref — recovery may not work if network drops:", e);
+      }
     }
 
-    const channels = method === "card" ? ["card"] : ["mobile_money"];
-    const rawPhone = order.customer?.phoneNumber || order.customerPhoneNumber || "";
-    const cleanPhone = rawPhone.replace(/[\s\-]/g, "").replace(/^\+233/, "0").replace(/^233/, "0");
+    const channels    = method === "card" ? ["card"] : ["mobile_money"];
+    const rawPhone    = order.customer?.phoneNumber || order.customerPhoneNumber || "";
+    const cleanPhone  = rawPhone.replace(/[\s\-]/g, "").replace(/^\+233/, "0").replace(/^233/, "0");
     const customerPhone = cleanPhone.startsWith("0") ? cleanPhone : "0" + cleanPhone;
 
     setStage("paystack");
@@ -298,7 +359,7 @@ function PaymentContent() {
     let handler: any;
     try {
       handler = (window as any).PaystackPop.setup({
-        key: process.env.NEXT_PUBLIC_PAYSTACK_KEY || "pk_test_0bcc36edcd86cbe2439fc3274f5e6b6e501c4730",
+        key: process.env.NEXT_PUBLIC_PAYSTACK_KEY,
         email: order.customer?.email || order.customerEmail || "customer@washlab.com",
         amount: Math.round(paystackChargeAmount * 100),
         currency: "GHS",
@@ -308,14 +369,15 @@ function PaymentContent() {
 
         callback: function (response: any) {
           paystackHandlerRef.current = null;
-          const paystackChannel = response?.channel ?? response?.authorization?.channel ?? "";
-          let resolvedMethod: "cash" | "card" | "mobile_money" = method as any;
-          if (paystackChannel === "mobile_money") resolvedMethod = "mobile_money";
-          else if (paystackChannel === "card") resolvedMethod = "card";
-          else if (paystackChannel === "bank" || paystackChannel === "bank_transfer") resolvedMethod = "card";
-          toast.success(`${resolvedMethod === "card" ? "Card" : "Mobile Money"} payment authorised`);
 
-          // Payment succeeded — clear the tracked ID (no reset needed).
+          // Map Paystack channel → our payment method
+          const paystackChannel  = response?.channel ?? response?.authorization?.channel ?? "";
+          let resolvedMethod: "cash" | "card" | "mobile_money" = method as any;
+          if (paystackChannel === "mobile_money")                          resolvedMethod = "mobile_money";
+          else if (paystackChannel === "card")                             resolvedMethod = "card";
+          else if (paystackChannel === "bank" || paystackChannel === "bank_transfer") resolvedMethod = "card";
+
+          toast.success(`${resolvedMethod === "card" ? "Card" : "Mobile Money"} payment authorised`);
           currentPaymentId.current = null;
 
           finalizePayment({
@@ -332,11 +394,6 @@ function PaymentContent() {
           setStage("idle");
           isPaying.current = false;
 
-          // ✅ Reset the payment back to "pending" so the record stays alive.
-          // On retry, createPayment will find this pending record and reuse it,
-          // and finalizePaymentSafe will still be able to find and complete it.
-          // This replaces the old "fail → soft-delete → recreate" approach that
-          // caused "Payment record not found" errors.
           if (currentPaymentId.current) {
             resetToPending({ paymentId: currentPaymentId.current }).catch((e) => {
               console.warn("Failed to reset payment to pending on close:", e);
@@ -358,7 +415,6 @@ function PaymentContent() {
     paystackHandlerRef.current = handler;
     handler.openIframe();
 
-    // Safety net: if iframe never fires callback/onClose after 3 min, reset
     const paystackTimeout = setTimeout(() => {
       if (paystackHandlerRef.current) {
         paystackHandlerRef.current = null;
@@ -366,13 +422,10 @@ function PaymentContent() {
         setPaystackRef(null);
         setStage("idle");
         isPaying.current = false;
-
-        // ✅ Also reset on timeout — same logic as onClose.
         if (currentPaymentId.current) {
           resetToPending({ paymentId: currentPaymentId.current }).catch(() => {});
           currentPaymentId.current = null;
         }
-
         toast.error("Payment timed out. Please try again.");
       }
     }, 3 * 60 * 1000);
@@ -380,7 +433,7 @@ function PaymentContent() {
     paystackHandlerRef.current._timeoutId = paystackTimeout;
   };
 
-  // ─── Step 4: Finalize payment on backend ─────────────────────────────────
+  // ─── Step 4: Finalize payment on backend ─────────────────────────────────────
 
   const finalizePayment = async ({
     verificationId,
@@ -429,26 +482,21 @@ function PaymentContent() {
       setStage("idle");
       isPaying.current = false;
       pendingVerificationId.current = null;
-      // Don't clear currentPaymentId here — the record is still pending/processing
-      // and can be retried. The attendant can click "Verify & Pay" again.
     }
   };
 
-  // ─── Verification cancelled ───────────────────────────────────────────────
+  // ─── Verification cancelled ───────────────────────────────────────────────────
 
   const handleVerificationCancel = () => {
     setShowVerification(false);
     pendingVerificationId.current = null;
     setStage("idle");
     isPaying.current = false;
-    // ✅ If verification is cancelled before Paystack even opens, clear the
-    // tracked payment ID. The payment record stays as "pending" in the DB —
-    // createPayment will reuse it on the next attempt without resetting.
     currentPaymentId.current = null;
     toast.info("Verification cancelled. Payment not processed.");
   };
 
-  // ─── Navigation ──────────────────────────────────────────────────────────
+  // ─── Navigation ──────────────────────────────────────────────────────────────
 
   const handleCancel = () => {
     if (isProcessing) return;
@@ -474,13 +522,14 @@ function PaymentContent() {
   };
 
   const stageLabel: Record<Stage, string | null> = {
-    idle: null,
+    idle:         null,
     verification: "Waiting for attendant verification…",
-    paystack: "Waiting for customer payment…",
-    finalizing: "Finalizing payment…",
+    paystack:     "Waiting for customer payment…",
+    finalizing:   "Finalizing payment…",
+    recovering:   "Checking payment with Paystack…",
   };
 
-  // ─── Loading / error states ───────────────────────────────────────────────
+  // ─── Loading / error states ───────────────────────────────────────────────────
 
   if (!isSessionValid || isLoadingOrder) {
     return (
@@ -523,7 +572,39 @@ function PaymentContent() {
     );
   }
 
-  // ─── Panels ───────────────────────────────────────────────────────────────
+  // Recovery banner — shown when a stuck processing payment with a saved ref is detected
+  const showRecoveryBanner =
+    stage === "idle" &&
+    !!savedPaymentStatus &&
+    savedPaymentStatus.status === "processing" &&
+    savedPaymentStatus.hasGatewayRef;
+
+  const RecoveryBanner = () => (
+    <div className="mx-4 sm:mx-6 mt-3 flex items-start gap-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Payment may have succeeded</p>
+        <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+          The customer may have paid but the order wasn't updated. Click to verify with Paystack.
+        </p>
+        {savedPaymentStatus?.gatewayReference && (
+          <p className="text-[10px] font-mono text-amber-500 mt-1 truncate">
+            Ref: {savedPaymentStatus.gatewayReference}
+          </p>
+        )}
+      </div>
+      <button
+        onClick={() => runRecovery(savedPaymentStatus?.gatewayReference)}
+        disabled={stage === "recovering"}
+        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold disabled:opacity-50 transition-colors"
+      >
+        <RefreshCw className={`w-3 h-3 ${stage === "recovering" ? "animate-spin" : ""}`} />
+        {stage === "recovering" ? "Checking…" : "Check"}
+      </button>
+    </div>
+  );
+
+  // ─── Panels ───────────────────────────────────────────────────────────────────
 
   const OrderSummaryPanel = () => (
     <div className="flex flex-col h-full p-4 sm:p-6">
@@ -566,12 +647,13 @@ function PaymentContent() {
             <span className="text-foreground">₵{deliveryFee.toFixed(2)}</span>
           </div>
         )}
-
         {hasPreAppliedDiscount && (
           <div className="flex justify-between text-sm text-green-600">
             <span className="font-medium">
               {(order as any)?.voucherCode ? "Voucher Applied" : "Loyalty Redeemed"}
-              {(order as any)?.voucherCode ? <span className="ml-1 text-xs bg-green-100 px-1 rounded">{(order as any).voucherCode}</span> : <span className="ml-1 text-xs bg-green-100 px-1 rounded">🎁 1 free wash</span>}
+              {(order as any)?.voucherCode
+                ? <span className="ml-1 text-xs bg-green-100 px-1 rounded">{(order as any).voucherCode}</span>
+                : <span className="ml-1 text-xs bg-green-100 px-1 rounded">🎁 1 free wash</span>}
             </span>
             <span>-₵{((order?.totalPrice ?? 0) - (order?.finalPrice ?? 0)).toFixed(2)}</span>
           </div>
@@ -624,9 +706,14 @@ function PaymentContent() {
             <div className="flex items-center justify-between p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
               <div>
                 <p className="text-sm font-semibold text-green-700 dark:text-green-400">{voucherResult.voucher?.code}</p>
-                <p className="text-xs text-muted-foreground">-{voucherResult.discountAmount?.toFixed(2)} discount</p>
+                <p className="text-xs text-muted-foreground">-₵{voucherResult.discountAmount?.toFixed(2)} discount</p>
               </div>
-              <button onClick={() => { setVoucherResult(null); setVoucherCode(""); }} className="text-muted-foreground hover:text-foreground text-xs underline">Remove</button>
+              <button
+                onClick={() => { setVoucherResult(null); setVoucherCode(""); }}
+                className="text-muted-foreground hover:text-foreground text-xs underline"
+              >
+                Remove
+              </button>
             </div>
           ) : (
             <div className="flex gap-2">
@@ -643,7 +730,13 @@ function PaymentContent() {
                   </option>
                 ))}
               </select>
-              <button onClick={handleApplyVoucher} disabled={!voucherCode.trim() || isProcessing} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40">Apply</button>
+              <button
+                onClick={handleApplyVoucher}
+                disabled={!voucherCode.trim() || isProcessing}
+                className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40"
+              >
+                Apply
+              </button>
             </div>
           )}
         </div>
@@ -655,9 +748,7 @@ function PaymentContent() {
               ₵{customerFacingAmount.toFixed(2)}
             </span>
             {isPaystackMethod && (
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                incl. 2% processing fee
-              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">incl. 2% processing fee</p>
             )}
           </div>
         </div>
@@ -687,9 +778,7 @@ function PaymentContent() {
         <span className="text-sm text-muted-foreground">Order #{order.orderNumber}</span>
         <div className="text-right">
           <span className="text-lg font-bold text-primary">₵{customerFacingAmount.toFixed(2)}</span>
-          {isPaystackMethod && (
-            <p className="text-[10px] text-muted-foreground">incl. 2% fee</p>
-          )}
+          {isPaystackMethod && <p className="text-[10px] text-muted-foreground">incl. 2% fee</p>}
         </div>
       </div>
 
@@ -701,14 +790,24 @@ function PaymentContent() {
           <p className="text-sm font-bold text-purple-700 dark:text-purple-400 mb-1">
             {(order as any)?.voucherCode ? `🎫 Voucher Applied: ${(order as any).voucherCode}` : "🎁 Loyalty Discount Applied"}
           </p>
-          <p className="text-xs text-muted-foreground">Customer already redeemed a discount. Price reduced by ₵{((order?.totalPrice ?? 0) - (order?.finalPrice ?? 0)).toFixed(2)}. Proceed with payment of ₵{baseTotalDue.toFixed(2)}.</p>
+          <p className="text-xs text-muted-foreground">
+            Customer already redeemed a discount. Price reduced by ₵{((order?.totalPrice ?? 0) - (order?.finalPrice ?? 0)).toFixed(2)}.
+            Proceed with payment of ₵{baseTotalDue.toFixed(2)}.
+          </p>
         </div>
       )}
+
       {isFreeWash && (
         <div className="mb-5 p-5 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-center">
-          <p className="text-lg font-bold text-green-700 dark:text-green-400 mb-1">{hasPreAppliedDiscount && !voucherCode ? "🎁 Loyalty Free Wash!" : "Free Wash Applied!"}</p>
+          <p className="text-lg font-bold text-green-700 dark:text-green-400 mb-1">
+            {hasPreAppliedDiscount && !voucherCode ? "🎁 Loyalty Free Wash!" : "Free Wash Applied!"}
+          </p>
           <p className="text-sm text-muted-foreground mb-4">No payment required. Click below to complete the order.</p>
-          <button onClick={() => { setStage("verification"); setShowVerification(true); }} disabled={isProcessing} className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+          <button
+            onClick={() => { setStage("verification"); setShowVerification(true); }}
+            disabled={isProcessing}
+            className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+          >
             {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             Complete Order (Free)
           </button>
@@ -748,7 +847,8 @@ function PaymentContent() {
 
         {/* Cash */}
         <button
-          onClick={() => setPaymentMethod("cash")}
+          onClick={() => !isProcessing && setPaymentMethod("cash")}
+          disabled={isProcessing}
           className={`p-3 sm:p-5 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${paymentMethod === "cash" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
         >
           <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center bg-muted">
@@ -821,12 +921,11 @@ function PaymentContent() {
         >
           Cancel
         </Button>
-
         <Button
           onClick={handleCompletePayment}
           disabled={isProcessing}
           className={`flex-1 h-12 sm:h-14 rounded-xl text-sm sm:text-base font-semibold transition-all ${
-            isProcessing || effectivePaymentMethod === "cash"
+            isProcessing
               ? "bg-muted text-muted-foreground cursor-not-allowed"
               : "bg-primary text-primary-foreground"
           }`}
@@ -837,6 +936,7 @@ function PaymentContent() {
               {stage === "verification" && "Awaiting Verification…"}
               {stage === "paystack"     && "Awaiting Payment…"}
               {stage === "finalizing"   && "Finalizing…"}
+              {stage === "recovering"   && "Checking Paystack…"}
             </>
           ) : (
             <>
@@ -852,7 +952,6 @@ function PaymentContent() {
   return (
     <WashStationLayout title="Payment">
       <div className="flex flex-col h-full min-h-0">
-
         <div className="px-4 sm:px-6 pt-3 pb-1 flex-shrink-0">
           <button
             onClick={handleBackNavigation}
@@ -863,6 +962,8 @@ function PaymentContent() {
             Back
           </button>
         </div>
+
+        {showRecoveryBanner && <RecoveryBanner />}
 
         {/* Desktop: side-by-side */}
         <div className="hidden lg:flex flex-1 min-h-0 overflow-hidden">
