@@ -54,7 +54,6 @@ export default function ReconciliationPage() {
   const [paidAmount, setPaidAmount] = useState(0)
   const [polling, setPolling] = useState(false)
 
-  const [deductions, setDeductions] = useState<Deduction[]>([])
   const [deductionAmount, setDeductionAmount] = useState('')
   const [deductionReason, setDeductionReason] = useState('')
   const [savingDeduction, setSavingDeduction] = useState(false)
@@ -71,8 +70,10 @@ export default function ReconciliationPage() {
     (api as any).cashReconciliation.getTodayCashOrders,
     stationToken ? { stationToken } : 'skip'
   )
-
-  // Pull full history to calculate total outstanding across all days
+  const todayDeductionsFromDB = useQuery(
+    (api as any).cashReconciliation.getTodayCashDeductions,
+    stationToken ? { stationToken } : 'skip'
+  )
   const history = useQuery(
     (api as any).cashReconciliation.getReconciliationHistory,
     stationToken ? { stationToken, days: 90 } : 'skip'
@@ -84,18 +85,20 @@ export default function ReconciliationPage() {
   const save = useMutation((api as any).cashReconciliation.saveReconciliation)
   const saveDeduction = useMutation((api as any).cashReconciliation.saveCashDeduction)
 
+  const deductions: Deduction[] = (todayDeductionsFromDB ?? []).map((d: any) => ({
+    id: d._id,
+    amount: d.amount ?? 0,
+    reason: d.reason ?? '',
+  }))
   const totalDeductions = deductions.reduce((s, d) => s + d.amount, 0)
 
-  const todayCash      = summary?.totalCash    ?? 0
-  const todaySent      = summary?.todaySent     ?? 0
-  const todayDeducted  = summary?.todayDeducted ?? 0
+  const todayCash      = summary?.totalCash ?? 0
+  const todaySent      = summary?.todaySent ?? 0
+  const todayDeducted  = deductions.reduce((s, d) => s + d.amount, 0)
   const rawOutstanding = Math.max(0, todayCash - todaySent - todayDeducted)
   const effectiveOutstanding = Math.max(0, rawOutstanding - paidAmount)
-  const amountToSend = effectiveOutstanding
 
-  // ── Total outstanding across all days from history ──────────────────────────
-  // Sum dayOutstanding for every day that isn't today (today is handled live above)
-  // and add today's effectiveOutstanding on top.
+  // ── Total outstanding across all days ──────────────────────────────────────
   const { totalAllTimeOutstanding, oldestUnpaidDate, newestUnpaidDate } = (() => {
     if (!history) return { totalAllTimeOutstanding: null, oldestUnpaidDate: null, newestUnpaidDate: null }
 
@@ -103,51 +106,46 @@ export default function ReconciliationPage() {
     const unpaidDays = (history as any[]).filter(
       (d: any) => d.date !== todayStr && (d.dayOutstanding ?? 0) > 0
     )
-
     const historicalOutstanding = unpaidDays.reduce(
       (s: number, d: any) => s + (d.dayOutstanding ?? 0), 0
     )
     const grandTotal = historicalOutstanding + effectiveOutstanding
-
-    // Date range label for the outstanding card
     const dates = unpaidDays.map((d: any) => d.date).sort()
-    const oldest = dates[0] ?? null
-    const newest = dates[dates.length - 1] ?? null
-
     return {
       totalAllTimeOutstanding: grandTotal,
-      oldestUnpaidDate: oldest,
-      newestUnpaidDate: newest,
+      oldestUnpaidDate: dates[0] ?? null,
+      newestUnpaidDate: dates[dates.length - 1] ?? null,
     }
   })()
 
+  // ── The amount to send: total grand outstanding (historical + today) ────────
+  const amountToSend = totalAllTimeOutstanding !== null && totalAllTimeOutstanding > 0
+    ? totalAllTimeOutstanding
+    : effectiveOutstanding
+
+  const historicalDebt = totalAllTimeOutstanding !== null
+    ? Math.max(0, totalAllTimeOutstanding - effectiveOutstanding)
+    : 0
+
+  const hasHistoricalDebt = historicalDebt > 0
+  const hasAnyOutstanding = amountToSend > 0
+
   const stopPolling = () => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current)
-      pollingRef.current = null
-    }
+    if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
     setPolling(false)
   }
 
   useEffect(() => {
     if (!pendingReference || flowStep === 'success') return
-
     setPolling(true)
     pollingRef.current = setInterval(async () => {
       try {
         const res = await verify({ reference: pendingReference })
-
         if (res.status === 'completed') {
           stopPolling()
           if (savedRef.current !== pendingReference) {
             savedRef.current = pendingReference
-            await save({
-              stationToken,
-              senderMomoNumber: momoNumber,
-              amountSent: amountToSend,
-              paystackReference: pendingReference,
-              status: 'completed',
-            })
+            await save({ stationToken, senderMomoNumber: momoNumber, amountSent: amountToSend, paystackReference: pendingReference, status: 'completed' })
           }
           setPaidAmount(amountToSend)
           setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
@@ -159,11 +157,8 @@ export default function ReconciliationPage() {
           setFlowStep('idle')
           setPendingReference('')
         }
-      } catch (_e) {
-        // silent — keep polling
-      }
+      } catch (_e) { /* keep polling */ }
     }, 5000)
-
     return () => stopPolling()
   }, [pendingReference])
 
@@ -175,7 +170,6 @@ export default function ReconciliationPage() {
     setSavingDeduction(true)
     try {
       await saveDeduction({ stationToken, amount: amt, reason: deductionReason.trim() })
-      setDeductions(prev => [...prev, { id: crypto.randomUUID(), amount: amt, reason: deductionReason.trim() }])
       setDeductionAmount('')
       setDeductionReason('')
       setShowDeductionForm(false)
@@ -187,14 +181,9 @@ export default function ReconciliationPage() {
     }
   }
 
-  const handleRemoveDeduction = (id: string) => {
-    setDeductions(prev => prev.filter(d => d.id !== id))
-  }
-
   const handleSubmit = async () => {
     if (!momoNumber || momoNumber.length < 10) { toast.error('Enter a valid MoMo number'); return }
     if (!summary || amountToSend <= 0) { toast.error('No outstanding cash to send'); return }
-
     setFlowStep('loading')
     try {
       const res = await initiate({
@@ -204,14 +193,12 @@ export default function ReconciliationPage() {
         attendantId: activeAttendance?.attendant?._id,
         branchEmail: summary?.branchEmail || undefined,
       })
-
       if (res.status === 'send_otp') {
         setPendingReference(res.reference)
         setFlowStep('otp')
         toast.info('OTP sent to phone — enter it below')
         return
       }
-
       setPendingReference(res.reference)
     } catch (e: any) {
       toast.error(e?.message || 'Failed to initiate payment')
@@ -221,22 +208,14 @@ export default function ReconciliationPage() {
 
   const handleSubmitOtp = async () => {
     if (!otp.trim()) { toast.error('Enter the OTP'); return }
-
     setFlowStep('submitting')
     try {
       const res = await submitOtpAction({ reference: pendingReference, otp: otp.trim() })
-
       if (res.status === 'success') {
         stopPolling()
         if (savedRef.current !== pendingReference) {
           savedRef.current = pendingReference
-          await save({
-            stationToken,
-            senderMomoNumber: momoNumber,
-            amountSent: amountToSend,
-            paystackReference: pendingReference,
-            status: 'completed',
-          })
+          await save({ stationToken, senderMomoNumber: momoNumber, amountSent: amountToSend, paystackReference: pendingReference, status: 'completed' })
         }
         setPaidAmount(amountToSend)
         setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
@@ -256,16 +235,11 @@ export default function ReconciliationPage() {
     }
   }
 
-  // Build a date range label like "14 Apr – 11 Apr" for the total outstanding card
   const outstandingDateLabel = (() => {
     if (!oldestUnpaidDate && !newestUnpaidDate) return null
-    if (oldestUnpaidDate === newestUnpaidDate) {
-      return `Since ${format(parseISO(oldestUnpaidDate!), 'd MMM')}`
-    }
+    if (oldestUnpaidDate === newestUnpaidDate) return `Since ${format(parseISO(oldestUnpaidDate!), 'd MMM')}`
     return `${format(parseISO(oldestUnpaidDate!), 'd MMM')} – ${format(parseISO(newestUnpaidDate!), 'd MMM')}`
   })()
-
-  const hasHistoricalDebt = totalAllTimeOutstanding !== null && totalAllTimeOutstanding > effectiveOutstanding
 
   return (
     <WashStationLayout title='Cash Reconciliation'>
@@ -287,30 +261,28 @@ export default function ReconciliationPage() {
 
         {/* Summary cards */}
         <div className={`grid gap-4 ${hasHistoricalDebt ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}`}>
-          {/* Orders today */}
           <Card className='p-5'>
             <p className='text-xs text-muted-foreground mb-1'>Today's Orders</p>
             <p className='text-3xl font-bold'>{summary === undefined ? '—' : summary.orderCount}</p>
           </Card>
 
-          {/* Cash collected today */}
           <Card className='p-5'>
             <p className='text-xs text-muted-foreground mb-1'>Cash Collected Today</p>
             <p className='text-3xl font-bold'>
-              {summary === undefined ? '—' : `₵${summary.totalCash.toFixed(2)}`}
+              {summary === undefined ? '—' : `₵${todayCash.toFixed(2)}`}
             </p>
           </Card>
 
-          {/* Today's outstanding */}
           <Card className={`p-5 ${effectiveOutstanding > 0 ? 'border-orange-200 bg-orange-50/50 dark:bg-orange-950/10' : 'border-green-200 bg-green-50/50 dark:bg-green-950/10'}`}>
             <p className='text-xs text-muted-foreground mb-1'>Today's Outstanding</p>
             <p className={`text-3xl font-bold ${effectiveOutstanding > 0 ? 'text-orange-600' : 'text-green-600'}`}>
               {summary === undefined ? '—' : `₵${effectiveOutstanding.toFixed(2)}`}
             </p>
-            <p className='text-[10px] text-muted-foreground mt-1'>{format(new Date(), 'd MMM yyyy')}</p>
+            {todayDeducted > 0 && (
+              <p className='text-[10px] text-orange-500 mt-1'>−₵{todayDeducted.toFixed(2)} used at branch</p>
+            )}
           </Card>
 
-          {/* Total outstanding (all time) — only show if there's historical debt */}
           {hasHistoricalDebt && (
             <Card className='p-5 border-red-200 bg-red-50/50 dark:bg-red-950/10'>
               <div className='flex items-start justify-between gap-1'>
@@ -327,13 +299,13 @@ export default function ReconciliationPage() {
           )}
         </div>
 
-        {/* Historical debt alert — nudge to check history */}
+        {/* Historical debt alert */}
         {hasHistoricalDebt && (
           <Card className='border-red-200 bg-red-50/50 dark:bg-red-950/10'>
             <CardContent className='flex items-center gap-3 py-4'>
               <AlertCircle className='w-5 h-5 text-red-500 shrink-0' />
               <p className='text-sm text-red-700 dark:text-red-400 flex-1'>
-                You have <span className='font-bold'>₵{((totalAllTimeOutstanding ?? 0) - effectiveOutstanding).toFixed(2)}</span> in unsettled cash from previous days.
+                You have <span className='font-bold'>₵{historicalDebt.toFixed(2)}</span> in unsettled cash from previous days.
               </p>
               <Link href='/washstation/outstanding' className='shrink-0'>
                 <Button size='sm' variant='destructive'>View History</Button>
@@ -391,7 +363,7 @@ export default function ReconciliationPage() {
                   <tfoot>
                     <tr className='bg-muted/40 border-t border-border'>
                       <td colSpan={3} className='px-4 py-3 font-semibold text-sm'>Total ({todayOrders.length} orders)</td>
-                      <td colSpan={3} className='px-4 py-3 font-bold text-sm'>₵{summary.totalCash.toFixed(2)}</td>
+                      <td colSpan={3} className='px-4 py-3 font-bold text-sm'>₵{todayCash.toFixed(2)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -456,7 +428,8 @@ export default function ReconciliationPage() {
         {summary && flowStep !== 'success' && flowStep !== 'otp' && flowStep !== 'submitting' && flowStep !== 'loading' && (
           <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
 
-            {effectiveOutstanding > 0 && (
+            {/* Cash Used / Deductions */}
+            {(deductions.length > 0 || effectiveOutstanding > 0) && (
               <Card>
                 <CardHeader className='pb-3'>
                   <div className='flex items-center justify-between'>
@@ -464,7 +437,7 @@ export default function ReconciliationPage() {
                       <ShoppingCart className='w-4 h-4 text-orange-500' />
                       Cash Used
                     </CardTitle>
-                    {!showDeductionForm && (
+                    {!showDeductionForm && effectiveOutstanding > 0 && (
                       <Button variant='outline' size='sm' className='gap-1.5' onClick={() => setShowDeductionForm(true)}>
                         <Plus className='w-3.5 h-3.5' /> Add
                       </Button>
@@ -472,24 +445,27 @@ export default function ReconciliationPage() {
                   </div>
                 </CardHeader>
                 <CardContent className='space-y-3'>
-                  {deductions.length > 0 && (
+                  {todayDeductionsFromDB === undefined ? (
+                    <div className='flex justify-center py-4'>
+                      <Loader2 className='w-4 h-4 animate-spin text-muted-foreground' />
+                    </div>
+                  ) : deductions.length > 0 ? (
                     <div className='space-y-2'>
                       {deductions.map(d => (
                         <div key={d.id} className='flex items-center justify-between p-3 rounded-lg bg-orange-50/50 dark:bg-orange-950/10 border border-orange-200 text-sm'>
                           <p className='font-medium'>{d.reason}</p>
-                          <div className='flex items-center gap-2'>
-                            <span className='font-bold text-orange-600'>- ₵{d.amount.toFixed(2)}</span>
-                            <button onClick={() => handleRemoveDeduction(d.id)} className='text-muted-foreground hover:text-red-500'>
-                              <Trash2 className='w-3.5 h-3.5' />
-                            </button>
-                          </div>
+                          <span className='font-bold text-orange-600'>₵{d.amount.toFixed(2)}</span>
                         </div>
                       ))}
                       <div className='flex justify-between text-sm font-semibold pt-1 border-t border-border'>
-                        <span className='text-muted-foreground'>Total deductions</span>
-                        <span className='text-orange-600'>- ₵{totalDeductions.toFixed(2)}</span>
+                        <span className='text-muted-foreground'>Total used</span>
+                        <span className='text-orange-600'>₵{totalDeductions.toFixed(2)}</span>
                       </div>
                     </div>
+                  ) : (
+                    !showDeductionForm && (
+                      <p className='text-sm text-muted-foreground text-center py-4'>No cash used today</p>
+                    )
                   )}
                   {showDeductionForm && (
                     <div className='space-y-3 p-3 rounded-lg bg-muted/40 border border-border'>
@@ -511,14 +487,12 @@ export default function ReconciliationPage() {
                       </div>
                     </div>
                   )}
-                  {deductions.length === 0 && !showDeductionForm && (
-                    <p className='text-sm text-muted-foreground text-center py-4'>No deductions added</p>
-                  )}
                 </CardContent>
               </Card>
             )}
 
-            {amountToSend > 0 && (
+            {/* Send via MoMo — show whenever there's any outstanding (today OR historical) */}
+            {hasAnyOutstanding && (
               <Card>
                 <CardHeader className='pb-3'>
                   <CardTitle className='text-base flex items-center gap-2'>
@@ -528,18 +502,36 @@ export default function ReconciliationPage() {
                 </CardHeader>
                 <CardContent className='space-y-4'>
                   <div className='space-y-1.5 text-sm bg-muted/40 rounded-lg p-3'>
-                    <div className='flex justify-between'>
-                      <span className='text-muted-foreground'>Outstanding</span>
-                      <span className='font-medium'>₵{effectiveOutstanding.toFixed(2)}</span>
-                    </div>
-                    {totalDeductions > 0 && (
+                    {/* Today's breakdown */}
+                    {todayCash > 0 && (
                       <div className='flex justify-between'>
-                        <span className='text-muted-foreground'>Deductions</span>
-                        <span className='font-medium text-orange-600'>- ₵{totalDeductions.toFixed(2)}</span>
+                        <span className='text-muted-foreground'>Collected today</span>
+                        <span className='font-medium'>₵{todayCash.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {todayDeducted > 0 && (
+                      <div className='flex justify-between'>
+                        <span className='text-muted-foreground'>Used at branch</span>
+                        <span className='font-medium text-orange-600'>− ₵{todayDeducted.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {todaySent > 0 && (
+                      <div className='flex justify-between'>
+                        <span className='text-muted-foreground'>Already sent today</span>
+                        <span className='font-medium text-green-600'>− ₵{todaySent.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {/* Historical debt line */}
+                    {hasHistoricalDebt && (
+                      <div className='flex justify-between'>
+                        <span className='text-muted-foreground'>
+                          Previous days {outstandingDateLabel ? `(${outstandingDateLabel})` : ''}
+                        </span>
+                        <span className='font-medium text-red-600'>+ ₵{historicalDebt.toFixed(2)}</span>
                       </div>
                     )}
                     <div className='flex justify-between pt-1.5 border-t border-border font-semibold'>
-                      <span>Amount to send</span>
+                      <span>Total to send</span>
                       <span className='text-red-600 text-base'>₵{amountToSend.toFixed(2)}</span>
                     </div>
                   </div>
@@ -564,7 +556,8 @@ export default function ReconciliationPage() {
               </Card>
             )}
 
-            {amountToSend === 0 && (
+            {/* All settled — only show when truly nothing outstanding anywhere */}
+            {!hasAnyOutstanding && deductions.length === 0 && !hasHistoricalDebt && (
               <Card className='border-green-200 bg-green-50/50 dark:bg-green-950/10'>
                 <CardContent className='flex items-center gap-3 py-6'>
                   <CheckCircle2 className='w-8 h-8 text-green-600 shrink-0' />
@@ -608,10 +601,16 @@ export default function ReconciliationPage() {
                   <span className='text-muted-foreground'>Date</span>
                   <span>{format(new Date(), 'd MMM yyyy, h:mm a')}</span>
                 </div>
-                {deductions.length > 0 && (
+                {totalDeductions > 0 && (
                   <div className='flex justify-between'>
-                    <span className='text-muted-foreground'>Deductions</span>
-                    <span className='text-orange-600'>- ₵{totalDeductions.toFixed(2)}</span>
+                    <span className='text-muted-foreground'>Used at branch</span>
+                    <span className='text-orange-600'>₵{totalDeductions.toFixed(2)}</span>
+                  </div>
+                )}
+                {hasHistoricalDebt && (
+                  <div className='flex justify-between'>
+                    <span className='text-muted-foreground'>Includes previous days</span>
+                    <span className='text-red-600'>₵{historicalDebt.toFixed(2)}</span>
                   </div>
                 )}
               </div>
