@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   ArrowLeft, CheckCircle2, Clock, Loader2,
-  Download, AlertCircle,
+  Download, AlertCircle, Banknote,
 } from 'lucide-react'
 import Link from 'next/link'
 import { format, isToday, isYesterday, parseISO } from 'date-fns'
@@ -23,6 +23,7 @@ function StatusBadge({ status }: { status: string }) {
     processing: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
     pending:    'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
     failed:     'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+    paid:       'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
   }
   return (
     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${map[status] ?? 'bg-muted text-muted-foreground'}`}>
@@ -52,6 +53,67 @@ function downloadCSV(rows: (string | number | null | undefined)[][], filename: s
   toast.success('Exported')
 }
 
+// ─── Orders table — always visible, no toggle ────────────────────────────────
+
+function DayOrdersTable({ orders }: { orders: any[] }) {
+  if (!orders || orders.length === 0) return null
+
+  return (
+    <div className='mt-3'>
+      <div className='flex items-center gap-1.5 text-xs font-semibold text-muted-foreground mb-2'>
+        <Banknote className='w-3.5 h-3.5' />
+        {orders.length} order{orders.length !== 1 ? 's' : ''}
+      </div>
+
+      <div className='rounded-lg border border-border overflow-hidden'>
+        <table className='w-full text-xs'>
+          <thead>
+            <tr className='bg-muted/50 border-b border-border'>
+              <th className='text-left px-3 py-2 font-semibold text-muted-foreground'>Order</th>
+              <th className='text-left px-3 py-2 font-semibold text-muted-foreground'>Customer</th>
+              <th className='text-left px-3 py-2 font-semibold text-muted-foreground hidden sm:table-cell'>Service</th>
+              <th className='text-right px-3 py-2 font-semibold text-muted-foreground'>Amount</th>
+              <th className='text-right px-3 py-2 font-semibold text-muted-foreground'>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((order: any) => (
+              <tr key={order._id} className='border-b border-border last:border-0 hover:bg-muted/20'>
+                <td className='px-3 py-2 font-mono font-semibold text-primary'>{order.orderNumber}</td>
+                <td className='px-3 py-2'>
+                  <p className='font-medium'>{order.customerName || '—'}</p>
+                  {order.customerPhoneNumber && (
+                    <p className='text-muted-foreground'>{order.customerPhoneNumber}</p>
+                  )}
+                </td>
+                <td className='px-3 py-2 text-muted-foreground hidden sm:table-cell'>{order.serviceType || '—'}</td>
+                <td className='px-3 py-2 text-right font-bold'>₵{(order.finalPrice ?? 0).toFixed(2)}</td>
+                <td className='px-3 py-2 text-right text-muted-foreground'>
+                  {format(new Date(order.createdAt), 'h:mm a')}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className='bg-muted/40 border-t border-border'>
+              <td colSpan={2} className='px-3 py-2 font-semibold text-muted-foreground sm:hidden'>Total</td>
+              <td colSpan={3} className='px-3 py-2 font-semibold text-muted-foreground hidden sm:table-cell'>
+                Total ({orders.length} orders)
+              </td>
+              <td className='px-3 py-2 text-right font-bold'>
+                ₵{orders.reduce((s: number, o: any) => s + (o.finalPrice ?? 0), 0).toFixed(2)}
+              </td>
+              <td />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
 export default function OutstandingHistoryPage() {
   const { stationToken } = useStationSession()
 
@@ -75,60 +137,42 @@ export default function OutstandingHistoryPage() {
     return (history as any[]).filter(r => r.date >= fromDate && r.date <= toDate)
   }, [history, fromDate, toDate])
 
-  // Group by date.
-  // cashCollected and totalDeductions come from the backend enrichment and are
-  // day-level values — the same value is attached to every recon row for that day.
-  // So we take them from the FIRST recon only to avoid double-counting.
-  const grouped = useMemo(() => {
-    const map: Record<string, {
-      recons: any[]
-      cashCollected: number
-      totalDeductions: number
-    }> = {}
-
-    for (const r of filtered) {
-      if (!map[r.date]) {
-        map[r.date] = {
-          recons: [],
-          cashCollected:   r.cashCollected   ?? 0,
-          totalDeductions: r.totalDeductions ?? 0,
-        }
-      }
-      map[r.date].recons.push(r)
-    }
-
-    return Object.entries(map).sort((a, b) => b[0].localeCompare(a[0]))
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => b.date.localeCompare(a.date))
   }, [filtered])
 
-  // Range totals — use deduplicated day values
   const rangeTotals = useMemo(() => {
-    const sent = filtered
-      .filter((r: any) => r.status === 'completed')
-      .reduce((s: number, r: any) => s + (r.amountSent || 0), 0)
-    const collected = grouped.reduce((s, [, day]) => s + day.cashCollected,   0)
-    const deducted  = grouped.reduce((s, [, day]) => s + day.totalDeductions, 0)
-    return { sent, collected, deducted }
-  }, [filtered, grouped])
+    const collected      = filtered.reduce((s: number, r: any) => s + (r.cashCollected   ?? 0), 0)
+    const deducted       = filtered.reduce((s: number, r: any) => s + (r.totalDeductions ?? 0), 0)
+    const sent           = filtered.reduce((s: number, r: any) => s + (r.completedSent   ?? 0), 0)
+    const confirmedCount = filtered.filter((r: any) => r.summaryStatus === 'completed').length
+    return { collected, deducted, sent, confirmedCount }
+  }, [filtered])
 
   const handleExport = () => {
     if (filtered.length === 0) { toast.error('No records to export'); return }
     const rows: (string | number | null | undefined)[][] = [
-      ['Date', 'Status', 'Cash Collected (₵)', 'Deductions (₵)', 'Amount Sent (₵)', 'MoMo Number', 'Reference', 'Time'],
-      ...filtered.map((r: any) => [
-        r.date,
-        r.status,
-        (r.cashCollected   ?? 0).toFixed(2),
-        (r.totalDeductions ?? 0).toFixed(2),
-        (r.amountSent      ?? 0).toFixed(2),
-        r.senderMomoNumber || '',
-        r.paystackReference || '',
-        r.completedAt
-          ? format(new Date(r.completedAt), 'd MMM yyyy h:mm a')
-          : r.createdAt
-          ? format(new Date(r.createdAt),   'd MMM yyyy h:mm a')
-          : '',
-      ]),
+      ['Date', 'Order Number', 'Customer', 'Service', 'Amount (₵)', 'Time', 'Day Sent (₵)', 'Day Status'],
     ]
+    for (const day of sorted) {
+      const dayOrders: any[] = day.orders ?? []
+      if (dayOrders.length === 0) {
+        rows.push([day.date, '', '', '', '', '', (day.completedSent ?? 0).toFixed(2), day.summaryStatus ?? ''])
+      } else {
+        dayOrders.forEach((o: any, i: number) => {
+          rows.push([
+            day.date,
+            o.orderNumber,
+            o.customerName || '',
+            o.serviceType || '',
+            (o.finalPrice ?? 0).toFixed(2),
+            format(new Date(o.createdAt), 'd MMM yyyy h:mm a'),
+            i === 0 ? (day.completedSent ?? 0).toFixed(2) : '',
+            i === 0 ? (day.summaryStatus ?? '') : '',
+          ])
+        })
+      }
+    }
     downloadCSV(rows, `reconciliation-${fromDate}-to-${toDate}.csv`)
   }
 
@@ -168,7 +212,7 @@ export default function OutstandingHistoryPage() {
           </div>
         </Card>
 
-        {/* Summary — just two cards */}
+        {/* Summary cards */}
         <div className='grid grid-cols-2 gap-3'>
           <Card className='p-4'>
             <p className='text-xs text-muted-foreground mb-1'>Cash Collected</p>
@@ -181,7 +225,7 @@ export default function OutstandingHistoryPage() {
             <p className='text-xs text-muted-foreground mb-1'>Total Sent</p>
             <p className='text-xl font-bold text-green-600'>₵{rangeTotals.sent.toFixed(2)}</p>
             <p className='text-xs text-muted-foreground mt-1'>
-              {filtered.filter((r: any) => r.status === 'completed').length} confirmed payments
+              {rangeTotals.confirmedCount} confirmed {rangeTotals.confirmedCount === 1 ? 'day' : 'days'}
             </p>
           </Card>
         </div>
@@ -201,12 +245,12 @@ export default function OutstandingHistoryPage() {
           </Card>
         )}
 
-        {/* History */}
+        {/* History list */}
         {history === undefined ? (
           <div className='flex justify-center py-16'>
             <Loader2 className='w-6 h-6 animate-spin text-muted-foreground' />
           </div>
-        ) : grouped.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <Card>
             <CardContent className='flex flex-col items-center justify-center py-16 text-muted-foreground'>
               <p className='text-sm'>No records found for this date range</p>
@@ -214,32 +258,31 @@ export default function OutstandingHistoryPage() {
           </Card>
         ) : (
           <div className='space-y-4'>
-            {grouped.map(([dateStr, day]) => {
-              const { recons, cashCollected, totalDeductions } = day
+            {sorted.map((day: any) => {
+              const cashCollected   = day.cashCollected   ?? 0
+              const totalDeductions = day.totalDeductions ?? 0
+              const completedSent   = day.completedSent   ?? 0
+              const dayOutstanding  = day.dayOutstanding  ?? Math.max(0, cashCollected - completedSent - totalDeductions)
+              const recons: any[]   = day.recons ?? []
+              const orders: any[]   = day.orders ?? []
+              const summaryStatus   = day.summaryStatus
 
-              const daySent = recons
-                .filter((r: any) => r.status === 'completed')
-                .reduce((s: number, r: any) => s + (r.amountSent || 0), 0)
-
-              // Outstanding = collected − sent (completed only) − deductions
-              const dayOutstanding = Math.max(0, cashCollected - daySent - totalDeductions)
-              const allDone        = recons.every((r: any) => r.status === 'completed')
-              const hasProcessing  = recons.some((r: any) => r.status === 'processing' || r.status === 'pending')
+              const hasProcessing = recons.some(
+                (r: any) => r.status === 'processing' || r.status === 'pending'
+              )
 
               const borderClass =
-                allDone && dayOutstanding === 0 ? 'border-green-200' :
-                hasProcessing                   ? 'border-yellow-200' :
-                dayOutstanding > 0              ? 'border-red-200'    : 'border-border'
+                summaryStatus === 'completed'                ? 'border-green-200' :
+                hasProcessing || summaryStatus === 'partial' ? 'border-yellow-200' :
+                dayOutstanding > 0                           ? 'border-red-200'    : 'border-border'
 
               return (
-                <Card key={dateStr} className={borderClass}>
-
-                  {/* Day header */}
+                <Card key={day.date} className={borderClass}>
                   <CardHeader className='pb-2 pt-4 px-4'>
                     <div className='flex items-start justify-between flex-wrap gap-2'>
                       <div>
-                        <p className='font-semibold text-foreground'>{dayLabel(dateStr)}</p>
-                        <p className='text-xs text-muted-foreground'>{format(parseISO(dateStr), 'd MMMM yyyy')}</p>
+                        <p className='font-semibold text-foreground'>{dayLabel(day.date)}</p>
+                        <p className='text-xs text-muted-foreground'>{format(parseISO(day.date), 'd MMMM yyyy')}</p>
                       </div>
 
                       <div className='text-right space-y-1'>
@@ -253,18 +296,17 @@ export default function OutstandingHistoryPage() {
                             </span>
                           )}
                           <span className='text-muted-foreground'>
-                            Sent: <span className='font-semibold text-green-600'>₵{daySent.toFixed(2)}</span>
+                            Sent: <span className='font-semibold text-green-600'>₵{completedSent.toFixed(2)}</span>
                           </span>
                         </div>
 
-                        {/* Status pill */}
-                        {allDone && dayOutstanding === 0 ? (
+                        {summaryStatus === 'completed' ? (
                           <span className='inline-flex text-xs font-semibold text-green-600 bg-green-50 dark:bg-green-950/20 px-2 py-0.5 rounded-full border border-green-200'>
                             Settled
                           </span>
-                        ) : hasProcessing ? (
+                        ) : summaryStatus === 'partial' || hasProcessing ? (
                           <span className='inline-flex text-xs font-semibold text-yellow-600 bg-yellow-50 dark:bg-yellow-950/20 px-2 py-0.5 rounded-full border border-yellow-200'>
-                            Awaiting confirmation
+                            {hasProcessing ? 'Awaiting confirmation' : `₵${dayOutstanding.toFixed(2)} still outstanding`}
                           </span>
                         ) : dayOutstanding > 0 ? (
                           <span className='inline-flex text-xs font-semibold text-red-600 bg-red-50 dark:bg-red-950/20 px-2 py-0.5 rounded-full border border-red-200'>
@@ -275,49 +317,63 @@ export default function OutstandingHistoryPage() {
                     </div>
                   </CardHeader>
 
-                  {/* Individual recon rows — deductions removed from here, shown once in header above */}
-                  <CardContent className='px-4 pb-4 pt-0'>
-                    <div className='divide-y divide-border rounded-lg border border-border overflow-hidden'>
-                      {recons.map((recon: any) => (
-                        <div key={recon._id} className='flex items-center justify-between gap-3 px-3 py-3 bg-background'>
-                          <div className='flex items-center gap-3 min-w-0'>
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                              recon.status === 'completed'  ? 'bg-green-100 dark:bg-green-900/30' :
-                              recon.status === 'processing' ? 'bg-blue-100 dark:bg-blue-900/30'  :
-                              recon.status === 'failed'     ? 'bg-red-100 dark:bg-red-900/30'    :
-                              'bg-muted'
-                            }`}>
-                              {recon.status === 'completed'
-                                ? <CheckCircle2 className='w-4 h-4 text-green-600' />
-                                : <Clock className='w-4 h-4 text-blue-500' />
-                              }
-                            </div>
-                            <div className='min-w-0'>
-                              <p className='text-sm font-semibold'>₵{(recon.amountSent ?? 0).toFixed(2)} sent</p>
-                              <p className='text-xs text-muted-foreground font-mono'>{recon.senderMomoNumber || '—'}</p>
-                            </div>
-                          </div>
-                          <div className='flex items-center gap-3 shrink-0'>
-                            <StatusBadge status={recon.status} />
-                            <span className='text-xs text-muted-foreground'>
-                              {recon.completedAt
-                                ? format(new Date(recon.completedAt), 'h:mm a')
-                                : recon.createdAt
-                                ? format(new Date(recon.createdAt),   'h:mm a')
-                                : '—'
-                              }
-                            </span>
-                          </div>
+                  <CardContent className='px-4 pb-4 pt-0 space-y-3'>
+                    {/* Recon send rows */}
+                    {recons.length === 0 ? (
+                      <div className='flex items-center justify-between gap-2 px-3 py-3 rounded-lg border border-red-200 bg-red-50/50 dark:bg-red-950/10 text-sm'>
+                        <div className='flex items-center gap-2 text-red-600'>
+                          <AlertCircle className='w-4 h-4 shrink-0' />
+                          <span className='font-medium'>No payment sent for this day</span>
                         </div>
-                      ))}
-                    </div>
+                        <span className='text-muted-foreground text-xs'>
+                          {day.orderCount ?? 0} cash order{(day.orderCount ?? 0) !== 1 ? 's' : ''} · ₵{cashCollected.toFixed(2)} collected
+                        </span>
+                      </div>
+                    ) : (
+                      <div className='divide-y divide-border rounded-lg border border-border overflow-hidden'>
+                        {recons.map((recon: any) => (
+                          <div key={recon._id} className='flex items-center justify-between gap-3 px-3 py-3 bg-background'>
+                            <div className='flex items-center gap-3 min-w-0'>
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                                recon.status === 'completed'  ? 'bg-green-100 dark:bg-green-900/30' :
+                                recon.status === 'processing' ? 'bg-blue-100 dark:bg-blue-900/30'  :
+                                recon.status === 'failed'     ? 'bg-red-100 dark:bg-red-900/30'    :
+                                'bg-muted'
+                              }`}>
+                                {recon.status === 'completed'
+                                  ? <CheckCircle2 className='w-4 h-4 text-green-600' />
+                                  : <Clock className='w-4 h-4 text-blue-500' />
+                                }
+                              </div>
+                              <div className='min-w-0'>
+                                <p className='text-sm font-semibold'>₵{(recon.amountSent ?? 0).toFixed(2)} sent</p>
+                                <p className='text-xs text-muted-foreground font-mono'>{recon.senderMomoNumber || '—'}</p>
+                              </div>
+                            </div>
+                            <div className='flex items-center gap-3 shrink-0'>
+                              <StatusBadge status={recon.status} />
+                              <span className='text-xs text-muted-foreground'>
+                                {recon.completedAt
+                                  ? format(new Date(recon.completedAt), 'h:mm a')
+                                  : recon.createdAt
+                                  ? format(new Date(recon.createdAt),   'h:mm a')
+                                  : '—'
+                                }
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Orders table — always visible */}
+                    <DayOrdersTable orders={orders} />
                   </CardContent>
                 </Card>
               )
             })}
           </div>
         )}
-
       </div>
     </WashStationLayout>
   )
