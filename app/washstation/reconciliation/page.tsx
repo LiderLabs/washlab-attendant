@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
 import {
   Banknote, Loader2, ArrowRight, CheckCircle2,
-  ShoppingCart, Plus, Trash2, History, TrendingUp, Smartphone, KeyRound,
+  ShoppingCart, Plus, History, TrendingUp, Smartphone, KeyRound,
   AlertCircle,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -85,6 +85,7 @@ export default function ReconciliationPage() {
   const save = useMutation((api as any).cashReconciliation.saveReconciliation)
   const saveDeduction = useMutation((api as any).cashReconciliation.saveCashDeduction)
 
+  // Deductions come from DB so they survive refresh
   const deductions: Deduction[] = (todayDeductionsFromDB ?? []).map((d: any) => ({
     id: d._id,
     amount: d.amount ?? 0,
@@ -92,43 +93,47 @@ export default function ReconciliationPage() {
   }))
   const totalDeductions = deductions.reduce((s, d) => s + d.amount, 0)
 
-  const todayCash      = summary?.totalCash ?? 0
-  const todaySent      = summary?.todaySent ?? 0
-  const todayDeducted  = deductions.reduce((s, d) => s + d.amount, 0)
-  const rawOutstanding = Math.max(0, todayCash - todaySent - todayDeducted)
-  const effectiveOutstanding = Math.max(0, rawOutstanding - paidAmount)
+  const todayCash    = summary?.totalCash ?? 0
+  const todaySent    = summary?.todaySent ?? 0
+  const todayDeducted = totalDeductions
+
+  // Use summary.outstandingCash as single authoritative source for today
+  // paidAmount only offsets during in-flight payment before Convex reflects it
+  const serverOutstanding    = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
+  const effectiveOutstanding = Math.max(0, serverOutstanding - paidAmount)
+
+  // Reset paidAmount once server reflects the completed payment
+  useEffect(() => {
+    if (paidAmount > 0 && serverOutstanding === 0) setPaidAmount(0)
+  }, [serverOutstanding, paidAmount])
 
   // ── Total outstanding across all days ──────────────────────────────────────
-  const { totalAllTimeOutstanding, oldestUnpaidDate, newestUnpaidDate } = (() => {
-    if (!history) return { totalAllTimeOutstanding: null, oldestUnpaidDate: null, newestUnpaidDate: null }
+  // Use summary.totalEver* — computed server-side in one consistent DB read,
+  // no race conditions between separate queries.
+  const allTimeOutstanding = summary
+    ? Math.max(0, (summary.totalEverCollected ?? 0) - (summary.totalEverSent ?? 0) - (summary.totalEverDeducted ?? 0))
+    : null
 
+  // historicalDebt = everything outstanding that isn't today's
+  const historicalDebt    = allTimeOutstanding !== null ? Math.max(0, allTimeOutstanding - effectiveOutstanding) : 0
+  const hasHistoricalDebt = historicalDebt > 0
+
+  // Date label — still derive from history for display only (best effort)
+  const { oldestUnpaidDate, newestUnpaidDate } = (() => {
+    if (!history) return { oldestUnpaidDate: null, newestUnpaidDate: null }
     const todayStr = format(new Date(), 'yyyy-MM-dd')
-    const unpaidDays = (history as any[]).filter(
-      (d: any) => d.date !== todayStr && (d.dayOutstanding ?? 0) > 0
-    )
-    const historicalOutstanding = unpaidDays.reduce(
-      (s: number, d: any) => s + (d.dayOutstanding ?? 0), 0
-    )
-    const grandTotal = historicalOutstanding + effectiveOutstanding
-    const dates = unpaidDays.map((d: any) => d.date).sort()
-    return {
-      totalAllTimeOutstanding: grandTotal,
-      oldestUnpaidDate: dates[0] ?? null,
-      newestUnpaidDate: dates[dates.length - 1] ?? null,
-    }
+    const dates = (history as any[])
+      .filter((d: any) => d.date !== todayStr && (d.dayOutstanding ?? 0) > 0)
+      .map((d: any) => d.date)
+      .sort()
+    return { oldestUnpaidDate: dates[0] ?? null, newestUnpaidDate: dates[dates.length - 1] ?? null }
   })()
 
-  // ── The amount to send: total grand outstanding (historical + today) ────────
-  const amountToSend = totalAllTimeOutstanding !== null && totalAllTimeOutstanding > 0
-    ? totalAllTimeOutstanding
-    : effectiveOutstanding
-
-  const historicalDebt = totalAllTimeOutstanding !== null
-    ? Math.max(0, totalAllTimeOutstanding - effectiveOutstanding)
-    : 0
-
-  const hasHistoricalDebt = historicalDebt > 0
-  const hasAnyOutstanding = amountToSend > 0
+  const totalAllTimeOutstanding = allTimeOutstanding
+  // Amount to send is today's outstanding only — historical debt shows as info but
+  // each day's recon is recorded separately in the backend
+  const amountToSend     = effectiveOutstanding
+  const hasAnyOutstanding = amountToSend > 0 || historicalDebt > 0
 
   const stopPolling = () => {
     if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
@@ -166,7 +171,7 @@ export default function ReconciliationPage() {
     const amt = parseFloat(deductionAmount)
     if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return }
     if (!deductionReason.trim()) { toast.error('Enter a reason'); return }
-    if (amt > rawOutstanding) { toast.error('Deduction exceeds outstanding cash'); return }
+    if (amt > serverOutstanding) { toast.error('Deduction exceeds outstanding cash'); return }
     setSavingDeduction(true)
     try {
       await saveDeduction({ stationToken, amount: amt, reason: deductionReason.trim() })
@@ -491,8 +496,8 @@ export default function ReconciliationPage() {
               </Card>
             )}
 
-            {/* Send via MoMo — show whenever there's any outstanding (today OR historical) */}
-            {hasAnyOutstanding && (
+            {/* Send via MoMo */}
+            {amountToSend > 0 && (
               <Card>
                 <CardHeader className='pb-3'>
                   <CardTitle className='text-base flex items-center gap-2'>
@@ -502,7 +507,6 @@ export default function ReconciliationPage() {
                 </CardHeader>
                 <CardContent className='space-y-4'>
                   <div className='space-y-1.5 text-sm bg-muted/40 rounded-lg p-3'>
-                    {/* Today's breakdown */}
                     {todayCash > 0 && (
                       <div className='flex justify-between'>
                         <span className='text-muted-foreground'>Collected today</span>
@@ -521,17 +525,8 @@ export default function ReconciliationPage() {
                         <span className='font-medium text-green-600'>− ₵{todaySent.toFixed(2)}</span>
                       </div>
                     )}
-                    {/* Historical debt line */}
-                    {hasHistoricalDebt && (
-                      <div className='flex justify-between'>
-                        <span className='text-muted-foreground'>
-                          Previous days {outstandingDateLabel ? `(${outstandingDateLabel})` : ''}
-                        </span>
-                        <span className='font-medium text-red-600'>+ ₵{historicalDebt.toFixed(2)}</span>
-                      </div>
-                    )}
                     <div className='flex justify-between pt-1.5 border-t border-border font-semibold'>
-                      <span>Total to send</span>
+                      <span>Amount to send</span>
                       <span className='text-red-600 text-base'>₵{amountToSend.toFixed(2)}</span>
                     </div>
                   </div>
@@ -556,8 +551,8 @@ export default function ReconciliationPage() {
               </Card>
             )}
 
-            {/* All settled — only show when truly nothing outstanding anywhere */}
-            {!hasAnyOutstanding && deductions.length === 0 && !hasHistoricalDebt && (
+            {/* All settled */}
+            {!hasAnyOutstanding && deductions.length === 0 && (
               <Card className='border-green-200 bg-green-50/50 dark:bg-green-950/10'>
                 <CardContent className='flex items-center gap-3 py-6'>
                   <CheckCircle2 className='w-8 h-8 text-green-600 shrink-0' />
@@ -605,12 +600,6 @@ export default function ReconciliationPage() {
                   <div className='flex justify-between'>
                     <span className='text-muted-foreground'>Used at branch</span>
                     <span className='text-orange-600'>₵{totalDeductions.toFixed(2)}</span>
-                  </div>
-                )}
-                {hasHistoricalDebt && (
-                  <div className='flex justify-between'>
-                    <span className='text-muted-foreground'>Includes previous days</span>
-                    <span className='text-red-600'>₵{historicalDebt.toFixed(2)}</span>
                   </div>
                 )}
               </div>
