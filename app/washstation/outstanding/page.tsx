@@ -58,12 +58,16 @@ function DayCard({ day }: { day: any }) {
   const cashCollected   = day.cashCollected   ?? 0
   const totalDeductions = day.totalDeductions ?? 0
   const completedSent   = day.completedSent   ?? 0
+  // ── KEY FIX: dayOutstanding is authoritative from the backend ──────────────
+  // The backend calculates: max(0, cashCollected - completedSent - totalDeductions)
+  // We never override this locally so it always reflects the real DB state.
   const dayOutstanding  = day.dayOutstanding  ?? Math.max(0, cashCollected - completedSent - totalDeductions)
   const recons: any[]   = day.recons ?? []
   const orders: any[]   = day.orders ?? []
   const summaryStatus   = day.summaryStatus
   const hasProcessing   = recons.some((r: any) => r.status === 'processing' || r.status === 'pending')
 
+  // Highlight which specific orders are still unsettled (newest-first until we cover the outstanding amount)
   const unsettledOrderIds = useMemo(() => {
     if (dayOutstanding <= 0 || summaryStatus === 'completed') return new Set<string>()
     const sorted = [...orders].sort((a, b) => b.createdAt - a.createdAt)
@@ -79,7 +83,7 @@ function DayCard({ day }: { day: any }) {
 
   const isOutstanding = dayOutstanding > 0 && summaryStatus !== 'completed' && !hasProcessing
   const isAwaiting    = hasProcessing
-  const isSettled     = summaryStatus === 'completed'
+  const isSettled     = summaryStatus === 'completed' || dayOutstanding === 0
 
   const borderClass =
     isSettled     ? 'border-green-200' :
@@ -293,6 +297,9 @@ export default function OutstandingHistoryPage() {
 
   const sorted = useMemo(() => [...filtered].sort((a, b) => b.date.localeCompare(a.date)), [filtered])
 
+  // ── KEY FIX: use dayOutstanding from backend (not recalculated locally) ────
+  // This ensures the history page always agrees with what the backend says,
+  // even in edge cases like over-payment or date attribution mismatches.
   const rangeTotals = useMemo(() => {
     const collected   = filtered.reduce((s: number, r: any) => s + (r.cashCollected   ?? 0), 0)
     const deducted    = filtered.reduce((s: number, r: any) => s + (r.totalDeductions ?? 0), 0)
@@ -301,15 +308,22 @@ export default function OutstandingHistoryPage() {
     return { collected, deducted, sent, outstanding }
   }, [filtered])
 
+  // True total outstanding across ALL time (not just the filtered range)
+  // This is what the send box is based on — so history page and recon page agree
+  const totalAllTimeOutstanding = useMemo(() => {
+    if (!history) return 0
+    return (history as any[]).reduce((s: number, r: any) => s + (r.dayOutstanding ?? 0), 0)
+  }, [history])
+
   const handleExport = () => {
     if (filtered.length === 0) { toast.error('No records to export'); return }
     const rows: (string | number | null | undefined)[][] = [
-      ['Date', 'Order Number', 'Customer', 'Service', 'Amount (₵)', 'Time', 'Day Sent (₵)', 'Day Status'],
+      ['Date', 'Order Number', 'Customer', 'Service', 'Amount (₵)', 'Time', 'Day Sent (₵)', 'Day Outstanding (₵)', 'Day Status'],
     ]
     for (const day of sorted) {
       const dayOrders: any[] = day.orders ?? []
       if (dayOrders.length === 0) {
-        rows.push([day.date, '', '', '', '', '', (day.completedSent ?? 0).toFixed(2), day.summaryStatus ?? ''])
+        rows.push([day.date, '', '', '', '', '', (day.completedSent ?? 0).toFixed(2), (day.dayOutstanding ?? 0).toFixed(2), day.summaryStatus ?? ''])
       } else {
         dayOrders.forEach((o: any, i: number) => {
           rows.push([
@@ -320,6 +334,7 @@ export default function OutstandingHistoryPage() {
             (o.finalPrice ?? 0).toFixed(2),
             format(new Date(o.createdAt), 'd MMM yyyy h:mm a'),
             i === 0 ? (day.completedSent ?? 0).toFixed(2) : '',
+            i === 0 ? (day.dayOutstanding ?? 0).toFixed(2) : '',
             i === 0 ? (day.summaryStatus ?? '') : '',
           ])
         })
@@ -328,7 +343,6 @@ export default function OutstandingHistoryPage() {
     downloadCSV(rows, `reconciliation-${fromDate}-to-${toDate}.csv`)
   }
 
-  // How many stat boxes to show
   const statCount = 2 + (rangeTotals.deducted > 0 ? 1 : 0) + (rangeTotals.outstanding > 0 ? 1 : 0)
   const gridClass = statCount === 4 ? 'grid-cols-2 sm:grid-cols-4' :
                     statCount === 3 ? 'grid-cols-3' : 'grid-cols-2'
@@ -393,13 +407,14 @@ export default function OutstandingHistoryPage() {
           )}
         </div>
 
-        {/* Today outstanding alert */}
-        {summary && (summary.outstandingCash ?? 0) > 0 && (
+        {/* All-time outstanding alert — shows if there's anything unpaid across all days */}
+        {totalAllTimeOutstanding > 0 && (
           <Card className='border-red-200 bg-red-50/50 dark:bg-red-950/10'>
             <CardContent className='flex items-center gap-3 py-4'>
               <AlertCircle className='w-5 h-5 text-red-500 shrink-0' />
-              <p className='text-sm text-red-700 dark:text-red-400'>
-                You still have <span className='font-bold'>₵{(summary.outstandingCash ?? 0).toFixed(2)}</span> outstanding today that hasn't been sent.
+              <p className='text-sm text-red-700 dark:text-red-400 flex-1'>
+                Total unsettled cash across all days:{' '}
+                <span className='font-bold'>₵{totalAllTimeOutstanding.toFixed(2)}</span>
               </p>
               <Link href='/washstation/reconciliation' className='ml-auto shrink-0'>
                 <Button size='sm' variant='destructive'>Send Now</Button>

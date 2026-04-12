@@ -51,7 +51,7 @@ export default function ReconciliationPage() {
   const [otp, setOtp] = useState('')
   const [pendingReference, setPendingReference] = useState('')
   const [result, setResult] = useState<{ amount: number; momoNumber: string; reference: string } | null>(null)
-  const [paidAmount, setPaidAmount] = useState(0)
+  const [lastSentAmount, setLastSentAmount] = useState(0)
   const [polling, setPolling] = useState(false)
 
   const [deductionAmount, setDeductionAmount] = useState('')
@@ -93,32 +93,43 @@ export default function ReconciliationPage() {
   }))
   const totalDeductions = deductions.reduce((s, d) => s + d.amount, 0)
 
-  const todayCash    = summary?.totalCash ?? 0
-  const todaySent    = summary?.todaySent ?? 0
+  const todayCash     = summary?.totalCash ?? 0
+  const todaySent     = summary?.todaySent ?? 0
   const todayDeducted = totalDeductions
 
-  // Use summary.outstandingCash as single authoritative source for today
-  // paidAmount only offsets during in-flight payment before Convex reflects it
-  const serverOutstanding    = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
-  const effectiveOutstanding = Math.max(0, serverOutstanding - paidAmount)
+  // Today's outstanding from DB — authoritative
+  const todayOutstanding = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
 
-  // Reset paidAmount once server reflects the completed payment
-  useEffect(() => {
-    if (paidAmount > 0 && serverOutstanding === 0) setPaidAmount(0)
-  }, [serverOutstanding, paidAmount])
-
-  // ── Total outstanding across all days ──────────────────────────────────────
-  // Use summary.totalEver* — computed server-side in one consistent DB read,
-  // no race conditions between separate queries.
+  // Total all-time outstanding (today + all previous unpaid days)
   const allTimeOutstanding = summary
     ? Math.max(0, (summary.totalEverCollected ?? 0) - (summary.totalEverSent ?? 0) - (summary.totalEverDeducted ?? 0))
     : null
 
-  // historicalDebt = everything outstanding that isn't today's
-  const historicalDebt    = allTimeOutstanding !== null ? Math.max(0, allTimeOutstanding - effectiveOutstanding) : 0
+  // Historical debt = everything outstanding that isn't today's
+  const historicalDebt    = allTimeOutstanding !== null ? Math.max(0, allTimeOutstanding - todayOutstanding) : 0
   const hasHistoricalDebt = historicalDebt > 0
 
-  // Date label — still derive from history for display only (best effort)
+  // ── KEY FIX: amountToSend is ALWAYS the full all-time outstanding ──────────
+  // This means the send box appears whenever there's ANY unpaid cash,
+  // regardless of whether today looks "settled" due to date attribution issues.
+  // The payment is saved against the oldest unpaid date (see handleSubmit).
+  const amountToSend = allTimeOutstanding !== null ? allTimeOutstanding : todayOutstanding
+
+  // After a successful send, clear the local success state once the server
+  // reflects the new outstanding (i.e. allTimeOutstanding has dropped)
+  useEffect(() => {
+    if (flowStep === 'success' && lastSentAmount > 0) {
+      const newOutstanding = allTimeOutstanding ?? 0
+      // Server has caught up if outstanding dropped by roughly what we sent
+      if (newOutstanding <= (amountToSend - lastSentAmount) + 1) {
+        setFlowStep('idle')
+        setResult(null)
+        setLastSentAmount(0)
+      }
+    }
+  }, [allTimeOutstanding])
+
+  // Date label for historical debt
   const { oldestUnpaidDate, newestUnpaidDate } = (() => {
     if (!history) return { oldestUnpaidDate: null, newestUnpaidDate: null }
     const todayStr = format(new Date(), 'yyyy-MM-dd')
@@ -129,11 +140,21 @@ export default function ReconciliationPage() {
     return { oldestUnpaidDate: dates[0] ?? null, newestUnpaidDate: dates[dates.length - 1] ?? null }
   })()
 
+  // The oldest unpaid date — payments get attributed here first
+  const oldestUnpaidDateForSave = (() => {
+    if (!history) return null
+    const todayStr = format(new Date(), 'yyyy-MM-dd')
+    const unpaidDates = (history as any[])
+      .filter((d: any) => (d.dayOutstanding ?? 0) > 0)
+      .map((d: any) => d.date)
+      .sort() // ascending — oldest first
+    // If there are past unpaid dates, use the oldest; otherwise use today
+    const pastDates = unpaidDates.filter(d => d !== todayStr)
+    return pastDates[0] ?? todayStr
+  })()
+
   const totalAllTimeOutstanding = allTimeOutstanding
-  // Amount to send is today's outstanding only — historical debt shows as info but
-  // each day's recon is recorded separately in the backend
-  const amountToSend     = effectiveOutstanding
-  const hasAnyOutstanding = amountToSend > 0 || historicalDebt > 0
+  const hasAnyOutstanding = (allTimeOutstanding ?? 0) > 0
 
   const stopPolling = () => {
     if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
@@ -150,9 +171,17 @@ export default function ReconciliationPage() {
           stopPolling()
           if (savedRef.current !== pendingReference) {
             savedRef.current = pendingReference
-            await save({ stationToken, senderMomoNumber: momoNumber, amountSent: amountToSend, paystackReference: pendingReference, status: 'completed' })
+            await save({
+              stationToken,
+              senderMomoNumber: momoNumber,
+              amountSent: amountToSend,
+              paystackReference: pendingReference,
+              status: 'completed',
+              // Attribute to oldest unpaid date so debt clears correctly
+              date: oldestUnpaidDateForSave ?? undefined,
+            })
           }
-          setPaidAmount(amountToSend)
+          setLastSentAmount(amountToSend)
           setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
           setFlowStep('success')
           toast.success('Payment confirmed!')
@@ -171,7 +200,7 @@ export default function ReconciliationPage() {
     const amt = parseFloat(deductionAmount)
     if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return }
     if (!deductionReason.trim()) { toast.error('Enter a reason'); return }
-    if (amt > serverOutstanding) { toast.error('Deduction exceeds outstanding cash'); return }
+    if (amt > todayOutstanding) { toast.error('Deduction exceeds today\'s outstanding cash'); return }
     setSavingDeduction(true)
     try {
       await saveDeduction({ stationToken, amount: amt, reason: deductionReason.trim() })
@@ -220,9 +249,16 @@ export default function ReconciliationPage() {
         stopPolling()
         if (savedRef.current !== pendingReference) {
           savedRef.current = pendingReference
-          await save({ stationToken, senderMomoNumber: momoNumber, amountSent: amountToSend, paystackReference: pendingReference, status: 'completed' })
+          await save({
+            stationToken,
+            senderMomoNumber: momoNumber,
+            amountSent: amountToSend,
+            paystackReference: pendingReference,
+            status: 'completed',
+            date: oldestUnpaidDateForSave ?? undefined,
+          })
         }
-        setPaidAmount(amountToSend)
+        setLastSentAmount(amountToSend)
         setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
         setFlowStep('success')
         toast.success('Payment confirmed!')
@@ -278,10 +314,10 @@ export default function ReconciliationPage() {
             </p>
           </Card>
 
-          <Card className={`p-5 ${effectiveOutstanding > 0 ? 'border-orange-200 bg-orange-50/50 dark:bg-orange-950/10' : 'border-green-200 bg-green-50/50 dark:bg-green-950/10'}`}>
+          <Card className={`p-5 ${todayOutstanding > 0 ? 'border-orange-200 bg-orange-50/50 dark:bg-orange-950/10' : 'border-green-200 bg-green-50/50 dark:bg-green-950/10'}`}>
             <p className='text-xs text-muted-foreground mb-1'>Today's Outstanding</p>
-            <p className={`text-3xl font-bold ${effectiveOutstanding > 0 ? 'text-orange-600' : 'text-green-600'}`}>
-              {summary === undefined ? '—' : `₵${effectiveOutstanding.toFixed(2)}`}
+            <p className={`text-3xl font-bold ${todayOutstanding > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+              {summary === undefined ? '—' : `₵${todayOutstanding.toFixed(2)}`}
             </p>
             {todayDeducted > 0 && (
               <p className='text-[10px] text-orange-500 mt-1'>−₵{todayDeducted.toFixed(2)} used at branch</p>
@@ -430,11 +466,11 @@ export default function ReconciliationPage() {
         )}
 
         {/* Send form + deductions */}
-        {summary && flowStep !== 'success' && flowStep !== 'otp' && flowStep !== 'submitting' && flowStep !== 'loading' && (
+        {summary && flowStep !== 'otp' && flowStep !== 'submitting' && flowStep !== 'loading' && (
           <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
 
             {/* Cash Used / Deductions */}
-            {(deductions.length > 0 || effectiveOutstanding > 0) && (
+            {(deductions.length > 0 || todayOutstanding > 0) && (
               <Card>
                 <CardHeader className='pb-3'>
                   <div className='flex items-center justify-between'>
@@ -442,7 +478,7 @@ export default function ReconciliationPage() {
                       <ShoppingCart className='w-4 h-4 text-orange-500' />
                       Cash Used
                     </CardTitle>
-                    {!showDeductionForm && effectiveOutstanding > 0 && (
+                    {!showDeductionForm && todayOutstanding > 0 && (
                       <Button variant='outline' size='sm' className='gap-1.5' onClick={() => setShowDeductionForm(true)}>
                         <Plus className='w-3.5 h-3.5' /> Add
                       </Button>
@@ -496,8 +532,8 @@ export default function ReconciliationPage() {
               </Card>
             )}
 
-            {/* Send via MoMo */}
-            {amountToSend > 0 && (
+            {/* Send via MoMo — shows whenever there's ANY outstanding across all days */}
+            {hasAnyOutstanding && flowStep !== 'success' && (
               <Card>
                 <CardHeader className='pb-3'>
                   <CardTitle className='text-base flex items-center gap-2'>
@@ -525,11 +561,25 @@ export default function ReconciliationPage() {
                         <span className='font-medium text-green-600'>− ₵{todaySent.toFixed(2)}</span>
                       </div>
                     )}
+                    {historicalDebt > 0 && (
+                      <div className='flex justify-between'>
+                        <span className='text-muted-foreground'>Previous days unpaid</span>
+                        <span className='font-medium text-red-600'>+ ₵{historicalDebt.toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className='flex justify-between pt-1.5 border-t border-border font-semibold'>
-                      <span>Amount to send</span>
+                      <span>Total to send</span>
                       <span className='text-red-600 text-base'>₵{amountToSend.toFixed(2)}</span>
                     </div>
                   </div>
+
+                  {/* Show which date this payment will be attributed to */}
+                  {oldestUnpaidDateForSave && (
+                    <p className='text-xs text-muted-foreground text-center'>
+                      Clears debt from {format(parseISO(oldestUnpaidDateForSave), 'd MMM yyyy')} first
+                    </p>
+                  )}
+
                   <div>
                     <Label className='text-sm mb-1.5 block'>Your MoMo Number</Label>
                     <Input
@@ -552,7 +602,7 @@ export default function ReconciliationPage() {
             )}
 
             {/* All settled */}
-            {!hasAnyOutstanding && deductions.length === 0 && (
+            {!hasAnyOutstanding && deductions.length === 0 && flowStep !== 'success' && (
               <Card className='border-green-200 bg-green-50/50 dark:bg-green-950/10'>
                 <CardContent className='flex items-center gap-3 py-6'>
                   <CheckCircle2 className='w-8 h-8 text-green-600 shrink-0' />
