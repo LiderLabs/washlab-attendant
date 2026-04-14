@@ -109,18 +109,13 @@ export default function ReconciliationPage() {
   const historicalDebt    = allTimeOutstanding !== null ? Math.max(0, allTimeOutstanding - todayOutstanding) : 0
   const hasHistoricalDebt = historicalDebt > 0
 
-  // ── KEY FIX: amountToSend is ALWAYS the full all-time outstanding ──────────
-  // This means the send box appears whenever there's ANY unpaid cash,
-  // regardless of whether today looks "settled" due to date attribution issues.
-  // The payment is saved against the oldest unpaid date (see handleSubmit).
+  // amountToSend is ALWAYS the full all-time outstanding
   const amountToSend = allTimeOutstanding !== null ? allTimeOutstanding : todayOutstanding
 
-  // After a successful send, clear the local success state once the server
-  // reflects the new outstanding (i.e. allTimeOutstanding has dropped)
+  // After a successful send, clear the local success state once the server reflects the new outstanding
   useEffect(() => {
     if (flowStep === 'success' && lastSentAmount > 0) {
       const newOutstanding = allTimeOutstanding ?? 0
-      // Server has caught up if outstanding dropped by roughly what we sent
       if (newOutstanding <= (amountToSend - lastSentAmount) + 1) {
         setFlowStep('idle')
         setResult(null)
@@ -138,19 +133,6 @@ export default function ReconciliationPage() {
       .map((d: any) => d.date)
       .sort()
     return { oldestUnpaidDate: dates[0] ?? null, newestUnpaidDate: dates[dates.length - 1] ?? null }
-  })()
-
-  // The oldest unpaid date — payments get attributed here first
-  const oldestUnpaidDateForSave = (() => {
-    if (!history) return null
-    const todayStr = format(new Date(), 'yyyy-MM-dd')
-    const unpaidDates = (history as any[])
-      .filter((d: any) => (d.dayOutstanding ?? 0) > 0)
-      .map((d: any) => d.date)
-      .sort() // ascending — oldest first
-    // If there are past unpaid dates, use the oldest; otherwise use today
-    const pastDates = unpaidDates.filter(d => d !== todayStr)
-    return pastDates[0] ?? todayStr
   })()
 
   const totalAllTimeOutstanding = allTimeOutstanding
@@ -177,8 +159,6 @@ export default function ReconciliationPage() {
               amountSent: amountToSend,
               paystackReference: pendingReference,
               status: 'completed',
-              // Attribute to oldest unpaid date so debt clears correctly
-              date: oldestUnpaidDateForSave ?? undefined,
             })
           }
           setLastSentAmount(amountToSend)
@@ -255,7 +235,6 @@ export default function ReconciliationPage() {
             amountSent: amountToSend,
             paystackReference: pendingReference,
             status: 'completed',
-            date: oldestUnpaidDateForSave ?? undefined,
           })
         }
         setLastSentAmount(amountToSend)
@@ -572,13 +551,6 @@ export default function ReconciliationPage() {
                       <span className='text-red-600 text-base'>₵{amountToSend.toFixed(2)}</span>
                     </div>
                   </div>
-
-                  {/* Show which date this payment will be attributed to */}
-                  {oldestUnpaidDateForSave && (
-                    <p className='text-xs text-muted-foreground text-center'>
-                      Clears debt from {format(parseISO(oldestUnpaidDateForSave), 'd MMM yyyy')} first
-                    </p>
-                  )}
 
                   <div>
                     <Label className='text-sm mb-1.5 block'>Your MoMo Number</Label>
