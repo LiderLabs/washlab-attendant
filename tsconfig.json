@@ -13,16 +13,10 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
+    "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./*"]
     },
-    "baseUrl": ".",
-    "ignoreDeprecations": "6.0",
     "noImplicitAny": false,
     "noUnusedParameters": false,
     "noUnusedLocals": false,
