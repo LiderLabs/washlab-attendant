@@ -36,8 +36,8 @@ function WeeklyTargetCard({
   branchId: string;
   stationToken: string;
 }) {
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 }).getTime();
-  const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 }).getTime();
+ const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 }).getTime();
+const weekEnd = endOfWeek(new Date(), { weekStartsOn: 0 }).getTime();
 
   const { stats } = useStationStats(stationToken, weekStart, weekEnd);
 
