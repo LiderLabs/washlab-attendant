@@ -115,7 +115,12 @@ export function OrdersTable({ orders, stationToken, onCollectPayment, branchServ
                 </div>
               </div>
             </TableCell>
-            <TableCell className="text-muted-foreground whitespace-nowrap">{serviceType} ({weight.toFixed(1)}kg)</TableCell>
+            <TableCell className="text-muted-foreground whitespace-nowrap">
+  <span>{serviceType} ({weight.toFixed(1)}kg)</span>
+  {order.finalPrice > 0 && (
+    <p className="text-xs font-semibold text-foreground mt-0.5">₵{order.finalPrice.toFixed(2)}</p>
+  )}
+</TableCell>
             <TableCell className="whitespace-nowrap">
               {(() => {
                 const isCompleted = order.status === 'completed' || order.status === 'delivered';
