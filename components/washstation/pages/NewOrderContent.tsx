@@ -275,6 +275,7 @@ export function NewOrderContent() {
         name: newName,
         phoneNumber: formatPhoneForBackend(phone),
         ...(finalEmail ? { email: finalEmail } : {}),
+         ...(branchId ? { branchId } : {}),
       } as any)
       const customer = await getCustomerByPhone
       setFoundCustomer(customer || {
