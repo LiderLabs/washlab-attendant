@@ -36,8 +36,8 @@ function WeeklyTargetCard({
   branchId: string;
   stationToken: string;
 }) {
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 }).getTime();
-  const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 }).getTime();
+ const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 }).getTime();
+const weekEnd = endOfWeek(new Date(), { weekStartsOn: 0 }).getTime();
 
   const { stats } = useStationStats(stationToken, weekStart, weekEnd);
 
@@ -55,8 +55,8 @@ function WeeklyTargetCard({
   const remaining = Math.max(0, target - current);
   const met = current >= target;
 
-  const dayIndex = (new Date().getDay() + 6) % 7;
-  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const dayIndex = new Date().getDay();
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   const barColor = met ? 'bg-green-500' : 'bg-blue-500';
 

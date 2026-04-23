@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useAction } from 'convex/react'
 import { api } from '@jordan6699/washlab-backend/api'
 import { useStationSession } from '@/hooks/useStationSession'
@@ -13,10 +13,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
 import {
   Banknote, Loader2, ArrowRight, CheckCircle2,
-  ShoppingCart, Plus, Trash2, History, TrendingUp, Smartphone, KeyRound,
+  ShoppingCart, Plus, History, TrendingUp, Smartphone, KeyRound,
+  AlertCircle,
 } from 'lucide-react'
 import Link from 'next/link'
-import { format } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 
 interface Deduction {
   id: string
@@ -24,11 +25,6 @@ interface Deduction {
   reason: string
 }
 
-// idle       → form shown, waiting for input
-// loading    → initiate action in flight
-// otp        → Paystack needs OTP, show input field
-// submitting → submitOtp action in flight
-// success    → payment done, show confirmation
 type FlowStep = 'idle' | 'loading' | 'otp' | 'submitting' | 'success'
 
 function StatusBadge({ status }: { status: string }) {
@@ -55,13 +51,16 @@ export default function ReconciliationPage() {
   const [otp, setOtp] = useState('')
   const [pendingReference, setPendingReference] = useState('')
   const [result, setResult] = useState<{ amount: number; momoNumber: string; reference: string } | null>(null)
-  const [paidAmount, setPaidAmount] = useState(0)
+  const [lastSentAmount, setLastSentAmount] = useState(0)
+  const [polling, setPolling] = useState(false)
 
-  const [deductions, setDeductions] = useState<Deduction[]>([])
   const [deductionAmount, setDeductionAmount] = useState('')
   const [deductionReason, setDeductionReason] = useState('')
   const [savingDeduction, setSavingDeduction] = useState(false)
   const [showDeductionForm, setShowDeductionForm] = useState(false)
+
+  const pollingRef = useRef<NodeJS.Timeout | null>(null)
+  const savedRef = useRef<string | null>(null)
 
   const summary = useQuery(
     (api as any).cashReconciliation.getTodayCashSummary,
@@ -71,25 +70,113 @@ export default function ReconciliationPage() {
     (api as any).cashReconciliation.getTodayCashOrders,
     stationToken ? { stationToken } : 'skip'
   )
+  const todayDeductionsFromDB = useQuery(
+    (api as any).cashReconciliation.getTodayCashDeductions,
+    stationToken ? { stationToken } : 'skip'
+  )
+  const history = useQuery(
+    (api as any).cashReconciliation.getReconciliationHistory,
+    stationToken ? { stationToken, days: 90 } : 'skip'
+  )
+
   const initiate = useAction((api as any).cashReconciliation.initiateCashReconciliation)
-  const submitOtp = useAction((api as any).cashReconciliation.submitOtp)
+  const submitOtpAction = useAction((api as any).cashReconciliation.submitOtp)
+  const verify = useAction((api as any).cashReconciliation.verifyAndComplete)
   const save = useMutation((api as any).cashReconciliation.saveReconciliation)
   const saveDeduction = useMutation((api as any).cashReconciliation.saveCashDeduction)
 
+  const deductions: Deduction[] = (todayDeductionsFromDB ?? []).map((d: any) => ({
+    id: d._id,
+    amount: d.amount ?? 0,
+    reason: d.reason ?? '',
+  }))
   const totalDeductions = deductions.reduce((s, d) => s + d.amount, 0)
-  const rawOutstanding = summary?.outstandingCash ?? summary?.totalCash ?? 0
-  const effectiveOutstanding = Math.max(0, rawOutstanding - paidAmount)
-  const amountToSend = Math.max(0, effectiveOutstanding - totalDeductions)
+
+  const todayCash     = summary?.totalCash ?? 0
+  const todaySent     = summary?.todaySent ?? 0
+  const todayDeducted = totalDeductions
+
+  const todayOutstanding = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
+
+  const allTimeOutstanding = summary
+    ? Math.max(0, (summary.totalEverCollected ?? 0) - (summary.totalEverSent ?? 0) - (summary.totalEverDeducted ?? 0))
+    : null
+
+  const historicalDebt    = allTimeOutstanding !== null ? Math.max(0, allTimeOutstanding - todayOutstanding) : 0
+  const hasHistoricalDebt = historicalDebt > 0
+
+  const amountToSend = allTimeOutstanding !== null ? allTimeOutstanding : todayOutstanding
+
+  useEffect(() => {
+    if (flowStep === 'success' && lastSentAmount > 0) {
+      const newOutstanding = allTimeOutstanding ?? 0
+      if (newOutstanding <= (amountToSend - lastSentAmount) + 1) {
+        setFlowStep('idle')
+        setResult(null)
+        setLastSentAmount(0)
+      }
+    }
+  }, [allTimeOutstanding])
+
+  const { oldestUnpaidDate, newestUnpaidDate } = (() => {
+    if (!history) return { oldestUnpaidDate: null, newestUnpaidDate: null }
+    const todayStr = format(new Date(), 'yyyy-MM-dd')
+    const dates = (history as any[])
+      .filter((d: any) => d.date !== todayStr && (d.dayOutstanding ?? 0) > 0)
+      .map((d: any) => d.date)
+      .sort()
+    return { oldestUnpaidDate: dates[0] ?? null, newestUnpaidDate: dates[dates.length - 1] ?? null }
+  })()
+
+  const totalAllTimeOutstanding = allTimeOutstanding
+  const hasAnyOutstanding = (allTimeOutstanding ?? 0) > 0
+
+  const stopPolling = () => {
+    if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
+    setPolling(false)
+  }
+
+  useEffect(() => {
+    if (!pendingReference || flowStep === 'success') return
+    setPolling(true)
+    pollingRef.current = setInterval(async () => {
+      try {
+        const res = await verify({ reference: pendingReference })
+        if (res.status === 'completed') {
+          stopPolling()
+          if (savedRef.current !== pendingReference) {
+            savedRef.current = pendingReference
+            await save({
+              stationToken,
+              senderMomoNumber: momoNumber,
+              amountSent: amountToSend,
+              paystackReference: pendingReference,
+              status: 'completed',
+            })
+          }
+          setLastSentAmount(amountToSend)
+          setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
+          setFlowStep('success')
+          toast.success('Payment confirmed!')
+        } else if (res.status === 'failed' || res.status === 'reversed') {
+          stopPolling()
+          toast.error('Payment failed. Please try again.')
+          setFlowStep('idle')
+          setPendingReference('')
+        }
+      } catch (_e) { /* keep polling */ }
+    }, 5000)
+    return () => stopPolling()
+  }, [pendingReference])
 
   const handleAddDeduction = async () => {
     const amt = parseFloat(deductionAmount)
     if (!amt || amt <= 0) { toast.error('Enter a valid amount'); return }
     if (!deductionReason.trim()) { toast.error('Enter a reason'); return }
-    if (amt > rawOutstanding) { toast.error('Deduction exceeds outstanding cash'); return }
+    if (amt > todayOutstanding) { toast.error('Deduction exceeds today\'s outstanding cash'); return }
     setSavingDeduction(true)
     try {
       await saveDeduction({ stationToken, amount: amt, reason: deductionReason.trim() })
-      setDeductions(prev => [...prev, { id: crypto.randomUUID(), amount: amt, reason: deductionReason.trim() }])
       setDeductionAmount('')
       setDeductionReason('')
       setShowDeductionForm(false)
@@ -101,30 +188,9 @@ export default function ReconciliationPage() {
     }
   }
 
-  const handleRemoveDeduction = (id: string) => {
-    setDeductions(prev => prev.filter(d => d.id !== id))
-  }
-
-  // ── Shared: save record and show success ─────────────────────────────────
-  const finalise = async (reference: string) => {
-    await save({
-      stationToken,
-      senderMomoNumber: momoNumber,
-      amountSent: amountToSend,
-      paystackReference: reference,
-      status: 'processing', // webhook confirms to 'completed'
-    })
-    setPaidAmount(amountToSend)
-    setResult({ amount: amountToSend, momoNumber, reference })
-    setFlowStep('success')
-    toast.success('Payment sent successfully!')
-  }
-
-  // ── Step 1: Send charge request ──────────────────────────────────────────
   const handleSubmit = async () => {
     if (!momoNumber || momoNumber.length < 10) { toast.error('Enter a valid MoMo number'); return }
     if (!summary || amountToSend <= 0) { toast.error('No outstanding cash to send'); return }
-
     setFlowStep('loading')
     try {
       const res = await initiate({
@@ -134,36 +200,44 @@ export default function ReconciliationPage() {
         attendantId: activeAttendance?.attendant?._id,
         branchEmail: summary?.branchEmail || undefined,
       })
-
-      // Paystack needs OTP — show the input field on the tablet
       if (res.status === 'send_otp') {
         setPendingReference(res.reference)
         setFlowStep('otp')
         toast.info('OTP sent to phone — enter it below')
         return
       }
-
-      // No OTP needed — payment went straight through
-      await finalise(res.reference)
-
+      setPendingReference(res.reference)
     } catch (e: any) {
       toast.error(e?.message || 'Failed to initiate payment')
       setFlowStep('idle')
     }
   }
 
-  // ── Step 2: Submit OTP (only shown when needed) ──────────────────────────
   const handleSubmitOtp = async () => {
     if (!otp.trim()) { toast.error('Enter the OTP'); return }
-
     setFlowStep('submitting')
     try {
-      const res = await submitOtp({ reference: pendingReference, otp: otp.trim() })
-
-      if (res.status === 'success' || res.status === 'pay_offline') {
-        await finalise(pendingReference)
+      const res = await submitOtpAction({ reference: pendingReference, otp: otp.trim() })
+      if (res.status === 'success') {
+        stopPolling()
+        if (savedRef.current !== pendingReference) {
+          savedRef.current = pendingReference
+          await save({
+            stationToken,
+            senderMomoNumber: momoNumber,
+            amountSent: amountToSend,
+            paystackReference: pendingReference,
+            status: 'completed',
+          })
+        }
+        setLastSentAmount(amountToSend)
+        setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
+        setFlowStep('success')
+        toast.success('Payment confirmed!')
+      } else if (res.status === 'pay_offline') {
+        setFlowStep('loading')
+        toast.info('Check your phone to approve the payment')
       } else {
-        // Paystack might ask for OTP again or return another status
         toast.error(res.displayText || 'OTP not accepted, please try again')
         setOtp('')
         setFlowStep('otp')
@@ -174,11 +248,17 @@ export default function ReconciliationPage() {
     }
   }
 
+  const outstandingDateLabel = (() => {
+    if (!oldestUnpaidDate && !newestUnpaidDate) return null
+    if (oldestUnpaidDate === newestUnpaidDate) return `Since ${format(parseISO(oldestUnpaidDate!), 'd MMM')}`
+    return `${format(parseISO(oldestUnpaidDate!), 'd MMM')} – ${format(parseISO(newestUnpaidDate!), 'd MMM')}`
+  })()
+
   return (
     <WashStationLayout title='Cash Reconciliation'>
       <div className='space-y-6'>
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div className='flex items-center justify-between'>
           <div>
             <h2 className='text-xl font-bold text-foreground'>Cash Reconciliation</h2>
@@ -192,27 +272,62 @@ export default function ReconciliationPage() {
           </Link>
         </div>
 
-        {/* ── Summary cards ── */}
-        <div className='grid grid-cols-3 gap-4'>
+        {/* Summary cards */}
+        <div className={`grid gap-4 ${hasHistoricalDebt ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}`}>
           <Card className='p-5'>
             <p className='text-xs text-muted-foreground mb-1'>Today's Orders</p>
             <p className='text-3xl font-bold'>{summary === undefined ? '—' : summary.orderCount}</p>
           </Card>
+
           <Card className='p-5'>
             <p className='text-xs text-muted-foreground mb-1'>Cash Collected Today</p>
             <p className='text-3xl font-bold'>
-              {summary === undefined ? '—' : `₵${summary.totalCash.toFixed(2)}`}
+              {summary === undefined ? '—' : `₵${todayCash.toFixed(2)}`}
             </p>
           </Card>
-          <Card className={`p-5 ${effectiveOutstanding > 0 ? 'border-red-200 bg-red-50/50 dark:bg-red-950/10' : 'border-green-200 bg-green-50/50 dark:bg-green-950/10'}`}>
-            <p className='text-xs text-muted-foreground mb-1'>Total Outstanding</p>
-            <p className={`text-3xl font-bold ${effectiveOutstanding > 0 ? 'text-red-600' : 'text-green-600'}`}>
-              {summary === undefined ? '—' : `₵${effectiveOutstanding.toFixed(2)}`}
+
+          <Card className={`p-5 ${todayOutstanding > 0 ? 'border-orange-200 bg-orange-50/50 dark:bg-orange-950/10' : 'border-green-200 bg-green-50/50 dark:bg-green-950/10'}`}>
+            <p className='text-xs text-muted-foreground mb-1'>Today's Outstanding</p>
+            <p className={`text-3xl font-bold ${todayOutstanding > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+              {summary === undefined ? '—' : `₵${todayOutstanding.toFixed(2)}`}
             </p>
+            {todayDeducted > 0 && (
+              <p className='text-[10px] text-orange-500 mt-1'>−₵{todayDeducted.toFixed(2)} used at branch</p>
+            )}
           </Card>
+
+          {hasHistoricalDebt && (
+            <Card className='p-5 border-red-200 bg-red-50/50 dark:bg-red-950/10'>
+              <div className='flex items-start justify-between gap-1'>
+                <p className='text-xs text-muted-foreground mb-1'>Total Outstanding</p>
+                <AlertCircle className='w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5' />
+              </div>
+              <p className='text-3xl font-bold text-red-600'>
+                {totalAllTimeOutstanding !== null ? `₵${totalAllTimeOutstanding.toFixed(2)}` : '—'}
+              </p>
+              {outstandingDateLabel && (
+                <p className='text-[10px] text-red-500 mt-1'>{outstandingDateLabel}</p>
+              )}
+            </Card>
+          )}
         </div>
 
-        {/* ── Today's orders table ── */}
+        {/* Historical debt alert */}
+        {hasHistoricalDebt && (
+          <Card className='border-red-200 bg-red-50/50 dark:bg-red-950/10'>
+            <CardContent className='flex items-center gap-3 py-4'>
+              <AlertCircle className='w-5 h-5 text-red-500 shrink-0' />
+              <p className='text-sm text-red-700 dark:text-red-400 flex-1'>
+                You have <span className='font-bold'>₵{historicalDebt.toFixed(2)}</span> in unsettled cash from previous days.
+              </p>
+              <Link href='/washstation/outstanding' className='shrink-0'>
+                <Button size='sm' variant='destructive'>View History</Button>
+              </Link>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Today's orders table */}
         <Card>
           <CardHeader className='pb-3'>
             <CardTitle className='text-base flex items-center gap-2'>
@@ -235,43 +350,33 @@ export default function ReconciliationPage() {
                 <table className='w-full text-sm'>
                   <thead>
                     <tr className='border-b border-border bg-muted/40'>
-                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Order Number</th>
-                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Customer</th>
-                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Service</th>
-                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Amount</th>
-                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Status</th>
-                      <th className='text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap'>Time</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground'>Order Number</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground'>Customer</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground'>Service</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground'>Amount</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground'>Status</th>
+                      <th className='text-left px-4 py-3 font-medium text-muted-foreground'>Time</th>
                     </tr>
                   </thead>
                   <tbody>
                     {todayOrders.map((order: any) => (
-                      <tr key={order._id} className='border-b border-border last:border-0 hover:bg-muted/20 transition-colors'>
+                      <tr key={order._id} className='border-b border-border last:border-0 hover:bg-muted/20'>
+                        <td className='px-4 py-3 font-mono font-semibold text-primary'>{order.orderNumber}</td>
                         <td className='px-4 py-3'>
-                          <span className='font-mono font-semibold text-sm text-primary'>{order.orderNumber}</span>
-                        </td>
-                        <td className='px-4 py-3'>
-                          <p className='font-medium text-foreground'>{order.customerName || '—'}</p>
+                          <p className='font-medium'>{order.customerName || '—'}</p>
                           <p className='text-xs text-muted-foreground'>{order.customerPhoneNumber || ''}</p>
                         </td>
-                        <td className='px-4 py-3 text-muted-foreground text-sm whitespace-nowrap'>
-                          {order.serviceType || '—'}
-                        </td>
-                        <td className='px-4 py-3'>
-                          <span className='font-bold text-foreground'>₵{(order.finalPrice ?? 0).toFixed(2)}</span>
-                        </td>
-                        <td className='px-4 py-3'>
-                          <StatusBadge status={order.paymentStatus} />
-                        </td>
-                        <td className='px-4 py-3 text-muted-foreground text-sm whitespace-nowrap'>
-                          {format(new Date(order.createdAt), 'h:mm a')}
-                        </td>
+                        <td className='px-4 py-3 text-muted-foreground'>{order.serviceType || '—'}</td>
+                        <td className='px-4 py-3 font-bold'>₵{(order.finalPrice ?? 0).toFixed(2)}</td>
+                        <td className='px-4 py-3'><StatusBadge status={order.paymentStatus} /></td>
+                        <td className='px-4 py-3 text-muted-foreground'>{format(new Date(order.createdAt), 'h:mm a')}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className='bg-muted/40 border-t border-border'>
                       <td colSpan={3} className='px-4 py-3 font-semibold text-sm'>Total ({todayOrders.length} orders)</td>
-                      <td colSpan={3} className='px-4 py-3 font-bold text-sm'>₵{summary.totalCash.toFixed(2)}</td>
+                      <td colSpan={3} className='px-4 py-3 font-bold text-sm'>₵{todayCash.toFixed(2)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -280,8 +385,23 @@ export default function ReconciliationPage() {
           </CardContent>
         </Card>
 
-        {/* ── OTP step — shown only when Paystack requests it ── */}
-        {flowStep === 'otp' || flowStep === 'submitting' ? (
+        {/* Waiting for phone approval */}
+        {flowStep === 'loading' && polling && (
+          <Card className='border-blue-200 bg-blue-50/50 dark:bg-blue-950/10'>
+            <CardContent className='flex items-center gap-4 py-6'>
+              <Loader2 className='w-8 h-8 animate-spin text-blue-600 shrink-0' />
+              <div>
+                <p className='font-semibold text-blue-800 dark:text-blue-300 text-lg'>Waiting for approval…</p>
+                <p className='text-sm text-blue-700 dark:text-blue-400'>
+                  A request of <span className='font-bold'>₵{amountToSend.toFixed(2)}</span> was sent to <span className='font-mono font-semibold'>{momoNumber}</span>. Approve it on your phone.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* OTP step */}
+        {(flowStep === 'otp' || flowStep === 'submitting') && (
           <Card className='border-blue-200 bg-blue-50/50 dark:bg-blue-950/10'>
             <CardContent className='pt-6 space-y-4'>
               <div className='flex items-center gap-3'>
@@ -291,89 +411,74 @@ export default function ReconciliationPage() {
                 <div>
                   <p className='font-semibold text-blue-800 dark:text-blue-300 text-lg'>OTP Required</p>
                   <p className='text-sm text-blue-700 dark:text-blue-400'>
-                    An OTP was sent to <span className='font-mono font-semibold'>{momoNumber}</span>. Enter it below.
+                    Enter the OTP sent to <span className='font-mono font-semibold'>{momoNumber}</span>.
                   </p>
                 </div>
               </div>
-              <div>
-                <Label className='text-sm mb-1.5 block'>One-Time Password (OTP)</Label>
-                <Input
-                  type='number'
-                  inputMode='numeric'
-                  placeholder='Enter OTP'
-                  value={otp}
-                  onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
-                  className='h-12 text-center text-xl tracking-widest font-mono'
-                  disabled={flowStep === 'submitting'}
-                  autoFocus
-                />
-              </div>
+              <Input
+                type='number'
+                inputMode='numeric'
+                placeholder='Enter OTP'
+                value={otp}
+                onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
+                className='h-12 text-center text-xl tracking-widest font-mono'
+                disabled={flowStep === 'submitting'}
+                autoFocus
+              />
               <div className='flex gap-3'>
-                <Button
-                  variant='outline'
-                  className='flex-1'
-                  onClick={() => { setFlowStep('idle'); setOtp(''); setPendingReference('') }}
-                  disabled={flowStep === 'submitting'}
-                >
+                <Button variant='outline' className='flex-1' onClick={() => { stopPolling(); setFlowStep('idle'); setOtp(''); setPendingReference('') }} disabled={flowStep === 'submitting'}>
                   Cancel
                 </Button>
-                <Button
-                  className='flex-1 gap-2'
-                  onClick={handleSubmitOtp}
-                  disabled={!otp.trim() || flowStep === 'submitting'}
-                >
-                  {flowStep === 'submitting' ? (
-                    <><Loader2 className='w-4 h-4 animate-spin' /> Verifying…</>
-                  ) : (
-                    <>Submit OTP <ArrowRight className='w-4 h-4' /></>
-                  )}
+                <Button className='flex-1 gap-2' onClick={handleSubmitOtp} disabled={!otp.trim() || flowStep === 'submitting'}>
+                  {flowStep === 'submitting' ? <><Loader2 className='w-4 h-4 animate-spin' /> Verifying…</> : <>Submit OTP <ArrowRight className='w-4 h-4' /></>}
                 </Button>
               </div>
             </CardContent>
           </Card>
-        ) : null}
+        )}
 
-        {/* ── Bottom section — hidden during OTP and success ── */}
-        {summary && flowStep !== 'success' && flowStep !== 'otp' && flowStep !== 'submitting' && (
+        {/* Send form + deductions */}
+        {summary && flowStep !== 'otp' && flowStep !== 'submitting' && flowStep !== 'loading' && (
           <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
 
-            {/* Cash deductions */}
-            {effectiveOutstanding > 0 && (
+            {/* Cash Used / Deductions */}
+            {(deductions.length > 0 || todayOutstanding > 0) && (
               <Card>
                 <CardHeader className='pb-3'>
                   <div className='flex items-center justify-between'>
                     <CardTitle className='text-base flex items-center gap-2'>
                       <ShoppingCart className='w-4 h-4 text-orange-500' />
-                      Cash Used 
+                      Cash Used
                     </CardTitle>
-                    {!showDeductionForm && (
+                    {!showDeductionForm && todayOutstanding > 0 && (
                       <Button variant='outline' size='sm' className='gap-1.5' onClick={() => setShowDeductionForm(true)}>
-                        <Plus className='w-3.5 h-3.5' />
-                        Add
+                        <Plus className='w-3.5 h-3.5' /> Add
                       </Button>
                     )}
                   </div>
-
                 </CardHeader>
                 <CardContent className='space-y-3'>
-                  {deductions.length > 0 && (
+                  {todayDeductionsFromDB === undefined ? (
+                    <div className='flex justify-center py-4'>
+                      <Loader2 className='w-4 h-4 animate-spin text-muted-foreground' />
+                    </div>
+                  ) : deductions.length > 0 ? (
                     <div className='space-y-2'>
                       {deductions.map(d => (
-                        <div key={d.id} className='flex items-center justify-between p-3 rounded-lg bg-orange-50/50 dark:bg-orange-950/10 border border-orange-200 dark:border-orange-800 text-sm'>
-                          <p className='font-medium text-foreground'>{d.reason}</p>
-                          <div className='flex items-center gap-2'>
-                            <span className='font-bold text-orange-600'>- ₵{d.amount.toFixed(2)}</span>
-                            <button onClick={() => handleRemoveDeduction(d.id)} className='text-muted-foreground hover:text-red-500 transition-colors'>
-                              <Trash2 className='w-3.5 h-3.5' />
-                            </button>
-                          </div>
+                        <div key={d.id} className='flex items-center justify-between p-3 rounded-lg bg-orange-50/50 dark:bg-orange-950/10 border border-orange-200 text-sm'>
+                          <p className='font-medium'>{d.reason}</p>
+                          <span className='font-bold text-orange-600'>₵{d.amount.toFixed(2)}</span>
                         </div>
                       ))}
                       <div className='flex justify-between text-sm font-semibold pt-1 border-t border-border'>
-                        <span className='text-muted-foreground'>Total deductions</span>
-                        <span className='text-orange-600'>- ₵{totalDeductions.toFixed(2)}</span>
+                        <span className='text-muted-foreground'>Total used</span>
+                        <span className='text-orange-600'>₵{totalDeductions.toFixed(2)}</span>
                       </div>
                     </div>
+                  ) : (
+                    !showDeductionForm && (
+                      <p className='text-sm text-muted-foreground text-center py-4'>No cash used today</p>
+                    )
                   )}
                   {showDeductionForm && (
                     <div className='space-y-3 p-3 rounded-lg bg-muted/40 border border-border'>
@@ -389,23 +494,18 @@ export default function ReconciliationPage() {
                       </div>
                       <div className='flex gap-2'>
                         <Button size='sm' onClick={handleAddDeduction} disabled={savingDeduction} className='flex-1'>
-                          {savingDeduction ? <Loader2 className='w-3.5 h-3.5 animate-spin' /> : 'Save Deduction'}
+                          {savingDeduction ? <Loader2 className='w-3.5 h-3.5 animate-spin' /> : 'Save'}
                         </Button>
-                        <Button size='sm' variant='ghost' onClick={() => { setShowDeductionForm(false); setDeductionAmount(''); setDeductionReason('') }}>
-                          Cancel
-                        </Button>
+                        <Button size='sm' variant='ghost' onClick={() => { setShowDeductionForm(false); setDeductionAmount(''); setDeductionReason('') }}>Cancel</Button>
                       </div>
                     </div>
-                  )}
-                  {deductions.length === 0 && !showDeductionForm && (
-                    <p className='text-sm text-muted-foreground text-center py-4'>No deductions added</p>
                   )}
                 </CardContent>
               </Card>
             )}
 
             {/* Send via MoMo */}
-            {amountToSend > 0 && (
+            {hasAnyOutstanding && flowStep !== 'success' && (
               <Card>
                 <CardHeader className='pb-3'>
                   <CardTitle className='text-base flex items-center gap-2'>
@@ -415,18 +515,32 @@ export default function ReconciliationPage() {
                 </CardHeader>
                 <CardContent className='space-y-4'>
                   <div className='space-y-1.5 text-sm bg-muted/40 rounded-lg p-3'>
-                    <div className='flex justify-between'>
-                      <span className='text-muted-foreground'>Outstanding</span>
-                      <span className='font-medium'>₵{effectiveOutstanding.toFixed(2)}</span>
-                    </div>
-                    {totalDeductions > 0 && (
+                    {todayCash > 0 && (
                       <div className='flex justify-between'>
-                        <span className='text-muted-foreground'>Deductions</span>
-                        <span className='font-medium text-orange-600'>- ₵{totalDeductions.toFixed(2)}</span>
+                        <span className='text-muted-foreground'>Collected today</span>
+                        <span className='font-medium'>₵{todayCash.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {todayDeducted > 0 && (
+                      <div className='flex justify-between'>
+                        <span className='text-muted-foreground'>Used at branch</span>
+                        <span className='font-medium text-orange-600'>− ₵{todayDeducted.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {todaySent > 0 && (
+                      <div className='flex justify-between'>
+                        <span className='text-muted-foreground'>Already sent today</span>
+                        <span className='font-medium text-green-600'>− ₵{todaySent.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {historicalDebt > 0 && (
+                      <div className='flex justify-between'>
+                        <span className='text-muted-foreground'>Previous days unpaid</span>
+                        <span className='font-medium text-red-600'>+ ₵{historicalDebt.toFixed(2)}</span>
                       </div>
                     )}
                     <div className='flex justify-between pt-1.5 border-t border-border font-semibold'>
-                      <span>Amount to send</span>
+                      <span>Total to send</span>
                       <span className='text-red-600 text-base'>₵{amountToSend.toFixed(2)}</span>
                     </div>
                   </div>
@@ -441,29 +555,19 @@ export default function ReconciliationPage() {
                       inputMode='numeric'
                       maxLength={10}
                       className='h-10'
-                      disabled={flowStep === 'loading'}
                     />
                   </div>
-
-                  <Button
-                    className='w-full gap-2'
-                    onClick={handleSubmit}
-                    disabled={!momoNumber || momoNumber.length < 10 || flowStep === 'loading'}
-                  >
-                    {flowStep === 'loading' ? (
-                      <><Loader2 className='w-4 h-4 animate-spin' /> Sending…</>
-                    ) : (
-                      <><Smartphone className='w-4 h-4' />
-                      Send ₵{amountToSend.toFixed(2)} via MoMo
-                      <ArrowRight className='w-4 h-4' /></>
-                    )}
+                  <Button className='w-full gap-2' onClick={handleSubmit} disabled={!momoNumber || momoNumber.length < 10}>
+                    <Smartphone className='w-4 h-4' />
+                    Send ₵{amountToSend.toFixed(2)} via MoMo
+                    <ArrowRight className='w-4 h-4' />
                   </Button>
                 </CardContent>
               </Card>
             )}
 
-            {/* Already settled */}
-            {amountToSend === 0 && flowStep !== 'loading' && (
+            {/* All settled */}
+            {!hasAnyOutstanding && deductions.length === 0 && flowStep !== 'success' && (
               <Card className='border-green-200 bg-green-50/50 dark:bg-green-950/10'>
                 <CardContent className='flex items-center gap-3 py-6'>
                   <CheckCircle2 className='w-8 h-8 text-green-600 shrink-0' />
@@ -474,11 +578,10 @@ export default function ReconciliationPage() {
                 </CardContent>
               </Card>
             )}
-
           </div>
         )}
 
-        {/* ── Success screen ── */}
+        {/* Success */}
         {flowStep === 'success' && result && (
           <Card className='border-green-200 bg-green-50/50 dark:bg-green-950/10'>
             <CardContent className='pt-6 space-y-4'>
@@ -487,8 +590,8 @@ export default function ReconciliationPage() {
                   <CheckCircle2 className='w-6 h-6 text-green-600' />
                 </div>
                 <div>
-                  <p className='font-semibold text-green-800 dark:text-green-300 text-lg'>Payment Sent!</p>
-                  <p className='text-sm text-green-700 dark:text-green-400'>MoMo payment request processed successfully.</p>
+                  <p className='font-semibold text-green-800 dark:text-green-300 text-lg'>Payment Confirmed!</p>
+                  <p className='text-sm text-green-700 dark:text-green-400'>MoMo payment confirmed.</p>
                 </div>
               </div>
               <div className='text-sm bg-white/60 dark:bg-black/20 rounded-lg p-3 space-y-1.5'>
@@ -508,10 +611,10 @@ export default function ReconciliationPage() {
                   <span className='text-muted-foreground'>Date</span>
                   <span>{format(new Date(), 'd MMM yyyy, h:mm a')}</span>
                 </div>
-                {deductions.length > 0 && (
+                {totalDeductions > 0 && (
                   <div className='flex justify-between'>
-                    <span className='text-muted-foreground'>Deductions</span>
-                    <span className='text-orange-600'>- ₵{totalDeductions.toFixed(2)}</span>
+                    <span className='text-muted-foreground'>Used at branch</span>
+                    <span className='text-orange-600'>₵{totalDeductions.toFixed(2)}</span>
                   </div>
                 )}
               </div>
