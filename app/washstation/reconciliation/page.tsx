@@ -85,7 +85,6 @@ export default function ReconciliationPage() {
   const save = useMutation((api as any).cashReconciliation.saveReconciliation)
   const saveDeduction = useMutation((api as any).cashReconciliation.saveCashDeduction)
 
-  // Deductions come from DB so they survive refresh
   const deductions: Deduction[] = (todayDeductionsFromDB ?? []).map((d: any) => ({
     id: d._id,
     amount: d.amount ?? 0,
@@ -97,22 +96,17 @@ export default function ReconciliationPage() {
   const todaySent     = summary?.todaySent ?? 0
   const todayDeducted = totalDeductions
 
-  // Today's outstanding from DB — authoritative
   const todayOutstanding = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
 
-  // Total all-time outstanding (today + all previous unpaid days)
   const allTimeOutstanding = summary
     ? Math.max(0, (summary.totalEverCollected ?? 0) - (summary.totalEverSent ?? 0) - (summary.totalEverDeducted ?? 0))
     : null
 
-  // Historical debt = everything outstanding that isn't today's
   const historicalDebt    = allTimeOutstanding !== null ? Math.max(0, allTimeOutstanding - todayOutstanding) : 0
   const hasHistoricalDebt = historicalDebt > 0
 
-  // amountToSend is ALWAYS the full all-time outstanding
   const amountToSend = allTimeOutstanding !== null ? allTimeOutstanding : todayOutstanding
 
-  // After a successful send, clear the local success state once the server reflects the new outstanding
   useEffect(() => {
     if (flowStep === 'success' && lastSentAmount > 0) {
       const newOutstanding = allTimeOutstanding ?? 0
@@ -124,7 +118,6 @@ export default function ReconciliationPage() {
     }
   }, [allTimeOutstanding])
 
-  // Date label for historical debt
   const { oldestUnpaidDate, newestUnpaidDate } = (() => {
     if (!history) return { oldestUnpaidDate: null, newestUnpaidDate: null }
     const todayStr = format(new Date(), 'yyyy-MM-dd')
@@ -143,23 +136,34 @@ export default function ReconciliationPage() {
     setPolling(false)
   }
 
+  // ── Polling loop — passes extra args so backend can fallback-save if frontend drops ──
   useEffect(() => {
     if (!pendingReference || flowStep === 'success') return
     setPolling(true)
     pollingRef.current = setInterval(async () => {
       try {
-        const res = await verify({ reference: pendingReference })
+        const res = await verify({
+          reference: pendingReference,
+          stationToken,            // ← backend fallback needs these
+          amountSent: amountToSend,
+          senderMomoNumber: momoNumber,
+        })
         if (res.status === 'completed') {
           stopPolling()
           if (savedRef.current !== pendingReference) {
             savedRef.current = pendingReference
-            await save({
-              stationToken,
-              senderMomoNumber: momoNumber,
-              amountSent: amountToSend,
-              paystackReference: pendingReference,
-              status: 'completed',
-            })
+            try {
+              await save({
+                stationToken,
+                senderMomoNumber: momoNumber,
+                amountSent: amountToSend,
+                paystackReference: pendingReference,
+                status: 'completed',
+              })
+            } catch (saveErr) {
+              // Backend fallback already handled it — safe to continue
+              console.warn('Frontend save failed (backend fallback should have caught it):', saveErr)
+            }
           }
           setLastSentAmount(amountToSend)
           setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
@@ -229,13 +233,18 @@ export default function ReconciliationPage() {
         stopPolling()
         if (savedRef.current !== pendingReference) {
           savedRef.current = pendingReference
-          await save({
-            stationToken,
-            senderMomoNumber: momoNumber,
-            amountSent: amountToSend,
-            paystackReference: pendingReference,
-            status: 'completed',
-          })
+          try {
+            await save({
+              stationToken,
+              senderMomoNumber: momoNumber,
+              amountSent: amountToSend,
+              paystackReference: pendingReference,
+              status: 'completed',
+            })
+          } catch (saveErr) {
+            // Backend fallback already handled it — safe to continue
+            console.warn('Frontend save failed (backend fallback should have caught it):', saveErr)
+          }
         }
         setLastSentAmount(amountToSend)
         setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
@@ -511,7 +520,7 @@ export default function ReconciliationPage() {
               </Card>
             )}
 
-            {/* Send via MoMo — shows whenever there's ANY outstanding across all days */}
+            {/* Send via MoMo */}
             {hasAnyOutstanding && flowStep !== 'success' && (
               <Card>
                 <CardHeader className='pb-3'>
