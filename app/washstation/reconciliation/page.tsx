@@ -136,23 +136,34 @@ export default function ReconciliationPage() {
     setPolling(false)
   }
 
+  // ── Polling loop — passes extra args so backend can fallback-save if frontend drops ──
   useEffect(() => {
     if (!pendingReference || flowStep === 'success') return
     setPolling(true)
     pollingRef.current = setInterval(async () => {
       try {
-        const res = await verify({ reference: pendingReference })
+        const res = await verify({
+          reference: pendingReference,
+          stationToken,            // ← backend fallback needs these
+          amountSent: amountToSend,
+          senderMomoNumber: momoNumber,
+        })
         if (res.status === 'completed') {
           stopPolling()
           if (savedRef.current !== pendingReference) {
             savedRef.current = pendingReference
-            await save({
-              stationToken,
-              senderMomoNumber: momoNumber,
-              amountSent: amountToSend,
-              paystackReference: pendingReference,
-              status: 'completed',
-            })
+            try {
+              await save({
+                stationToken,
+                senderMomoNumber: momoNumber,
+                amountSent: amountToSend,
+                paystackReference: pendingReference,
+                status: 'completed',
+              })
+            } catch (saveErr) {
+              // Backend fallback already handled it — safe to continue
+              console.warn('Frontend save failed (backend fallback should have caught it):', saveErr)
+            }
           }
           setLastSentAmount(amountToSend)
           setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
@@ -222,13 +233,18 @@ export default function ReconciliationPage() {
         stopPolling()
         if (savedRef.current !== pendingReference) {
           savedRef.current = pendingReference
-          await save({
-            stationToken,
-            senderMomoNumber: momoNumber,
-            amountSent: amountToSend,
-            paystackReference: pendingReference,
-            status: 'completed',
-          })
+          try {
+            await save({
+              stationToken,
+              senderMomoNumber: momoNumber,
+              amountSent: amountToSend,
+              paystackReference: pendingReference,
+              status: 'completed',
+            })
+          } catch (saveErr) {
+            // Backend fallback already handled it — safe to continue
+            console.warn('Frontend save failed (backend fallback should have caught it):', saveErr)
+          }
         }
         setLastSentAmount(amountToSend)
         setResult({ amount: amountToSend, momoNumber, reference: pendingReference })

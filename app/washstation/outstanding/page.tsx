@@ -272,8 +272,7 @@ export default function OutstandingHistoryPage() {
   const { stationToken } = useStationSession()
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
-  const firstStr = format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd')
-  const [fromDate, setFromDate] = useState(firstStr)
+ const [fromDate, setFromDate] = useState('2020-01-01')
   const [toDate,   setToDate]   = useState(todayStr)
 
   const history = useQuery(
