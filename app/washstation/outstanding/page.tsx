@@ -292,18 +292,17 @@ export default function OutstandingHistoryPage() {
 
   const sorted = useMemo(() => [...filtered].sort((a, b) => b.date.localeCompare(a.date)), [filtered])
 
-  const rangeTotals = useMemo(() => {
-    const collected   = filtered.reduce((s: number, r: any) => s + (r.cashCollected   ?? 0), 0)
-    const deducted    = filtered.reduce((s: number, r: any) => s + (r.totalDeductions ?? 0), 0)
-    const sent        = filtered.reduce((s: number, r: any) => s + (r.completedSent   ?? 0), 0)
-    const outstanding = filtered.reduce((s: number, r: any) => s + (r.dayOutstanding  ?? 0), 0)
-    return { collected, deducted, sent, outstanding }
-  }, [filtered])
+ const rangeTotals = useMemo(() => {
+  const collected = filtered.reduce((s: number, r: any) => s + (r.cashCollected   ?? 0), 0)
+  const deducted  = filtered.reduce((s: number, r: any) => s + (r.totalDeductions ?? 0), 0)
+  const sent      = filtered.reduce((s: number, r: any) => s + (r.completedSent   ?? 0), 0)
+  const outstanding = Math.max(0, collected - sent - deducted)
+  return { collected, deducted, sent, outstanding }
+}, [filtered])
 
-  const totalAllTimeOutstanding = useMemo(() => {
-    if (!history) return 0
-    return (history as any[]).reduce((s: number, r: any) => s + (r.dayOutstanding ?? 0), 0)
-  }, [history])
+  const totalAllTimeOutstanding = summary
+  ? Math.max(0, (summary.totalEverCollected ?? 0) - (summary.totalEverSent ?? 0) - (summary.totalEverDeducted ?? 0))
+  : 0
 
   const handleExport = () => {
     if (filtered.length === 0) { toast.error('No records to export'); return }
