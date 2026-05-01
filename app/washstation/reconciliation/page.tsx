@@ -76,7 +76,7 @@ export default function ReconciliationPage() {
   )
   const history = useQuery(
     (api as any).cashReconciliation.getReconciliationHistory,
-    stationToken ? { stationToken, days: 90 } : 'skip'
+    stationToken ? { stationToken, days: 365 } : 'skip'
   )
 
   const initiate = useAction((api as any).cashReconciliation.initiateCashReconciliation)

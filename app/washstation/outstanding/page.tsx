@@ -277,7 +277,7 @@ export default function OutstandingHistoryPage() {
 
   const history = useQuery(
     (api as any).cashReconciliation.getReconciliationHistory,
-    stationToken ? { stationToken, days: 90 } : 'skip'
+    stationToken ? { stationToken, days: 365 } : 'skip'
   )
 
   const summary = useQuery(
