@@ -380,21 +380,6 @@ export default function ReconciliationPage() {
                   <X className='w-4 h-4' />
                 </Button>
               </div>
-              <div className='flex items-center gap-1.5 mt-2'>
-                {(['7d', '30d', '90d', 'all'] as const).map(f => (
-                  <button
-                    key={f}
-                    onClick={() => setReconFilter(f)}
-                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                      reconFilter === f
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                    }`}
-                  >
-                    {f === '7d' ? 'Last 7 days' : f === '30d' ? 'Last 30 days' : f === '90d' ? 'Last 90 days' : 'All time'}
-                  </button>
-                ))}
-              </div>
             </CardHeader>
             <div className='flex items-center gap-1.5 px-4 pb-3 border-b border-border'>
               {(['7d', '30d', '90d', 'all'] as const).map(f => (
