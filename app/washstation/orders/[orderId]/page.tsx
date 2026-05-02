@@ -5,7 +5,7 @@ import { WashStationLayout } from '@/components/washstation/WashStationLayout';
 import { useStationSession } from '@/hooks/useStationSession';
 import { useStationOrder } from '@/hooks/useStationOrders';
 import { useStationOrderStatus } from '@/hooks/useStationOrderStatus';
-import { useQuery } from 'convex/react';
+import { useQuery, useAction } from 'convex/react';
 import { api } from "@jordan6699/washlab-backend/api";
 import { LoadingSpinner } from '@/components/washstation/LoadingSpinner';
 import { EmptyState } from '@/components/washstation/EmptyState';
@@ -31,6 +31,7 @@ import {
   Pause,
   Play,
   MessageCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useState, useEffect, useRef } from 'react';
@@ -81,8 +82,6 @@ export default function OrderDetailsPage() {
   const router  = useRouter();
   const orderId = params.orderId as string;
 
-  // ✅ isSessionValid passed to useStationOrder to prevent the query firing
-  // before session is confirmed — fixes "Invalid station session" error
   const { stationToken, isSessionValid } = useStationSession();
   const { order, isLoading } = useStationOrder(stationToken, orderId as any, isSessionValid);
   const { changeStatus } = useStationOrderStatus(stationToken);
@@ -97,16 +96,13 @@ export default function OrderDetailsPage() {
     attendant: { _id: Id<'attendants'>; name: string; email: string } | null;
   }> | undefined;
 
-  const [isUpdating,       setIsUpdating]       = useState(false);
-  const [showVerification, setShowVerification] = useState(false);
-  const [pendingStage,     setPendingStage]     = useState<string | null>(null);
-  const [whatsappSent,     setWhatsappSent]     = useState(false);
+  const verifyAndRecoverPayment = useAction((api as any).paymentsRecovery.verifyAndRecoverPayment);
 
-  // ── READY POPUP (disabled — moving to global layout) ──────────────────
-  // const [showReadyPopup,   setShowReadyPopup]   = useState(false);
-  // const readyIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  // const readyDismissRef  = useRef<NodeJS.Timeout | null>(null);
-  // ──────────────────────────────────────────────────────────────────────
+  const [isUpdating,          setIsUpdating]          = useState(false);
+  const [showVerification,    setShowVerification]    = useState(false);
+  const [pendingStage,        setPendingStage]        = useState<string | null>(null);
+  const [whatsappSent,        setWhatsappSent]        = useState(false);
+  const [isVerifyingPayment,  setIsVerifyingPayment]  = useState(false);
 
   const [elapsedTime,      setElapsedTime]      = useState(0);
   const [stageDuration,    setStageDuration]    = useState(0);
@@ -141,30 +137,6 @@ export default function OrderDetailsPage() {
       audioRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTUIGWi68OScTgwMUKvm8LNgGgU7k9nyz3gsBS1/zPLaizsKGGS66OihUBELTKXh8bllHAU2jdTxz38vBSl+zPDaizwLGGa67+idUBELTqfi8bllHAU3jdXyz38vBSp+zPDaizwKF2W57+idUREKTqXi8bhlHAU3jdXxz38vBSl+y/HajDsLF2S57umeUBELTqXi8bhlHAU2jdXxz38vBSl+y/HajDsLGGS57umeUBELTabh8bllHAU2jdXxz38vBSl+y/HajDsLGGS47umeTxALTabh8bllHAU2jdXxz38vBSl+y/HajDwLGGO67+meTxALTabh8blmHAU1jdXxz38vBSl+y/HajDwLTabh8blmHAU1');
     }
   }, []);
-
-  // ── READY POPUP (disabled — moving to global layout) ──────────────────
-  // useEffect(() => {
-  //   if (readyIntervalRef.current) { clearInterval(readyIntervalRef.current); readyIntervalRef.current = null; }
-  //   if (readyDismissRef.current)  { clearTimeout(readyDismissRef.current);   readyDismissRef.current  = null; }
-  //
-  //   if (currentStatus === 'ready') {
-  //     const showBriefly = () => {
-  //       setShowReadyPopup(true);
-  //       audioRef.current?.play().catch(() => {});
-  //       readyDismissRef.current = setTimeout(() => setShowReadyPopup(false), 3000);
-  //     };
-  //     showBriefly();
-  //     readyIntervalRef.current = setInterval(showBriefly, 3 * 60 * 1000);
-  //   } else {
-  //     setShowReadyPopup(false);
-  //   }
-  //
-  //   return () => {
-  //     if (readyIntervalRef.current) clearInterval(readyIntervalRef.current);
-  //     if (readyDismissRef.current)  clearTimeout(readyDismissRef.current);
-  //   };
-  // }, [currentStatus]);
-  // ──────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!order || timerInitialized) return;
@@ -278,6 +250,28 @@ export default function OrderDetailsPage() {
     }
   };
 
+  // Verify with Paystack — checks if customer already paid and marks order as paid if so
+  const handleVerifyWithPaystack = async () => {
+    if (!order) return;
+    setIsVerifyingPayment(true);
+    try {
+      const result = await verifyAndRecoverPayment({ orderId: order._id });
+      if (result.recovered) {
+        toast.success(`Payment verified! ₵${result.amount?.toFixed(2)} via ${result.method === 'mobile_money' ? 'Mobile Money' : 'Card'}`);
+      } else if (result.alreadyPaid) {
+        toast.info('Payment already recorded.');
+      } else if (result.noReference) {
+        toast.warning('No Paystack payment found for this order. Customer may not have paid via Paystack yet.');
+      } else {
+        toast.error(result.error ?? 'Payment not confirmed by Paystack.');
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to verify with Paystack');
+    } finally {
+      setIsVerifyingPayment(false);
+    }
+  };
+
   useEffect(() => {
     if (order && typeof window !== 'undefined') {
       const sent = localStorage.getItem(`whatsapp_sent_${order._id}`);
@@ -335,26 +329,6 @@ export default function OrderDetailsPage() {
   return (
     <WashStationLayout title={`Order #${order.orderNumber}`}>
       <div className="space-y-6">
-
-        {/* ── READY POPUP (disabled — moving to global layout) ────────────
-        {showReadyPopup && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl p-8 shadow-2xl max-w-md w-full mx-4 animate-in zoom-in duration-300">
-              <div className="text-center space-y-4">
-                <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto animate-pulse">
-                  <CheckCircle className="w-12 h-12 text-green-600 dark:text-green-400" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Order Ready! 🎉</h2>
-                  <p className="text-lg font-semibold text-primary">#{order.orderNumber}</p>
-                  <p className="text-gray-600 dark:text-gray-400 mt-2">{order.customer?.name}'s laundry is ready for pickup</p>
-                </div>
-                <Button onClick={() => setShowReadyPopup(false)} className="w-full" size="lg">Got it!</Button>
-              </div>
-            </div>
-          </div>
-        )}
-        ── */}
 
         {/* Back Button */}
         <button onClick={() => router.push('/washstation/orders')} className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors">
@@ -530,7 +504,7 @@ export default function OrderDetailsPage() {
                 <CardHeader><CardTitle>Actions</CardTitle></CardHeader>
                 <CardContent>
 
-                  {/* ── Payment banner — ALL unpaid orders, both walk-in and online ── */}
+                  {/* Payment banner — only shown when order is unpaid */}
                   {order.paymentStatus !== 'paid' && (
                     <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 mb-4 space-y-3">
                       <p className="text-warning font-medium flex items-center gap-2">
@@ -539,13 +513,31 @@ export default function OrderDetailsPage() {
                       <p className="text-sm text-muted-foreground">
                         Collect payment from the customer before or after the wash.
                       </p>
-                      <Button
-                        size="default"
-                        className="w-full sm:w-auto bg-success hover:bg-success/90 text-white"
-                        onClick={() => router.push(`/washstation/payment?orderId=${order._id}`)}
-                      >
-                        <CreditCard className="w-4 h-4 mr-2" /> Collect Payment
-                      </Button>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button
+                          size="default"
+                          className="w-full sm:w-auto bg-success hover:bg-success/90 text-white"
+                          onClick={() => router.push(`/washstation/payment?orderId=${order._id}`)}
+                        >
+                          <CreditCard className="w-4 h-4 mr-2" /> Collect Payment
+                        </Button>
+                        {/* Shown only when order is unpaid — hides automatically once payment is confirmed */}
+                        <Button
+                          size="default"
+                          variant="outline"
+                          className="w-full sm:w-auto"
+                          disabled={isVerifyingPayment}
+                          onClick={handleVerifyWithPaystack}
+                        >
+                          {isVerifyingPayment
+                            ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Checking Paystack…</>
+                            : <><RefreshCw className="w-4 h-4 mr-2" /> Verify with Paystack</>
+                          }
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        If the customer already paid via Paystack but the order still shows unpaid, tap "Verify with Paystack" to check and update automatically.
+                      </p>
                     </div>
                   )}
 

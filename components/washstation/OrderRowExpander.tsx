@@ -4,7 +4,9 @@ import { useStationOrderStatus, type OrderStatus } from "@/hooks/useStationOrder
 import { ActionVerification } from "./ActionVerification"
 import { Id } from "@jordan6699/washlab-backend/dataModel"
 import { toast } from "sonner"
-import { Play, CheckCircle, Loader2, CreditCard, MessageCircle, Truck } from "lucide-react"
+import { Play, CheckCircle, Loader2, CreditCard, MessageCircle, Truck, RefreshCw } from "lucide-react"
+import { useAction } from "convex/react"
+import { api } from "@jordan6699/washlab-backend/api"
 
 interface OrderExpanderProps {
   order: {
@@ -27,7 +29,9 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
   const [isMoving, setIsMoving] = useState(false)
   const [verifyOpen, setVerifyOpen] = useState(false)
   const [localStatus, setLocalStatus] = useState<OrderStatus | null>(null)
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false)
   const { changeStatus } = useStationOrderStatus(stationToken)
+  const verifyAndRecoverPayment = useAction((api as any).paymentsRecovery.verifyAndRecoverPayment)
 
   const effectiveStatus = (localStatus ?? order.status) as OrderStatus
 
@@ -41,9 +45,8 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
     setLocalStatus(status)
     try {
       await changeStatus(order._id as Id<"orders">, status, undefined, attendantId)
-      // Keep localStatus set so UI reflects change immediately
     } catch (e) {
-      setLocalStatus(null) // Only reset on failure
+      setLocalStatus(null)
       toast.error("Failed to update status")
     } finally {
       setIsMoving(false)
@@ -74,12 +77,33 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
     try {
       await changeStatus(order._id as Id<"orders">, "delivered" as OrderStatus)
       toast.success("Order marked as delivered")
-      // localStatus stays as "delivered" - UI stays greyed out
     } catch (e) {
       setLocalStatus(null)
       toast.error("Failed to mark as delivered")
     } finally {
       setIsMoving(false)
+    }
+  }
+
+  // Verify with Paystack — checks if the customer already paid and marks order as paid if confirmed
+  const handleVerifyWithPaystack = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setIsVerifyingPayment(true)
+    try {
+      const result = await verifyAndRecoverPayment({ orderId: order._id })
+      if (result.recovered) {
+        toast.success(`Payment verified! ₵${result.amount?.toFixed(2)} confirmed`)
+      } else if (result.alreadyPaid) {
+        toast.info("Payment already recorded.")
+      } else if (result.noReference) {
+        toast.warning("No Paystack payment found for this order yet.")
+      } else {
+        toast.error(result.error ?? "Payment not confirmed by Paystack.")
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to verify with Paystack")
+    } finally {
+      setIsVerifyingPayment(false)
     }
   }
 
@@ -97,6 +121,7 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap min-w-[120px]">
+      {/* Pay button — shown when unpaid */}
       {unpaid && onCollectPayment && (
         <button
           onClick={(e) => { e.stopPropagation(); onCollectPayment() }}
@@ -159,6 +184,21 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
             </button>
           )}
         </>
+      )}
+
+      {/* Verify with Paystack — at the end so accidental taps don't interfere with main actions */}
+      {unpaid && !isTerminal && (
+        <button
+          onClick={handleVerifyWithPaystack}
+          disabled={isVerifyingPayment}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-500 text-white text-xs font-semibold hover:bg-blue-600 transition-colors disabled:opacity-50"
+        >
+          {isVerifyingPayment
+            ? <Loader2 className="w-3 h-3 animate-spin" />
+            : <RefreshCw className="w-3 h-3" />
+          }
+          {isVerifyingPayment ? "Checking…" : "Verify"}
+        </button>
       )}
 
       {verifyOpen && (
