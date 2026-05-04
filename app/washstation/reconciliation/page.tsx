@@ -109,14 +109,12 @@ export default function ReconciliationPage() {
 
   const todayOutstanding = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
 
-  const allTimeOutstanding = summary
-    ? Math.max(0, (summary.totalEverCollected ?? 0) - (summary.totalEverSent ?? 0) - (summary.totalEverDeducted ?? 0))
-    : null
+ const allTimeOutstanding = summary?.outstandingCash ?? todayOutstanding
 
-  const historicalDebt    = allTimeOutstanding !== null ? Math.max(0, allTimeOutstanding - todayOutstanding) : 0
+  const historicalDebt    = Math.max(0, allTimeOutstanding - todayOutstanding)
   const hasHistoricalDebt = historicalDebt > 0
 
-  const amountToSend = allTimeOutstanding !== null ? allTimeOutstanding : todayOutstanding
+  const amountToSend = allTimeOutstanding > 0 ? allTimeOutstanding : todayOutstanding
 
   // Build the recent recons list from history — filtered by selected date range
   const recentRecons = (() => {
@@ -151,8 +149,8 @@ export default function ReconciliationPage() {
     return { oldestUnpaidDate: dates[0] ?? null, newestUnpaidDate: dates[dates.length - 1] ?? null }
   })()
 
-  const totalAllTimeOutstanding = allTimeOutstanding
-  const hasAnyOutstanding = todayOutstanding > 0 || (allTimeOutstanding ?? 0) > 0
+const totalAllTimeOutstanding = allTimeOutstanding
+  const hasAnyOutstanding = todayOutstanding > 0 || allTimeOutstanding > 0
 
   const stopPolling = () => {
     if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
