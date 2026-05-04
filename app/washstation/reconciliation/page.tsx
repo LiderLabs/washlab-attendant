@@ -152,7 +152,7 @@ export default function ReconciliationPage() {
   })()
 
   const totalAllTimeOutstanding = allTimeOutstanding
-  const hasAnyOutstanding = (allTimeOutstanding ?? 0) > 0
+  const hasAnyOutstanding = todayOutstanding > 0 || (allTimeOutstanding ?? 0) > 0
 
   const stopPolling = () => {
     if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
@@ -794,7 +794,7 @@ export default function ReconciliationPage() {
               </Card>
             )}
 
-            {!hasAnyOutstanding && deductions.length === 0 && flowStep !== 'success' && (
+            {!hasAnyOutstanding && todayOutstanding === 0 && deductions.length === 0 && flowStep !== 'success' && (
               <Card className='border-green-200 bg-green-50/50 dark:bg-green-950/10'>
                 <CardContent className='flex items-center gap-3 py-6'>
                   <CheckCircle2 className='w-8 h-8 text-green-600 shrink-0' />
