@@ -101,9 +101,18 @@ export default function ReconciliationPage() {
 
   const todayOutstanding = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
 
-  const allTimeOutstanding = summary
-    ? Math.max(0, Math.round(((summary.totalEverCollected ?? 0) - (summary.totalEverSent ?? 0) - (summary.totalEverDeducted ?? 0)) * 100) / 100)
-    : todayOutstanding
+  // ✅ FIX: Sum dayOutstanding per day from history (per-day math, not all-time subtraction).
+  // This correctly handles historical over-sends (e.g. Academic City's ₵650 case)
+  // and is safe for all branches — if no unpaid days exist, total equals todayOutstanding.
+  const allTimeOutstanding = (() => {
+    if (!history) return todayOutstanding
+    const days = history as any[]
+    let total = 0
+    for (const day of days) {
+      total = Math.round((total + (day.dayOutstanding ?? 0)) * 100) / 100
+    }
+    return Math.max(0, total)
+  })()
 
   const historicalDebt    = Math.max(0, allTimeOutstanding - todayOutstanding)
   const hasHistoricalDebt = historicalDebt > 0
