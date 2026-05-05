@@ -109,7 +109,9 @@ export default function ReconciliationPage() {
 
   const todayOutstanding = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
 
- const allTimeOutstanding = summary?.outstandingCash ?? todayOutstanding
+const allTimeOutstanding = summary
+  ? Math.max(0, Math.round(((summary.totalEverCollected ?? 0) - (summary.totalEverSent ?? 0) - (summary.totalEverDeducted ?? 0)) * 100) / 100)
+  : todayOutstanding
 
   const historicalDebt    = Math.max(0, allTimeOutstanding - todayOutstanding)
   const hasHistoricalDebt = historicalDebt > 0
