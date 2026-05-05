@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 import {
   Banknote, Loader2, ArrowRight, CheckCircle2,
   ShoppingCart, Plus, History, TrendingUp, Smartphone, KeyRound,
-  AlertCircle, RefreshCw, ClipboardList, X, Copy, Check,
+  AlertCircle, RefreshCw, Copy, Check,
 } from 'lucide-react'
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
@@ -59,15 +59,7 @@ export default function ReconciliationPage() {
   const [savingDeduction, setSavingDeduction] = useState(false)
   const [showDeductionForm, setShowDeductionForm] = useState(false)
 
-  // Verify with Paystack state
-  const [showVerifyForm, setShowVerifyForm] = useState(false)
-  const [verifyReference, setVerifyReference] = useState('')
   const [isVerifying, setIsVerifying] = useState(false)
-
-  // Recent recons panel
-  const [showRecentRecons, setShowRecentRecons] = useState(false)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [reconFilter, setReconFilter] = useState<'7d' | '30d' | '90d' | 'all'>('7d')
 
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
   const savedRef = useRef<string | null>(null)
@@ -109,25 +101,18 @@ export default function ReconciliationPage() {
 
   const todayOutstanding = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
 
-const allTimeOutstanding = summary
-  ? Math.max(0, Math.round(((summary.totalEverCollected ?? 0) - (summary.totalEverSent ?? 0) - (summary.totalEverDeducted ?? 0)) * 100) / 100)
-  : todayOutstanding
+  const allTimeOutstanding = summary
+    ? Math.max(0, Math.round(((summary.totalEverCollected ?? 0) - (summary.totalEverSent ?? 0) - (summary.totalEverDeducted ?? 0)) * 100) / 100)
+    : todayOutstanding
 
   const historicalDebt    = Math.max(0, allTimeOutstanding - todayOutstanding)
   const hasHistoricalDebt = historicalDebt > 0
+  const amountToSend      = allTimeOutstanding > 0 ? allTimeOutstanding : todayOutstanding
 
-  const amountToSend = allTimeOutstanding > 0 ? allTimeOutstanding : todayOutstanding
-
-  // Build the recent recons list from history — filtered by selected date range
-  const recentRecons = (() => {
+  // All recons with a reference, sorted newest first — used by Verify Payment
+  const allRecentRecons = (() => {
     const all = ((history as any[] | undefined) ?? []).filter((d: any) => d.paystackReference)
-    const sorted = all.sort((a: any, b: any) => (b.date > a.date ? 1 : -1))
-    if (reconFilter === 'all') return sorted
-    const days = reconFilter === '7d' ? 7 : reconFilter === '30d' ? 30 : 90
-    const cutoff = new Date()
-    cutoff.setDate(cutoff.getDate() - days)
-    const cutoffStr = format(cutoff, 'yyyy-MM-dd')
-    return sorted.filter((d: any) => d.date >= cutoffStr)
+    return all.sort((a: any, b: any) => (b.date > a.date ? 1 : -1))
   })()
 
   useEffect(() => {
@@ -151,7 +136,7 @@ const allTimeOutstanding = summary
     return { oldestUnpaidDate: dates[0] ?? null, newestUnpaidDate: dates[dates.length - 1] ?? null }
   })()
 
-const totalAllTimeOutstanding = allTimeOutstanding
+  const totalAllTimeOutstanding = allTimeOutstanding
   const hasAnyOutstanding = todayOutstanding > 0 || allTimeOutstanding > 0
 
   const stopPolling = () => {
@@ -284,23 +269,21 @@ const totalAllTimeOutstanding = allTimeOutstanding
     }
   }
 
-  const handleVerifyRecon = async () => {
-    if (!verifyReference.trim()) { toast.error('Enter the Paystack reference'); return }
+  // Uses the most recent recon ref by default, or a specific one if passed
+  const handleVerifyRecon = async (reference?: string) => {
+    const ref = reference ?? allRecentRecons[0]?.paystackReference
+    if (!ref) { toast.error('No recent recon found to verify'); return }
     setIsVerifying(true)
     try {
       const res = await verifyAndRecoverRecon({
-        reference: verifyReference.trim(),
+        reference: ref,
         stationToken,
         branchId: summary?.branchId ?? undefined,
       })
       if (res.recovered) {
         toast.success(`Payment verified! ₵${res.amount?.toFixed(2)} on ${res.date} from ${res.senderMomoNumber}`)
-        setShowVerifyForm(false)
-        setVerifyReference('')
       } else if (res.alreadyCompleted) {
-        toast.info('This payment is already recorded as completed.')
-        setShowVerifyForm(false)
-        setVerifyReference('')
+        toast.info('Most recent payment is already recorded as completed.')
       } else {
         toast.error(res.error ?? 'Could not verify this payment with Paystack')
       }
@@ -309,18 +292,6 @@ const totalAllTimeOutstanding = allTimeOutstanding
     } finally {
       setIsVerifying(false)
     }
-  }
-
-  const handleSelectRecon = (ref: string) => {
-    setVerifyReference(ref)
-    setShowRecentRecons(false)
-    setShowVerifyForm(true)
-  }
-
-  const handleCopyRef = (ref: string) => {
-    navigator.clipboard.writeText(ref).catch(() => {})
-    setCopiedId(ref)
-    setTimeout(() => setCopiedId(null), 1500)
   }
 
   const outstandingDateLabel = (() => {
@@ -344,19 +315,14 @@ const totalAllTimeOutstanding = allTimeOutstanding
               variant='outline'
               size='sm'
               className='gap-2'
-              onClick={() => setShowVerifyForm(v => !v)}
+              onClick={() => handleVerifyRecon()}
+              disabled={isVerifying || history === undefined}
             >
-              <RefreshCw className='w-3.5 h-3.5' />
-              Verify Payment
-            </Button>
-            <Button
-              variant='outline'
-              size='sm'
-              className='gap-2'
-              onClick={() => setShowRecentRecons(v => !v)}
-            >
-              <ClipboardList className='w-3.5 h-3.5' />
-              Recent Recons
+              {isVerifying
+                ? <Loader2 className='w-3.5 h-3.5 animate-spin' />
+                : <RefreshCw className='w-3.5 h-3.5' />
+              }
+              {isVerifying ? 'Verifying…' : 'Verify Payment'}
             </Button>
             <Link href='/washstation/outstanding'>
               <Button variant='outline' size='sm' className='gap-2'>
@@ -366,141 +332,6 @@ const totalAllTimeOutstanding = allTimeOutstanding
             </Link>
           </div>
         </div>
-
-        {/* Recent Recons panel */}
-        {showRecentRecons && (
-          <Card className='border-muted'>
-            <CardHeader className='pb-2'>
-              <div className='flex items-center justify-between'>
-                <CardTitle className='text-base flex items-center gap-2'>
-                  <ClipboardList className='w-4 h-4 text-muted-foreground' />
-                  Recent Recon References
-                </CardTitle>
-                <Button variant='ghost' size='icon' className='w-7 h-7' onClick={() => setShowRecentRecons(false)}>
-                  <X className='w-4 h-4' />
-                </Button>
-              </div>
-            </CardHeader>
-            <div className='flex items-center gap-1.5 px-4 pb-3 border-b border-border'>
-              {(['7d', '30d', '90d', 'all'] as const).map(f => (
-                <button
-                  key={f}
-                  onClick={() => setReconFilter(f)}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                    reconFilter === f
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                  }`}
-                >
-                  {f === '7d' ? 'Last 7 days' : f === '30d' ? 'Last 30 days' : f === '90d' ? 'Last 3 months' : 'All time'}
-                </button>
-              ))}
-            </div>
-            <CardContent className='p-0'>
-              {history === undefined ? (
-                <div className='flex justify-center py-8'>
-                  <Loader2 className='w-4 h-4 animate-spin text-muted-foreground' />
-                </div>
-              ) : recentRecons.length === 0 ? (
-                <p className='text-sm text-muted-foreground text-center py-6'>
-                  No recons found for this period
-                </p>
-              ) : (
-                <div className='divide-y divide-border'>
-                  {recentRecons.map((r: any) => (
-                    <div key={r.paystackReference} className='flex items-center gap-3 px-4 py-3 hover:bg-muted/30'>
-                      <div className='flex-1 min-w-0'>
-                        <p className='font-mono text-xs text-foreground truncate'>{r.paystackReference}</p>
-                        <p className='text-xs text-muted-foreground mt-0.5'>
-                          {r.date ? format(parseISO(r.date), 'd MMM yyyy') : '—'}
-                          {' · '}
-                          <span className='font-medium'>₵{(r.amountSent ?? 0).toFixed(2)}</span>
-                          {' · '}
-                          <StatusBadge status={r.status ?? 'pending'} />
-                        </p>
-                      </div>
-                      <div className='flex items-center gap-1 shrink-0'>
-                        <Button
-                          variant='ghost'
-                          size='icon'
-                          className='w-7 h-7'
-                          title='Copy reference'
-                          onClick={() => handleCopyRef(r.paystackReference)}
-                        >
-                          {copiedId === r.paystackReference
-                            ? <Check className='w-3.5 h-3.5 text-green-600' />
-                            : <Copy className='w-3.5 h-3.5' />
-                          }
-                        </Button>
-                        <Button
-                          variant='outline'
-                          size='sm'
-                          className='h-7 text-xs px-2'
-                          onClick={() => handleSelectRecon(r.paystackReference)}
-                        >
-                          Use
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className='px-4 py-2 border-t border-border'>
-                <p className='text-xs text-muted-foreground'>Tap <strong>Use</strong> to auto-fill the verify form, or copy the reference manually.</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Verify Payment form */}
-        {showVerifyForm && (
-          <Card className='border-blue-200 bg-blue-50/50 dark:bg-blue-950/10'>
-            <CardHeader className='pb-3 flex flex-row items-center justify-between'>
-              <CardTitle className='text-base flex items-center gap-2'>
-                <RefreshCw className='w-4 h-4 text-blue-600' />
-                Verify a Missed Payment
-              </CardTitle>
-              <Button variant='ghost' size='icon' className='w-7 h-7' onClick={() => { setShowVerifyForm(false); setVerifyReference('') }}>
-                <X className='w-4 h-4' />
-              </Button>
-            </CardHeader>
-            <CardContent className='space-y-3'>
-              <p className='text-sm text-muted-foreground'>
-                Enter the Paystack reference from the payment — we'll pull the amount, date, and MoMo number directly from Paystack and mark it as settled.
-              </p>
-              <div>
-                <div className='flex items-center justify-between mb-1.5'>
-                  <Label className='text-xs'>Paystack Reference</Label>
-                  {!showRecentRecons && (
-                    <button
-                      className='text-xs text-blue-600 hover:underline'
-                      onClick={() => { setShowRecentRecons(true); setShowVerifyForm(false) }}
-                    >
-                      Browse recent recons
-                    </button>
-                  )}
-                </div>
-                <Input
-                  placeholder='e.g. RECON-1777736816073-0e6bo'
-                  value={verifyReference}
-                  onChange={e => setVerifyReference(e.target.value.trim())}
-                  className='h-10 font-mono text-sm'
-                  disabled={isVerifying}
-                />
-              </div>
-              <Button
-                className='w-full gap-2'
-                onClick={handleVerifyRecon}
-                disabled={!verifyReference.trim() || isVerifying}
-              >
-                {isVerifying
-                  ? <><Loader2 className='w-4 h-4 animate-spin' /> Checking Paystack…</>
-                  : <><RefreshCw className='w-4 h-4' /> Verify & Recover</>
-                }
-              </Button>
-            </CardContent>
-          </Card>
-        )}
 
         {/* Summary cards */}
         <div className={`grid gap-4 ${hasHistoricalDebt ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}`}>
