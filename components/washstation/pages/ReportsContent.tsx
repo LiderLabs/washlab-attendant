@@ -18,7 +18,9 @@ function fmt(n: number) { return `GHS ${n.toFixed(2)}`; }
 interface FaultEntry {
   machineId: string
   machineName: string
+  displayName: string       // friendly name — what attendant saw
   serialNumber?: string
+  otherDetails?: string
   faultTypes: string[]
   description: string
 }
@@ -31,14 +33,20 @@ function deserializeFaults(raw: string | null | undefined): FaultEntry[] {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) return parsed
+    if (Array.isArray(parsed)) {
+      // Backfill displayName for older records that were saved without it
+      return parsed.map((f: any) => ({
+        ...f,
+        displayName: f.displayName ?? f.machineName ?? f.machineId ?? '',
+      }))
+    }
   } catch {
     const lines = raw.split('\n').filter(Boolean)
     return lines.map((l: string) => {
       const match = l.match(/^\[(.+?)\]\s*(.*)$/)
       return match
-        ? { machineId: match[1], machineName: match[1], faultTypes: [], description: match[2] }
-        : { machineId: '', machineName: '', faultTypes: [], description: l }
+        ? { machineId: match[1], machineName: match[1], displayName: match[1], faultTypes: [], description: match[2] }
+        : { machineId: '', machineName: '', displayName: '', faultTypes: [], description: l }
     })
   }
   return []
@@ -144,7 +152,7 @@ function DailyReportPageInner() {
       if (!raw) return;
       const saved = JSON.parse(raw);
       if (saved.soapUnits !== undefined) setSoapUnits(saved.soapUnits);
-      if (Array.isArray(saved.faults)) setFaults(saved.faults);
+      if (Array.isArray(saved.faults)) setFaults(deserializeFaults(JSON.stringify(saved.faults)));
       if (saved.endOfDayComment) setEndOfDayComment(saved.endOfDayComment);
       toast.success("Draft restored!");
     } catch {}
@@ -195,8 +203,10 @@ function DailyReportPageInner() {
     const machine = (activeMachines as any[]).find((m: any) => m._id === selectedMachineId);
     setFaults(prev => [...prev, {
       machineId:    selectedMachineId.trim(),
-      machineName:  machine?.name || selectedMachineId.trim(),
+      machineName:  machine?.name        || selectedMachineId.trim(),
+      displayName:  machine?.displayName || machine?.name || selectedMachineId.trim(),
       serialNumber: machine?.serialNumber || undefined,
+      otherDetails: machine?.otherDetails || undefined,
       faultTypes:   selectedFaultTypes,
       description:  faultDescription.trim(),
     }]);
@@ -264,9 +274,6 @@ function DailyReportPageInner() {
   };
 
   const totalRecorded = cashAmount + mobileMoneyAmount + cardAmount + paystackAmount;
-
-  // paidTokenRevenue = washerTokenRevenue + dryerTokenRevenue
-  // Both calculated from exact branchService prices, paid orders only
   const totalTokenRevenue = autoData?.paidTokenRevenue ?? autoData?.expectedRevenue ?? totalRecorded;
   const discrepancy = Math.round((totalRecorded - totalTokenRevenue) * 100) / 100;
 
@@ -336,13 +343,11 @@ function DailyReportPageInner() {
             <div className="bg-muted/40 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Washer Tokens</p>
               <p className="text-2xl font-bold text-foreground">{washerTokens}</p>
-              {/* Revenue from washer loads only — uses exact branchService price, not hardcoded */}
               <p className="text-xs text-muted-foreground mt-1">{fmt(autoData?.washerTokenRevenue ?? 0)}</p>
             </div>
             <div className="bg-muted/40 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Dryer Tokens</p>
               <p className="text-2xl font-bold text-foreground">{dryerTokens}</p>
-              {/* Revenue from dryer loads only — uses exact branchService extraDryPrice */}
               <p className="text-xs text-muted-foreground mt-1">{fmt(autoData?.dryerTokenRevenue ?? 0)}</p>
             </div>
           </div>
@@ -398,7 +403,6 @@ function DailyReportPageInner() {
               <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Tokens Used Value</span>
               <p className="text-xs text-blue-600 dark:text-blue-400">{(autoData?.washerTokensUsed ?? 0) + (autoData?.dryerTokensUsed ?? 0)} tokens · paid orders only</p>
             </div>
-            {/* washerTokenRevenue + dryerTokenRevenue — exact service prices, paid orders only */}
             <span className="text-lg font-bold text-blue-700 dark:text-blue-300">{fmt(totalTokenRevenue)}</span>
           </div>
 
@@ -455,13 +459,14 @@ function DailyReportPageInner() {
                       className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
                       <option value="">Select machine...</option>
                       {(activeMachines as any[]).map((m: any) => (
+                        // Attendant only sees the friendly displayName
                         <option key={m._id} value={m._id}>
-                          {m.name}{m.serialNumber ? ` (SN: ${m.serialNumber})` : ''}
+                          {m.displayName || m.name}
                         </option>
                       ))}
                     </select>
                   ) : (
-                    <Input value={selectedMachineId} onChange={e => setSelectedMachineId(e.target.value)} placeholder="e.g. ADX1234" className="text-sm" />
+                    <Input value={selectedMachineId} onChange={e => setSelectedMachineId(e.target.value)} placeholder="e.g. Big Washer" className="text-sm" />
                   )}
                 </div>
                 <div>
@@ -493,14 +498,10 @@ function DailyReportPageInner() {
                   <div key={i} className="flex items-start gap-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
                     <Wrench className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-xs font-semibold text-destructive">{f.machineName || f.machineId || 'Unknown machine'}</p>
-                        {f.serialNumber && (
-                          <span className="text-[10px] font-mono bg-destructive/10 text-destructive px-1.5 py-0.5 rounded">
-                            SN: {f.serialNumber}
-                          </span>
-                        )}
-                      </div>
+                      {/* Attendant sees displayName on the fault card */}
+                      <p className="text-xs font-semibold text-destructive">
+                        {f.displayName || f.machineName || f.machineId || 'Unknown machine'}
+                      </p>
                       {f.faultTypes && f.faultTypes.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-0.5">
                           {f.faultTypes.map((ft: string) => (
