@@ -58,15 +58,14 @@ function DayCard({ day }: { day: any }) {
   const cashCollected   = day.cashCollected   ?? 0
   const totalDeductions = day.totalDeductions ?? 0
   const completedSent   = day.completedSent   ?? 0
-  // Use the running-balance-adjusted values passed in from the parent
   const dayOutstanding  = day._adjustedOutstanding ?? Math.max(0, cashCollected - completedSent - totalDeductions)
-  const isSettledByRunningBalance = day._settledByRunningBalance ?? false
+  const isSettled       = day._settledByRunningBalance
   const recons: any[]   = day.recons ?? []
   const orders: any[]   = day.orders ?? []
   const hasProcessing   = recons.some((r: any) => r.status === 'processing' || r.status === 'pending')
 
   const unsettledOrderIds = useMemo(() => {
-    if (dayOutstanding <= 0 || isSettledByRunningBalance) return new Set<string>()
+    if (dayOutstanding <= 0 || isSettled) return new Set<string>()
     const sorted = [...orders].sort((a, b) => b.createdAt - a.createdAt)
     const ids = new Set<string>()
     let running = 0
@@ -76,19 +75,19 @@ function DayCard({ day }: { day: any }) {
       running += o.finalPrice ?? 0
     }
     return ids
-  }, [orders, dayOutstanding, isSettledByRunningBalance])
+  }, [orders, dayOutstanding, isSettled])
 
-  const isOutstanding = dayOutstanding > 0 && !isSettledByRunningBalance && !hasProcessing
-  const isAwaiting    = hasProcessing && !isSettledByRunningBalance
-  const isSettled     = isSettledByRunningBalance || dayOutstanding === 0
+  const isOutstanding = dayOutstanding > 0 && !isSettled && !hasProcessing
+  const isAwaiting    = hasProcessing && !isSettled
+  const isFullySettled = isSettled || dayOutstanding === 0
 
   const borderClass =
-    isSettled     ? 'border-green-200' :
-    isAwaiting    ? 'border-yellow-300' :
-    isOutstanding ? 'border-red-400'    : 'border-border'
+    isFullySettled ? 'border-green-200' :
+    isAwaiting     ? 'border-yellow-300' :
+    isOutstanding  ? 'border-red-400'    : 'border-border'
 
   const statusPill =
-    isSettled ? (
+    isFullySettled ? (
       <span className='inline-flex text-xs font-semibold text-green-600 bg-green-50 dark:bg-green-950/20 px-2.5 py-1 rounded-full border border-green-200'>
         Settled
       </span>
@@ -291,89 +290,32 @@ export default function OutstandingHistoryPage() {
     return (history as any[]).filter(r => r.date >= fromDate && r.date <= toDate)
   }, [history, fromDate, toDate])
 
-  // Sort newest-first for display, but compute running balance oldest-first
+  // Simple per-day math — trust what the backend computed per day
   const sorted = useMemo(() => {
-    const chronological = [...filtered].sort((a, b) => a.date.localeCompare(b.date))
-
-    // Walk oldest → newest, track cumulative collected vs sent
-    // A day is settled if cumulative sent (up to and including ALL days) >= cumulative collected up to that point
-    let cumulativeCollected = 0
-    let cumulativeSent = 0
-
-    // First pass: compute cumulative totals per day (oldest first)
-    const withCumulative = chronological.map(day => {
-      cumulativeCollected += (day.cashCollected ?? 0) - (day.totalDeductions ?? 0)
-      cumulativeSent += day.completedSent ?? 0
-      return { ...day, _cumCollected: cumulativeCollected, _cumSent: cumulativeSent }
-    })
-
-    // Total sent across ALL days (we need this to check if later payments cover earlier days)
-    const totalSentAllDays = cumulativeSent
-    const totalCollectedAllDays = cumulativeCollected
-
-    // Second pass: for each day, check if the overall pot of money sent covers it
-    // Approach: remaining outstanding = totalCollected - totalSent
-    // The most recent days are outstanding first (unsettled from the end)
-    const totalOutstanding = Math.max(0, totalCollectedAllDays - totalSentAllDays)
-
-    // Walk newest → oldest, assign outstanding amount until it's used up
-    let remainingOutstanding = totalOutstanding
-    const adjusted = [...withCumulative].reverse().map(day => {
-      const dayCollected = Math.max(0, (day.cashCollected ?? 0) - (day.totalDeductions ?? 0))
-
-      // Days with nothing collected can never be outstanding — always settled
-      if (dayCollected === 0) {
+    return [...filtered]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map(day => {
+        const outstanding = day.dayOutstanding ?? Math.max(0,
+          (day.cashCollected ?? 0) - (day.completedSent ?? 0) - (day.totalDeductions ?? 0)
+        )
         return {
           ...day,
-          _adjustedOutstanding: 0,
-          _settledByRunningBalance: true,
+          _adjustedOutstanding: outstanding,
+          _settledByRunningBalance: outstanding === 0,
         }
-      }
-
-      if (remainingOutstanding <= 0) {
-        // This day is fully covered by payments
-        return {
-          ...day,
-          _adjustedOutstanding: 0,
-          _settledByRunningBalance: true,
-        }
-      }
-
-      if (remainingOutstanding >= dayCollected) {
-        // This whole day is outstanding
-        remainingOutstanding -= dayCollected
-        return {
-          ...day,
-          _adjustedOutstanding: dayCollected,
-          _settledByRunningBalance: false,
-        }
-      }
-
-      // Partially outstanding
-      const partialOutstanding = remainingOutstanding
-      remainingOutstanding = 0
-      return {
-        ...day,
-        _adjustedOutstanding: partialOutstanding,
-        _settledByRunningBalance: false,
-      }
-    })
-
-    // Reverse back to newest-first for display
-    return adjusted.reverse().sort((a, b) => b.date.localeCompare(a.date))
+      })
   }, [filtered])
 
   const rangeTotals = useMemo(() => {
-    const collected = filtered.reduce((s: number, r: any) => s + (r.cashCollected   ?? 0), 0)
-    const deducted  = filtered.reduce((s: number, r: any) => s + (r.totalDeductions ?? 0), 0)
-    const sent      = filtered.reduce((s: number, r: any) => s + (r.completedSent   ?? 0), 0)
+    const collected   = filtered.reduce((s: number, r: any) => s + (r.cashCollected   ?? 0), 0)
+    const deducted    = filtered.reduce((s: number, r: any) => s + (r.totalDeductions ?? 0), 0)
+    const sent        = filtered.reduce((s: number, r: any) => s + (r.completedSent   ?? 0), 0)
     const outstanding = Math.max(0, collected - sent - deducted)
     return { collected, deducted, sent, outstanding }
   }, [filtered])
 
-  const totalAllTimeOutstanding = summary
-    ? Math.max(0, (summary.totalEverCollected ?? 0) - (summary.totalEverSent ?? 0) - (summary.totalEverDeducted ?? 0))
-    : 0
+  // Use backend's correctly computed all-time outstanding
+  const totalAllTimeOutstanding = summary?.allTimeOutstanding ?? 0
 
   const handleExport = () => {
     if (filtered.length === 0) { toast.error('No records to export'); return }
