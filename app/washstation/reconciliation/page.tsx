@@ -27,6 +27,11 @@ interface Deduction {
 
 type FlowStep = 'idle' | 'loading' | 'otp' | 'submitting' | 'success'
 
+// ─── localStorage keys ────────────────────────────────────────────────────────
+const LS_MOMO_KEY = 'recon_momo_number'
+const LS_PENDING_REF_KEY = 'recon_pending_reference'
+const LS_PENDING_AMOUNT_KEY = 'recon_pending_amount'
+
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     completed: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
@@ -47,7 +52,11 @@ export default function ReconciliationPage() {
   const { attendance: activeAttendance } = useStationAttendance(stationToken)
 
   const [flowStep, setFlowStep] = useState<FlowStep>('idle')
-  const [momoNumber, setMomoNumber] = useState('')
+  // FIX 1: seed momoNumber from localStorage so it survives refresh
+  const [momoNumber, setMomoNumber] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem(LS_MOMO_KEY) ?? ''
+    return ''
+  })
   const [otp, setOtp] = useState('')
   const [pendingReference, setPendingReference] = useState('')
   const [result, setResult] = useState<{ amount: number; momoNumber: string; reference: string } | null>(null)
@@ -60,6 +69,9 @@ export default function ReconciliationPage() {
   const [showDeductionForm, setShowDeductionForm] = useState(false)
 
   const [isVerifying, setIsVerifying] = useState(false)
+  // FIX 2: manual reference input shown as last resort
+  const [showManualRefInput, setShowManualRefInput] = useState(false)
+  const [manualReference, setManualReference] = useState('')
 
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
   const savedRef = useRef<string | null>(null)
@@ -100,8 +112,7 @@ export default function ReconciliationPage() {
   const todayDeducted = totalDeductions
 
   const todayOutstanding = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
-
-const allTimeOutstanding = summary?.allTimeOutstanding ?? todayOutstanding
+  const allTimeOutstanding = summary?.allTimeOutstanding ?? todayOutstanding
 
   const historicalDebt    = Math.max(0, allTimeOutstanding - todayOutstanding)
   const hasHistoricalDebt = historicalDebt > 0
@@ -112,6 +123,25 @@ const allTimeOutstanding = summary?.allTimeOutstanding ?? todayOutstanding
     const all = ((history as any[] | undefined) ?? []).filter((d: any) => d.paystackReference)
     return all.sort((a: any, b: any) => (b.date > a.date ? 1 : -1))
   })()
+
+  // FIX 1: persist momoNumber to localStorage whenever it changes
+  useEffect(() => {
+    if (momoNumber) localStorage.setItem(LS_MOMO_KEY, momoNumber)
+  }, [momoNumber])
+
+  // FIX 1: on mount, check if there's a pending reference in localStorage
+  // (covers the case where user refreshed mid-payment)
+  useEffect(() => {
+    const savedRef = localStorage.getItem(LS_PENDING_REF_KEY)
+    const savedAmount = localStorage.getItem(LS_PENDING_AMOUNT_KEY)
+    const savedMomo = localStorage.getItem(LS_MOMO_KEY)
+    if (savedRef && savedAmount && savedMomo) {
+      toast.info('Resuming payment verification from before…', { duration: 4000 })
+      setPendingReference(savedRef)
+      setLastSentAmount(parseFloat(savedAmount))
+      // polling useEffect will pick up pendingReference and resume
+    }
+  }, [])
 
   useEffect(() => {
     if (flowStep === 'success' && lastSentAmount > 0) {
@@ -142,26 +172,41 @@ const allTimeOutstanding = summary?.allTimeOutstanding ?? todayOutstanding
     setPolling(false)
   }
 
+  const clearPendingFromStorage = () => {
+    localStorage.removeItem(LS_PENDING_REF_KEY)
+    localStorage.removeItem(LS_PENDING_AMOUNT_KEY)
+  }
+
   useEffect(() => {
     if (!pendingReference || flowStep === 'success') return
+
+    // FIX 1: persist pending reference + amount so refresh can resume
+    localStorage.setItem(LS_PENDING_REF_KEY, pendingReference)
+    localStorage.setItem(LS_PENDING_AMOUNT_KEY, String(amountToSend))
+
     setPolling(true)
     pollingRef.current = setInterval(async () => {
+      // FIX 1: read momoNumber from localStorage in case state was reset by refresh
+      const momoToUse = momoNumber || localStorage.getItem(LS_MOMO_KEY) || ''
+      const amountToUse = amountToSend || parseFloat(localStorage.getItem(LS_PENDING_AMOUNT_KEY) ?? '0')
+
       try {
         const res = await verify({
           reference: pendingReference,
           stationToken,
-          amountSent: amountToSend,
-          senderMomoNumber: momoNumber,
+          amountSent: amountToUse,
+          senderMomoNumber: momoToUse,
         })
         if (res.status === 'completed') {
           stopPolling()
+          clearPendingFromStorage()
           if (savedRef.current !== pendingReference) {
             savedRef.current = pendingReference
             try {
               await save({
                 stationToken,
-                senderMomoNumber: momoNumber,
-                amountSent: amountToSend,
+                senderMomoNumber: momoToUse,
+                amountSent: amountToUse,
                 paystackReference: pendingReference,
                 status: 'completed',
               })
@@ -169,12 +214,13 @@ const allTimeOutstanding = summary?.allTimeOutstanding ?? todayOutstanding
               console.warn('Frontend save failed (backend fallback should have caught it):', saveErr)
             }
           }
-          setLastSentAmount(amountToSend)
-          setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
+          setLastSentAmount(amountToUse)
+          setResult({ amount: amountToUse, momoNumber: momoToUse, reference: pendingReference })
           setFlowStep('success')
           toast.success('Payment confirmed!')
         } else if (res.status === 'failed' || res.status === 'reversed') {
           stopPolling()
+          clearPendingFromStorage()
           toast.error('Payment failed. Please try again.')
           setFlowStep('idle')
           setPendingReference('')
@@ -235,6 +281,7 @@ const allTimeOutstanding = summary?.allTimeOutstanding ?? todayOutstanding
       const res = await submitOtpAction({ reference: pendingReference, otp: otp.trim() })
       if (res.status === 'success') {
         stopPolling()
+        clearPendingFromStorage()
         if (savedRef.current !== pendingReference) {
           savedRef.current = pendingReference
           try {
@@ -267,10 +314,19 @@ const allTimeOutstanding = summary?.allTimeOutstanding ?? todayOutstanding
     }
   }
 
-  // Uses the most recent recon ref by default, or a specific one if passed
+  // FIX 2: Verify button now has a smart fallback chain:
+  // 1. Try most recent DB reference first (normal case)
+  // 2. If no DB reference exists, show manual input so they can paste the RECON-xxx reference
   const handleVerifyRecon = async (reference?: string) => {
     const ref = reference ?? allRecentRecons[0]?.paystackReference
-    if (!ref) { toast.error('No recent recon found to verify'); return }
+
+    // FIX 2: no reference in DB — show manual input instead of silently failing
+    if (!ref) {
+      setShowManualRefInput(true)
+      toast.info('No recent payment found — paste the reference from your phone')
+      return
+    }
+
     setIsVerifying(true)
     try {
       const res = await verifyAndRecoverRecon({
@@ -280,6 +336,8 @@ const allTimeOutstanding = summary?.allTimeOutstanding ?? todayOutstanding
       })
       if (res.recovered) {
         toast.success(`Payment verified! ₵${res.amount?.toFixed(2)} on ${res.date} from ${res.senderMomoNumber}`)
+        setShowManualRefInput(false)
+        setManualReference('')
       } else if (res.alreadyCompleted) {
         toast.info('Most recent payment is already recorded as completed.')
       } else {
@@ -290,6 +348,12 @@ const allTimeOutstanding = summary?.allTimeOutstanding ?? todayOutstanding
     } finally {
       setIsVerifying(false)
     }
+  }
+
+  const handleManualVerify = async () => {
+    const ref = manualReference.trim()
+    if (!ref) { toast.error('Paste the reference first'); return }
+    await handleVerifyRecon(ref)
   }
 
   const outstandingDateLabel = (() => {
@@ -330,6 +394,39 @@ const allTimeOutstanding = summary?.allTimeOutstanding ?? todayOutstanding
             </Link>
           </div>
         </div>
+
+        {/* FIX 2: Manual reference input — shown when no DB record exists */}
+        {showManualRefInput && (
+          <Card className='border-yellow-200 bg-yellow-50/50 dark:bg-yellow-950/10'>
+            <CardContent className='pt-5 space-y-3'>
+              <div className='flex items-start gap-3'>
+                <AlertCircle className='w-5 h-5 text-yellow-500 shrink-0 mt-0.5' />
+                <div>
+                  <p className='font-semibold text-yellow-800 dark:text-yellow-300 text-sm'>Payment not found in system</p>
+                  <p className='text-xs text-yellow-700 dark:text-yellow-400 mt-0.5'>
+                    Paste the reference from your MoMo confirmation SMS or from Paystack (starts with <span className='font-mono'>RECON-</span>)
+                  </p>
+                </div>
+              </div>
+              <div className='flex gap-2'>
+                <Input
+                  placeholder='e.g. RECON-1778932433218-uwgz2'
+                  value={manualReference}
+                  onChange={e => setManualReference(e.target.value.trim())}
+                  className='h-9 text-sm font-mono'
+                  autoFocus
+                />
+                <Button size='sm' onClick={handleManualVerify} disabled={isVerifying || !manualReference.trim()} className='gap-1.5 shrink-0'>
+                  {isVerifying ? <Loader2 className='w-3.5 h-3.5 animate-spin' /> : <RefreshCw className='w-3.5 h-3.5' />}
+                  Verify
+                </Button>
+                <Button size='sm' variant='ghost' onClick={() => { setShowManualRefInput(false); setManualReference('') }}>
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Summary cards */}
         <div className={`grid gap-4 ${hasHistoricalDebt ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}`}>
@@ -485,7 +582,7 @@ const allTimeOutstanding = summary?.allTimeOutstanding ?? todayOutstanding
                 autoFocus
               />
               <div className='flex gap-3'>
-                <Button variant='outline' className='flex-1' onClick={() => { stopPolling(); setFlowStep('idle'); setOtp(''); setPendingReference('') }} disabled={flowStep === 'submitting'}>
+                <Button variant='outline' className='flex-1' onClick={() => { stopPolling(); clearPendingFromStorage(); setFlowStep('idle'); setOtp(''); setPendingReference('') }} disabled={flowStep === 'submitting'}>
                   Cancel
                 </Button>
                 <Button className='flex-1 gap-2' onClick={handleSubmitOtp} disabled={!otp.trim() || flowStep === 'submitting'}>
