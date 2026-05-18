@@ -186,20 +186,20 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
         </>
       )}
 
-      {/* Verify with Paystack — at the end so accidental taps don't interfere with main actions */}
-      {unpaid && !isTerminal && (
-        <button
-          onClick={handleVerifyWithPaystack}
-          disabled={isVerifyingPayment}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-500 text-white text-xs font-semibold hover:bg-blue-600 transition-colors disabled:opacity-50"
-        >
-          {isVerifyingPayment
-            ? <Loader2 className="w-3 h-3 animate-spin" />
-            : <RefreshCw className="w-3 h-3" />
-          }
-          {isVerifyingPayment ? "Checking…" : "Verify"}
-        </button>
-      )}
+     {/* Verify with Paystack — show if unpaid, even if order is completed */}
+{unpaid && (
+  <button
+    onClick={handleVerifyWithPaystack}
+    disabled={isVerifyingPayment}
+    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-500 text-white text-xs font-semibold hover:bg-blue-600 transition-colors disabled:opacity-50"
+  >
+    {isVerifyingPayment
+      ? <Loader2 className="w-3 h-3 animate-spin" />
+      : <RefreshCw className="w-3 h-3" />
+    }
+    {isVerifyingPayment ? "Checking…" : "Verify"}
+  </button>
+)}
 
       {verifyOpen && (
         <ActionVerification
