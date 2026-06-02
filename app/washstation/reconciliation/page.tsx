@@ -1,3 +1,4 @@
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -52,11 +53,11 @@ export default function ReconciliationPage() {
   const { attendance: activeAttendance } = useStationAttendance(stationToken)
 
   const [flowStep, setFlowStep] = useState<FlowStep>('idle')
-  // FIX 1: seed momoNumber from localStorage so it survives refresh
   const [momoNumber, setMomoNumber] = useState(() => {
     if (typeof window !== 'undefined') return localStorage.getItem(LS_MOMO_KEY) ?? ''
     return ''
   })
+  const [customSendAmount, setCustomSendAmount] = useState('')
   const [otp, setOtp] = useState('')
   const [pendingReference, setPendingReference] = useState('')
   const [result, setResult] = useState<{ amount: number; momoNumber: string; reference: string } | null>(null)
@@ -69,12 +70,14 @@ export default function ReconciliationPage() {
   const [showDeductionForm, setShowDeductionForm] = useState(false)
 
   const [isVerifying, setIsVerifying] = useState(false)
-  // FIX 2: manual reference input shown as last resort
   const [showManualRefInput, setShowManualRefInput] = useState(false)
   const [manualReference, setManualReference] = useState('')
 
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
   const savedRef = useRef<string | null>(null)
+  // ── Snapshot of outstanding at the moment Send is tapped ─────────────────
+  const outstandingAtSendTime = useRef<number>(0)
+  // ─────────────────────────────────────────────────────────────────────────
 
   const summary = useQuery(
     (api as any).cashReconciliation.getTodayCashSummary,
@@ -111,42 +114,50 @@ export default function ReconciliationPage() {
   const todaySent     = summary?.todaySent ?? 0
   const todayDeducted = totalDeductions
 
-  const todayOutstanding = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
-  const allTimeOutstanding = summary?.allTimeOutstanding ?? todayOutstanding
+  const todayOutstanding    = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
+  const allTimeOutstanding  = summary?.allTimeOutstanding ?? todayOutstanding
 
   const historicalDebt    = Math.max(0, allTimeOutstanding - todayOutstanding)
   const hasHistoricalDebt = historicalDebt > 0
-  const amountToSend      = allTimeOutstanding > 0 ? allTimeOutstanding : todayOutstanding
+  const maxAmountToSend   = allTimeOutstanding > 0 ? allTimeOutstanding : todayOutstanding
 
-  // All recons with a reference, sorted newest first — used by Verify Payment
+  // ── Resolved amount for this transaction ─────────────────────────────────
+  const parsedCustom = parseFloat(customSendAmount)
+  const sendAmount   = !isNaN(parsedCustom) && parsedCustom > 0
+    ? Math.round(parsedCustom * 100) / 100
+    : maxAmountToSend
+  const customAmountError =
+    !isNaN(parsedCustom) && parsedCustom > 0 && parsedCustom > maxAmountToSend
+      ? `Max you can send is ₵${maxAmountToSend.toFixed(2)}`
+      : null
+  // ─────────────────────────────────────────────────────────────────────────
+
   const allRecentRecons = (() => {
     const all = ((history as any[] | undefined) ?? []).filter((d: any) => d.paystackReference)
     return all.sort((a: any, b: any) => (b.date > a.date ? 1 : -1))
   })()
 
-  // FIX 1: persist momoNumber to localStorage whenever it changes
+  // persist momoNumber
   useEffect(() => {
     if (momoNumber) localStorage.setItem(LS_MOMO_KEY, momoNumber)
   }, [momoNumber])
 
-  // FIX 1: on mount, check if there's a pending reference in localStorage
-  // (covers the case where user refreshed mid-payment)
+  // resume pending payment after refresh
   useEffect(() => {
-    const savedRef = localStorage.getItem(LS_PENDING_REF_KEY)
-    const savedAmount = localStorage.getItem(LS_PENDING_AMOUNT_KEY)
-    const savedMomo = localStorage.getItem(LS_MOMO_KEY)
-    if (savedRef && savedAmount && savedMomo) {
+    const savedPendingRef = localStorage.getItem(LS_PENDING_REF_KEY)
+    const savedAmount     = localStorage.getItem(LS_PENDING_AMOUNT_KEY)
+    const savedMomo       = localStorage.getItem(LS_MOMO_KEY)
+    if (savedPendingRef && savedAmount && savedMomo) {
       toast.info('Resuming payment verification from before…', { duration: 4000 })
-      setPendingReference(savedRef)
+      setPendingReference(savedPendingRef)
       setLastSentAmount(parseFloat(savedAmount))
-      // polling useEffect will pick up pendingReference and resume
     }
   }, [])
 
   useEffect(() => {
     if (flowStep === 'success' && lastSentAmount > 0) {
       const newOutstanding = allTimeOutstanding ?? 0
-      if (newOutstanding <= (amountToSend - lastSentAmount) + 1) {
+      if (newOutstanding <= (outstandingAtSendTime.current - lastSentAmount) + 1) {
         setFlowStep('idle')
         setResult(null)
         setLastSentAmount(0)
@@ -180,15 +191,13 @@ export default function ReconciliationPage() {
   useEffect(() => {
     if (!pendingReference || flowStep === 'success') return
 
-    // FIX 1: persist pending reference + amount so refresh can resume
     localStorage.setItem(LS_PENDING_REF_KEY, pendingReference)
-    localStorage.setItem(LS_PENDING_AMOUNT_KEY, String(amountToSend))
+    localStorage.setItem(LS_PENDING_AMOUNT_KEY, String(sendAmount))
 
     setPolling(true)
     pollingRef.current = setInterval(async () => {
-      // FIX 1: read momoNumber from localStorage in case state was reset by refresh
-      const momoToUse = momoNumber || localStorage.getItem(LS_MOMO_KEY) || ''
-      const amountToUse = amountToSend || parseFloat(localStorage.getItem(LS_PENDING_AMOUNT_KEY) ?? '0')
+      const momoToUse   = momoNumber || localStorage.getItem(LS_MOMO_KEY) || ''
+      const amountToUse = sendAmount || parseFloat(localStorage.getItem(LS_PENDING_AMOUNT_KEY) ?? '0')
 
       try {
         const res = await verify({
@@ -251,13 +260,19 @@ export default function ReconciliationPage() {
 
   const handleSubmit = async () => {
     if (!momoNumber || momoNumber.length < 10) { toast.error('Enter a valid MoMo number'); return }
-    if (!summary || amountToSend <= 0) { toast.error('No outstanding cash to send'); return }
+    if (!summary || sendAmount <= 0) { toast.error('No outstanding cash to send'); return }
+    if (customAmountError) { toast.error(customAmountError); return }
+
+    // ── Snapshot the outstanding before payment fires ─────────────────────
+    outstandingAtSendTime.current = maxAmountToSend
+    // ─────────────────────────────────────────────────────────────────────
+
     setFlowStep('loading')
     try {
       const res = await initiate({
         stationToken,
         senderMomoNumber: momoNumber,
-        amount: amountToSend,
+        amount: sendAmount,
         attendantId: activeAttendance?.attendant?._id,
         branchEmail: summary?.branchEmail || undefined,
       })
@@ -288,7 +303,7 @@ export default function ReconciliationPage() {
             await save({
               stationToken,
               senderMomoNumber: momoNumber,
-              amountSent: amountToSend,
+              amountSent: sendAmount,
               paystackReference: pendingReference,
               status: 'completed',
             })
@@ -296,8 +311,8 @@ export default function ReconciliationPage() {
             console.warn('Frontend save failed (backend fallback should have caught it):', saveErr)
           }
         }
-        setLastSentAmount(amountToSend)
-        setResult({ amount: amountToSend, momoNumber, reference: pendingReference })
+        setLastSentAmount(sendAmount)
+        setResult({ amount: sendAmount, momoNumber, reference: pendingReference })
         setFlowStep('success')
         toast.success('Payment confirmed!')
       } else if (res.status === 'pay_offline') {
@@ -314,19 +329,13 @@ export default function ReconciliationPage() {
     }
   }
 
-  // FIX 2: Verify button now has a smart fallback chain:
-  // 1. Try most recent DB reference first (normal case)
-  // 2. If no DB reference exists, show manual input so they can paste the RECON-xxx reference
   const handleVerifyRecon = async (reference?: string) => {
     const ref = reference ?? allRecentRecons[0]?.paystackReference
-
-    // FIX 2: no reference in DB — show manual input instead of silently failing
     if (!ref) {
       setShowManualRefInput(true)
       toast.info('No recent payment found — paste the reference from your phone')
       return
     }
-
     setIsVerifying(true)
     try {
       const res = await verifyAndRecoverRecon({
@@ -362,6 +371,12 @@ export default function ReconciliationPage() {
     return `${format(parseISO(oldestUnpaidDate!), 'd MMM')} – ${format(parseISO(newestUnpaidDate!), 'd MMM')}`
   })()
 
+  const canSend =
+    !!momoNumber &&
+    momoNumber.length >= 10 &&
+    sendAmount > 0 &&
+    !customAmountError
+
   return (
     <WashStationLayout title='Cash Reconciliation'>
       <div className='space-y-6'>
@@ -395,7 +410,7 @@ export default function ReconciliationPage() {
           </div>
         </div>
 
-        {/* FIX 2: Manual reference input — shown when no DB record exists */}
+        {/* Manual reference input fallback */}
         {showManualRefInput && (
           <Card className='border-yellow-200 bg-yellow-50/50 dark:bg-yellow-950/10'>
             <CardContent className='pt-5 space-y-3'>
@@ -549,7 +564,7 @@ export default function ReconciliationPage() {
               <div>
                 <p className='font-semibold text-blue-800 dark:text-blue-300 text-lg'>Waiting for approval…</p>
                 <p className='text-sm text-blue-700 dark:text-blue-400'>
-                  A request of <span className='font-bold'>₵{amountToSend.toFixed(2)}</span> was sent to <span className='font-mono font-semibold'>{momoNumber}</span>. Approve it on your phone.
+                  A request of <span className='font-bold'>₵{sendAmount.toFixed(2)}</span> was sent to <span className='font-mono font-semibold'>{momoNumber}</span>. Approve it on your phone.
                 </p>
               </div>
             </CardContent>
@@ -668,6 +683,8 @@ export default function ReconciliationPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className='space-y-4'>
+
+                  {/* Outstanding breakdown */}
                   <div className='space-y-1.5 text-sm bg-muted/40 rounded-lg p-3'>
                     {todayCash > 0 && (
                       <div className='flex justify-between'>
@@ -694,9 +711,46 @@ export default function ReconciliationPage() {
                       </div>
                     )}
                     <div className='flex justify-between pt-1.5 border-t border-border font-semibold'>
-                      <span>Total to send</span>
-                      <span className='text-red-600 text-base'>₵{amountToSend.toFixed(2)}</span>
+                      <span>Total outstanding</span>
+                      <span className='text-red-600 text-base'>₵{maxAmountToSend.toFixed(2)}</span>
                     </div>
+                  </div>
+
+                  {/* Amount to send */}
+                  <div>
+                    <Label className='text-sm mb-1.5 block'>
+                      Amount to Send (₵)
+                      <span className='ml-1.5 text-xs font-normal text-muted-foreground'>
+                        — send in parts if needed
+                      </span>
+                    </Label>
+                    <div className='relative'>
+                      <Input
+                        type='number'
+                        inputMode='decimal'
+                        placeholder={`e.g. ${maxAmountToSend.toFixed(2)}`}
+                        value={customSendAmount}
+                        onChange={e => setCustomSendAmount(e.target.value)}
+                        className={`h-10 pr-20 ${customAmountError ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
+                        min={0.01}
+                        max={maxAmountToSend}
+                        step={0.01}
+                      />
+                      <button
+                        type='button'
+                        onClick={() => setCustomSendAmount(maxAmountToSend.toFixed(2))}
+                        className='absolute right-2 top-1/2 -translate-y-1/2 text-xs text-primary font-semibold hover:underline'
+                      >
+                        Max
+                      </button>
+                    </div>
+                    {customAmountError ? (
+                      <p className='text-xs text-red-500 mt-1'>{customAmountError}</p>
+                    ) : customSendAmount && !isNaN(parsedCustom) && parsedCustom > 0 && parsedCustom < maxAmountToSend ? (
+                      <p className='text-xs text-muted-foreground mt-1'>
+                        ₵{(maxAmountToSend - parsedCustom).toFixed(2)} will remain outstanding after this payment.
+                      </p>
+                    ) : null}
                   </div>
 
                   <div>
@@ -711,9 +765,14 @@ export default function ReconciliationPage() {
                       className='h-10'
                     />
                   </div>
-                  <Button className='w-full gap-2' onClick={handleSubmit} disabled={!momoNumber || momoNumber.length < 10}>
+
+                  <Button
+                    className='w-full gap-2'
+                    onClick={handleSubmit}
+                    disabled={!canSend}
+                  >
                     <Smartphone className='w-4 h-4' />
-                    Send ₵{amountToSend.toFixed(2)} via MoMo
+                    Send ₵{sendAmount > 0 ? sendAmount.toFixed(2) : '0.00'} via MoMo
                     <ArrowRight className='w-4 h-4' />
                   </Button>
                 </CardContent>
@@ -768,6 +827,15 @@ export default function ReconciliationPage() {
                   <div className='flex justify-between'>
                     <span className='text-muted-foreground'>Used at branch</span>
                     <span className='text-orange-600'>₵{totalDeductions.toFixed(2)}</span>
+                  </div>
+                )}
+                {/* Show remaining outstanding if partial payment — uses snapshotted value */}
+                {outstandingAtSendTime.current - result.amount > 0.005 && (
+                  <div className='flex justify-between pt-1.5 border-t border-border'>
+                    <span className='text-muted-foreground'>Still outstanding</span>
+                    <span className='font-semibold text-orange-600'>
+                      ₵{(outstandingAtSendTime.current - result.amount).toFixed(2)}
+                    </span>
                   </div>
                 )}
               </div>
