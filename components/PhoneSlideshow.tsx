@@ -17,7 +17,7 @@ const slides: Slide[] = [
           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-2">
             <span className="text-primary font-bold text-lg">W</span>
           </div>
-          <p className="font-semibold text-foreground">WashLab</p>
+          <p className="font-semibold text-foreground">Rapid Wash</p>
         </div>
         <p className="text-sm font-semibold text-foreground">Place Order</p>
         <div className="space-y-3">

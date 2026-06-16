@@ -61,8 +61,8 @@ const WashStationSidebar = ({
         <Link href="/washstation/dashboard" className="flex items-center">
          {!collapsed ? (
   <Image
-    src="/assets/washlab-logo-light.png"  // ← updated
-    alt="WashLab"
+    src="/assets/Rapid.png"  // ← updated
+    alt="Rapid Wash"
     width={140}
     height={40}
     priority
@@ -70,8 +70,8 @@ const WashStationSidebar = ({
   />
 ) : (
   <Image
-    src="/washlab-favicon1.png"  // ← stays the same
-    alt="WashLab"
+    src="/assets/Rapid.png"  // ← stays the same
+    alt="Rapid Wash"
     width={40}
     height={40}
     priority

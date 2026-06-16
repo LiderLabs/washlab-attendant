@@ -289,7 +289,7 @@ export default function OrderDetailsPage() {
       ? `Original: ₵${order.basePrice.toFixed(2)}\nDiscount: -₵${(order.basePrice - order.finalPrice).toFixed(2)}\n`
       : '';
     const message = encodeURIComponent(
-      `🧺 WashLab Update\n\nHi ${order.customer.name},\nYour laundry order *#${order.orderNumber}* is ready for pickup.\n\nService: ${order.serviceType?.replace(/_/g, ' ')}\nWash Cycles: *${loads} load${loads !== 1 ? 's' : ''}*\n` +
+      `🧺 Rapid Wash Update\n\nHi ${order.customer.name},\nYour laundry order *#${order.orderNumber}* is ready for pickup.\n\nService: ${order.serviceType?.replace(/_/g, ' ')}\nWash Cycles: *${loads} load${loads !== 1 ? 's' : ''}*\n` +
       whitesLine +
       `Total: ₵${order.finalPrice.toFixed(2)}\n` +
       basePriceLine +

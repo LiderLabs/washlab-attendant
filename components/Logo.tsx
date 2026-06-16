@@ -30,14 +30,14 @@ export const Logo = ({ className, size = 'md' }: LogoProps) => {
 
   const logoSrc =
     resolvedTheme === 'dark'
-      ? '/assets/washlab-logo-dark.png'
-      : '/assets/washlab-logo-light.png';
+      ? '/assets/Rapid.png'
+      : '/assets/Rapid.png';
 
   return (
     <div className={cn('flex items-center', className)}>
       <Image
         src={logoSrc}
-        alt="WashLab - Life made simple"
+        alt="Rapid Wash"
         height={height}
         width={width}
         className="w-auto h-auto"

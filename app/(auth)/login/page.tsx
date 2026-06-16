@@ -179,10 +179,9 @@ export default function LoginPage() {
         <Card className="w-full max-w-md border-2 shadow-2xl">
           <CardHeader className="text-center space-y-4 pb-6">
             <div className="flex justify-center">
-              <Logo className="h-8 w-auto" />
+              <Logo className="h-6 w-auto" />
             </div>
             <div className="space-y-2">
-              <CardTitle className="text-2xl font-bold">WashStation</CardTitle>
               <CardDescription className="text-base">
                 Enter your branch code to begin
               </CardDescription>
@@ -243,9 +242,8 @@ export default function LoginPage() {
         <Card className="w-full max-w-md border-2 shadow-2xl">
           <CardHeader className="text-center space-y-4 pb-6">
             <div className="flex justify-center">
-              <Logo className="h-8 w-auto" />
+              <Logo className="h-6 w-auto" />
             </div>
-            <CardTitle className="text-2xl font-bold">WashStation</CardTitle>
             <CardDescription className="text-base">
               Branch Information
             </CardDescription>
@@ -307,9 +305,8 @@ export default function LoginPage() {
         <Card className="w-full max-w-md border-2 shadow-2xl">
           <CardHeader className="text-center space-y-4 pb-6">
             <div className="flex justify-center">
-              <Logo className="h-8 w-auto" />
+              <Logo className="h-6 w-auto" />
             </div>
-            <CardTitle className="text-2xl font-bold">WashStation</CardTitle>
             <CardDescription className="text-base">
               Station Login Required
             </CardDescription>
@@ -398,9 +395,8 @@ export default function LoginPage() {
         <Card className="w-full max-w-md border-2 shadow-2xl">
           <CardHeader className="text-center space-y-4 pb-6">
             <div className="flex justify-center">
-              <Logo className="h-8 w-auto" />
+              <Logo className="h-6 w-auto" />
             </div>
-            <CardTitle className="text-2xl font-bold">WashStation</CardTitle>
             <CardDescription className="text-base">
               Sign in to continue
             </CardDescription>

@@ -87,7 +87,7 @@ export const useWebAuthn = () => {
       const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
         challenge,
         rp: {
-          name: 'WashLab',
+          name: 'Rapid Wash',
           id: window.location.hostname,
         },
         user: {
