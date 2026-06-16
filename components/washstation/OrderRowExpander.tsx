@@ -30,6 +30,7 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
   const [verifyOpen, setVerifyOpen] = useState(false)
   const [localStatus, setLocalStatus] = useState<OrderStatus | null>(null)
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false)
+  const [isLocallyPaid, setIsLocallyPaid] = useState(false)
   const { changeStatus } = useStationOrderStatus(stationToken)
   const verifyAndRecoverPayment = useAction((api as any).paymentsRecovery.verifyAndRecoverPayment)
 
@@ -92,6 +93,7 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
     try {
       const result = await verifyAndRecoverPayment({ orderId: order._id })
       if (result.recovered) {
+        setIsLocallyPaid(true)
         toast.success(`Payment verified! ₵${result.amount?.toFixed(2)} confirmed`)
       } else if (result.alreadyPaid) {
         toast.info("Payment already recorded.")
@@ -122,7 +124,7 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
   return (
     <div className="flex items-center gap-1.5 flex-wrap min-w-[120px]">
       {/* Pay button — shown when unpaid */}
-      {unpaid && onCollectPayment && (
+      {unpaid && !isLocallyPaid && onCollectPayment && (
         <button
           onClick={(e) => { e.stopPropagation(); onCollectPayment() }}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 transition-colors"
@@ -187,7 +189,7 @@ export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCol
       )}
 
      {/* Verify with Paystack — show if unpaid, even if order is completed */}
-{unpaid && (
+{unpaid && !isLocallyPaid && (
   <button
     onClick={handleVerifyWithPaystack}
     disabled={isVerifyingPayment}

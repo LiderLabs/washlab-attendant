@@ -266,9 +266,14 @@ export function NewOrderContent() {
     if (!newName.trim()) { toast.error("Please enter customer name"); return }
 
     const placeholderEmail = phoneToPlaceholderEmail(phone)
-    const finalEmail = skipEmail
-      ? placeholderEmail
-      : (newEmail.trim() ? newEmail.trim() : placeholderEmail)
+    let rawEmail = skipEmail ? placeholderEmail : (newEmail.trim() ? newEmail.trim() : placeholderEmail)
+    // If attendant typed a phone number in the email field (no @), auto-convert it
+    if (rawEmail && !rawEmail.includes('@')) {
+      const digits = rawEmail.replace(/\D/g, '')
+      const localPhone = digits.startsWith('233') ? '0' + digits.slice(3) : digits.startsWith('0') ? digits : '0' + digits
+      rawEmail = phoneToPlaceholderEmail(localPhone.slice(0, 10))
+    }
+    const finalEmail = rawEmail
 
     try {
       const customerId = await createGuestCustomer({
