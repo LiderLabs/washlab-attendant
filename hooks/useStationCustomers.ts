@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery } from 'convex/react';
+import { cacheWrite, cacheRead, CK } from './useOfflineCache';
 import { api } from "@jordan6699/washlab-backend/api";
 import { Id } from "@jordan6699/washlab-backend/dataModel";
 
@@ -36,7 +37,7 @@ function normaliseQuery(query: string): string {
  * Hook to search customers for station
  * Provides customer search functionality
  */
-export function useStationCustomers(stationToken: string | null) {
+export function useStationCustomers(stationToken: string | null, branchId?: string) {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
 
@@ -62,10 +63,42 @@ export function useStationCustomers(stationToken: string | null) {
     } : 'skip'
   ) as StationCustomer[] | undefined;
 
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  useEffect(() => {
+    const onOnline  = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online',  onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online',  onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+  const isOffline = !isOnline;
+
+  // Cache last successful search result
+  useEffect(() => {
+    if (branchId && customers && customers.length > 0) {
+      cacheWrite(CK.customers(branchId), customers);
+    }
+  }, [customers, branchId]);
+
+  // Always read cache as fallback
+  const cachedEntry = branchId ? cacheRead<StationCustomer[]>(CK.customers(branchId)) : null;
+
+  // Online: show live results if available, else cache; Offline: always cache
+  const effectiveCustomers = isOffline
+    ? (cachedEntry?.data ?? [])
+    : (customers ?? cachedEntry?.data ?? []);
+
   return {
-    customers: customers ?? [],
+    customers: effectiveCustomers,
     searchQuery,
     setSearchQuery,
-    isLoading: customers === undefined && debouncedQuery.length >= 2,
+    isLoading: isOnline && customers === undefined && debouncedQuery.length >= 2,
+    isOffline,
+    cachedAt: cachedEntry?.savedAt ?? null,
   };
 }

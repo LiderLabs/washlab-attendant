@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { useStationSession } from "@/hooks/useStationSession"
 import { useAttendantSession } from "@/hooks/use-attendant-session"
 import { useQuery, useMutation } from "convex/react"
+import { useOfflineOrder } from "@/hooks/useOfflineOrder"
 import { api } from "@jordan6699/washlab-backend/api"
 import { Id } from "@jordan6699/washlab-backend/dataModel"
 
@@ -155,7 +156,7 @@ export function NewOrderContent() {
     formattedPhone ? { phoneNumber: formattedPhone } : "skip"
   )
   const createGuestCustomer = useMutation(api.customers.createGuest)
-  const createWalkInOrder = useMutation(api.stations.createWalkInOrder)
+  const { createOrder: createWalkInOrder } = useOfflineOrder()
 
   const [step, setStep] = useState<Step>("phone")
   const [stepHistory, setStepHistory] = useState<Step[]>([])
@@ -276,12 +277,24 @@ export function NewOrderContent() {
     const finalEmail = rawEmail
 
     try {
-      const customerId = await createGuestCustomer({
+      const guestArgs = {
         name: newName,
         phoneNumber: formatPhoneForBackend(phone),
         ...(finalEmail ? { email: finalEmail } : {}),
-         ...(branchId ? { branchId } : {}),
-      } as any)
+        ...(branchId ? { branchId } : {}),
+      };
+
+      let customerId: any;
+      if (!navigator.onLine) {
+        // Offline: queue the customer creation and use an optimistic local ID
+        const { enqueue } = await import('@/lib/offlineOutbox');
+        const action = await enqueue('createGuestCustomer', guestArgs as any);
+        customerId = `offline_${action.id}`;
+        toast.warning('You are offline. Customer profile will sync when connection returns.', { duration: 5000 });
+      } else {
+        customerId = await createGuestCustomer(guestArgs as any);
+      }
+
       const customer = await getCustomerByPhone
       setFoundCustomer(customer || {
         _id: customerId,
@@ -304,7 +317,7 @@ export function NewOrderContent() {
     if (weight <= 0.1) { toast.error("Please enter a valid weight"); return }
     if (!bagCardNumber) { toast.error("Please select a bag card number"); return }
     try {
-      const result = await (createWalkInOrder as any)({
+      const result = await createWalkInOrder({
         stationToken,
         customerId: foundCustomer._id as Id<"users">,
         customerName: foundCustomer.name || newName,

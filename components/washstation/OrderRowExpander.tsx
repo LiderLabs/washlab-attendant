@@ -1,5 +1,5 @@
 ﻿"use client"
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useStationOrderStatus, type OrderStatus } from "@/hooks/useStationOrderStatus"
 import { ActionVerification } from "./ActionVerification"
 import { Id } from "@jordan6699/washlab-backend/dataModel"
@@ -26,6 +26,19 @@ const IN_PROGRESS_STATUSES = ["checked_in", "sorting", "washing", "drying", "fol
 
 export function OrderRowExpander({ order, stationToken: tokenProp, unpaid, onCollectPayment }: OrderExpanderProps) {
   const stationToken = tokenProp || (typeof window !== "undefined" ? localStorage.getItem("station_token") : null)
+  const [isOffline, setIsOffline] = useState(
+    typeof window !== "undefined" ? !navigator.onLine : false
+  )
+  useEffect(() => {
+    const goOnline  = () => setIsOffline(false)
+    const goOffline = () => setIsOffline(true)
+    window.addEventListener('online',  goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online',  goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [])
   const [isMoving, setIsMoving] = useState(false)
   const [verifyOpen, setVerifyOpen] = useState(false)
   const [localStatus, setLocalStatus] = useState<OrderStatus | null>(null)

@@ -1,4 +1,5 @@
 'use client';
+import { OfflineSyncProvider } from "@/components/OfflineSyncProvider";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/providers/theme-provider";
@@ -36,7 +37,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
         >
           <OrderProvider>
             <TooltipProvider>
-              {children}
+              <OfflineSyncProvider>
+                {children}
+              </OfflineSyncProvider>
               <Toaster />
               <Sonner />
             </TooltipProvider>

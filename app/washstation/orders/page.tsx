@@ -33,7 +33,7 @@ export default function OrdersPage() {
   const { orders: allOrders, isLoading, loadMore, hasMore } = useStationOrders(stationToken, {
     ...(selectedStatus !== "all" && selectedStatus !== "completed" ? { status: selectedStatus as OrderStatus } : {}),
     search: searchQuery || undefined,
-  })
+  }, branchId)
 
   const filteredOrders = allOrders?.filter((order) => {
     if (order.orderType === "online") {

@@ -6,6 +6,7 @@ import { useQuery, useMutation, useAction } from 'convex/react'
 import { api } from '@jordan6699/washlab-backend/api'
 import { useStationSession } from '@/hooks/useStationSession'
 import { useStationAttendance } from '@/hooks/useStationAttendance'
+import { cacheWrite, cacheRead, CK, cacheStaleness } from '@/hooks/useOfflineCache'
 import { WashStationLayout } from '@/components/washstation/WashStationLayout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -49,8 +50,24 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function ReconciliationPage() {
-  const { stationToken } = useStationSession()
-  const { attendance: activeAttendance } = useStationAttendance(stationToken)
+  const { stationToken, sessionData } = useStationSession()
+  const branchId = (sessionData as any)?.branchId as string | undefined
+  const { attendance: activeAttendance } = useStationAttendance(stationToken, branchId)
+
+  // Reactive offline state — avoids stale false on page refresh while offline
+  const [isOffline, setIsOffline] = useState(
+    typeof window !== 'undefined' ? !navigator.onLine : false
+  )
+  useEffect(() => {
+    const goOnline  = () => setIsOffline(false)
+    const goOffline = () => setIsOffline(true)
+    window.addEventListener('online',  goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online',  goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [])
 
   const [flowStep, setFlowStep] = useState<FlowStep>('idle')
   const [momoNumber, setMomoNumber] = useState(() => {
@@ -103,19 +120,35 @@ export default function ReconciliationPage() {
   const saveDeduction = useMutation((api as any).cashReconciliation.saveCashDeduction)
   const verifyAndRecoverRecon = useAction((api as any).paymentsRecovery.verifyAndRecoverRecon)
 
-  const deductions: Deduction[] = (todayDeductionsFromDB ?? []).map((d: any) => ({
+  // Cache writes when online; reads when offline
+  useEffect(() => {
+    if (!branchId || isOffline) return
+    if (summary) cacheWrite(CK.reconSummary(branchId), summary)
+    if (todayOrders) cacheWrite(CK.reconOrders(branchId), todayOrders)
+    if (todayDeductionsFromDB) cacheWrite(CK.reconDeductions(branchId), todayDeductionsFromDB)
+  }, [summary, todayOrders, todayDeductionsFromDB, branchId, isOffline])
+
+  const cachedSummaryEntry     = isOffline && branchId ? cacheRead<any>(CK.reconSummary(branchId)) : null
+  const cachedOrdersEntry      = isOffline && branchId ? cacheRead<any[]>(CK.reconOrders(branchId)) : null
+  const cachedDeductionsEntry  = isOffline && branchId ? cacheRead<any[]>(CK.reconDeductions(branchId)) : null
+
+  const effSummary      = isOffline ? (cachedSummaryEntry?.data ?? undefined) : summary
+  const effTodayOrders  = isOffline ? (cachedOrdersEntry?.data ?? []) : todayOrders
+  const effDeductionsRaw = isOffline ? (cachedDeductionsEntry?.data ?? []) : todayDeductionsFromDB
+
+  const deductions: Deduction[] = (effDeductionsRaw ?? []).map((d: any) => ({
     id: d._id,
     amount: d.amount ?? 0,
     reason: d.reason ?? '',
   }))
   const totalDeductions = deductions.reduce((s, d) => s + d.amount, 0)
 
-  const todayCash     = summary?.totalCash ?? 0
-  const todaySent     = summary?.todaySent ?? 0
+  const todayCash     = effSummary?.totalCash ?? 0
+  const todaySent     = effSummary?.todaySent ?? 0
   const todayDeducted = totalDeductions
 
-  const todayOutstanding    = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
-  const allTimeOutstanding  = summary?.allTimeOutstanding ?? todayOutstanding
+  const todayOutstanding    = effSummary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
+  const allTimeOutstanding  = effSummary?.allTimeOutstanding ?? todayOutstanding
 
   const historicalDebt    = Math.max(0, allTimeOutstanding - todayOutstanding)
   const hasHistoricalDebt = historicalDebt > 0
@@ -260,7 +293,7 @@ export default function ReconciliationPage() {
 
   const handleSubmit = async () => {
     if (!momoNumber || momoNumber.length < 10) { toast.error('Enter a valid MoMo number'); return }
-    if (!summary || sendAmount <= 0) { toast.error('No outstanding cash to send'); return }
+    if (!effSummary || sendAmount <= 0) { toast.error('No outstanding cash to send'); return }
     if (customAmountError) { toast.error(customAmountError); return }
 
     // ── Snapshot the outstanding before payment fires ─────────────────────
@@ -274,7 +307,7 @@ export default function ReconciliationPage() {
         senderMomoNumber: momoNumber,
         amount: sendAmount,
         attendantId: activeAttendance?.attendant?._id,
-        branchEmail: summary?.branchEmail || undefined,
+        branchEmail: effSummary?.branchEmail || undefined,
       })
       if (res.status === 'send_otp') {
         setPendingReference(res.reference)
@@ -341,7 +374,7 @@ export default function ReconciliationPage() {
       const res = await verifyAndRecoverRecon({
         reference: ref,
         stationToken,
-        branchId: summary?.branchId ?? undefined,
+        branchId: effSummary?.branchId ?? undefined,
       })
       if (res.recovered) {
         toast.success(`Payment verified! ₵${res.amount?.toFixed(2)} on ${res.date} from ${res.senderMomoNumber}`)
@@ -410,6 +443,14 @@ export default function ReconciliationPage() {
           </div>
         </div>
 
+        {/* Offline banner */}
+        {isOffline && (
+          <div className='px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 text-sm text-amber-800 dark:text-amber-300 flex items-center gap-2'>
+            <span>Offline</span>
+            <span>— showing cached data{cachedSummaryEntry ? ` saved ${cacheStaleness(cachedSummaryEntry.savedAt)}` : ' (none available)'}. MoMo transfers require a connection.</span>
+          </div>
+        )}
+
         {/* Manual reference input fallback */}
         {showManualRefInput && (
           <Card className='border-yellow-200 bg-yellow-50/50 dark:bg-yellow-950/10'>
@@ -447,20 +488,20 @@ export default function ReconciliationPage() {
         <div className={`grid gap-4 ${hasHistoricalDebt ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}`}>
           <Card className='p-5'>
             <p className='text-xs text-muted-foreground mb-1'>Today's Orders</p>
-            <p className='text-3xl font-bold'>{summary === undefined ? '—' : summary.orderCount}</p>
+            <p className='text-3xl font-bold'>{effSummary === undefined ? '—' : effSummary.orderCount}</p>
           </Card>
 
           <Card className='p-5'>
             <p className='text-xs text-muted-foreground mb-1'>Cash Collected Today</p>
             <p className='text-3xl font-bold'>
-              {summary === undefined ? '—' : `₵${todayCash.toFixed(2)}`}
+              {effSummary === undefined ? '—' : `₵${todayCash.toFixed(2)}`}
             </p>
           </Card>
 
           <Card className={`p-5 ${todayOutstanding > 0 ? 'border-orange-200 bg-orange-50/50 dark:bg-orange-950/10' : 'border-green-200 bg-green-50/50 dark:bg-green-950/10'}`}>
             <p className='text-xs text-muted-foreground mb-1'>Today's Outstanding</p>
             <p className={`text-3xl font-bold ${todayOutstanding > 0 ? 'text-orange-600' : 'text-green-600'}`}>
-              {summary === undefined ? '—' : `₵${todayOutstanding.toFixed(2)}`}
+              {effSummary === undefined ? '—' : `₵${todayOutstanding.toFixed(2)}`}
             </p>
             {todayDeducted > 0 && (
               <p className='text-[10px] text-orange-500 mt-1'>−₵{todayDeducted.toFixed(2)} used at branch</p>
@@ -507,11 +548,11 @@ export default function ReconciliationPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className='p-0'>
-            {summary === undefined ? (
+            {effSummary === undefined ? (
               <div className='flex justify-center py-12'>
                 <Loader2 className='w-5 h-5 animate-spin text-muted-foreground' />
               </div>
-            ) : !todayOrders || todayOrders.length === 0 ? (
+            ) : !effTodayOrders || effTodayOrders.length === 0 ? (
               <div className='flex flex-col items-center justify-center py-12 text-muted-foreground'>
                 <Banknote className='w-10 h-10 mb-3 opacity-20' />
                 <p className='text-sm'>No cash orders today</p>
@@ -530,7 +571,7 @@ export default function ReconciliationPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {todayOrders.map((order: any) => (
+                    {effTodayOrders.map((order: any) => (
                       <tr key={order._id} className='border-b border-border last:border-0 hover:bg-muted/20'>
                         <td className='px-4 py-3 font-mono font-semibold text-primary'>{order.orderNumber}</td>
                         <td className='px-4 py-3'>
@@ -546,7 +587,7 @@ export default function ReconciliationPage() {
                   </tbody>
                   <tfoot>
                     <tr className='bg-muted/40 border-t border-border'>
-                      <td colSpan={3} className='px-4 py-3 font-semibold text-sm'>Total ({todayOrders.length} orders)</td>
+                      <td colSpan={3} className='px-4 py-3 font-semibold text-sm'>Total ({effTodayOrders.length} orders)</td>
                       <td colSpan={3} className='px-4 py-3 font-bold text-sm'>₵{todayCash.toFixed(2)}</td>
                     </tr>
                   </tfoot>
@@ -609,7 +650,7 @@ export default function ReconciliationPage() {
         )}
 
         {/* Send form + deductions */}
-        {summary && flowStep !== 'otp' && flowStep !== 'submitting' && flowStep !== 'loading' && (
+        {effSummary && flowStep !== 'otp' && flowStep !== 'submitting' && flowStep !== 'loading' && (
           <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
 
             {(deductions.length > 0 || todayOutstanding > 0) && (
@@ -628,7 +669,7 @@ export default function ReconciliationPage() {
                   </div>
                 </CardHeader>
                 <CardContent className='space-y-3'>
-                  {todayDeductionsFromDB === undefined ? (
+                  {effDeductionsRaw === undefined ? (
                     <div className='flex justify-center py-4'>
                       <Loader2 className='w-4 h-4 animate-spin text-muted-foreground' />
                     </div>

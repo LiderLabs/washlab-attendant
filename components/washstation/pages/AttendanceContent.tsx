@@ -5,6 +5,7 @@ import { useQuery } from 'convex/react';
 import { api } from '@jordan6699/washlab-backend/api';
 import { useStationSession } from '@/hooks/useStationSession';
 import { useStationAttendance } from '@/hooks/useStationAttendance';
+import { cacheWrite, cacheRead, CK } from '@/hooks/useOfflineCache';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -20,8 +21,23 @@ import { LoadingSpinner } from '@/components/washstation/LoadingSpinner';
 import { EmptyState } from '@/components/washstation/EmptyState';
 
 export function AttendanceContent() {
-  const { stationToken } = useStationSession();
-  const { attendances: activeAttendances, isLoading: activeLoading } = useStationAttendance(stationToken);
+  const { stationToken, sessionData } = useStationSession();
+  const branchId = (sessionData as any)?.branchId as string | undefined;
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  useEffect(() => {
+    const onOnline  = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online',  onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online',  onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+  const isOffline = !isOnline;
+  const { attendances: activeAttendances, isLoading: activeLoading } = useStationAttendance(stationToken, branchId);
 
   // Get today's attendance history
   const todayStart = startOfToday().getTime();
@@ -37,7 +53,24 @@ export function AttendanceContent() {
     } : 'skip'
   );
 
-  const isLoading = activeLoading || attendanceHistory === undefined;
+  // Cache attendance history when online; read back when offline
+  useEffect(() => {
+    if (branchId && attendanceHistory && typeof window !== 'undefined' && navigator.onLine) {
+      cacheWrite(CK.attendances(branchId) + '_history', attendanceHistory);
+    }
+  }, [attendanceHistory, branchId]);
+
+  const cachedHistory = isOffline && branchId
+    ? cacheRead<any[]>(CK.attendances(branchId) + '_history')
+    : null;
+
+  // Use cache as fallback when Convex hasn't loaded yet (offline OR brief refresh window)
+  const effectiveHistory = attendanceHistory ?? cachedHistory?.data ?? undefined;
+
+  // Offline: don't wait for Convex — use cached data immediately
+  const isLoading = isOffline
+    ? activeLoading
+    : (activeLoading || attendanceHistory === undefined);
 
   // Track current time for elapsed time calculation
   const [currentTime, setCurrentTime] = useState(() => Date.now());
@@ -76,8 +109,16 @@ export function AttendanceContent() {
     );
   }
 
+  // Offline banner helper (rendered inline below)
+  const offlineBanner = isOffline ? (
+    <div className="mb-4 px-4 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 dark:text-yellow-400 text-sm flex items-center gap-2">
+      ⚠ You are offline — showing cached attendance data
+    </div>
+  ) : null;
+
   return (
     <div className="space-y-6">
+      {offlineBanner}
       {/* Active Attendants */}
       {activeAttendances && activeAttendances.length > 0 && (
         <Card>
@@ -145,15 +186,15 @@ export function AttendanceContent() {
                 All clock-in and clock-out entries for today
               </CardDescription>
             </div>
-            {attendanceHistory && attendanceHistory.length > 0 && (
+            {effectiveHistory && effectiveHistory.length > 0 && (
               <Badge variant="outline">
-                {attendanceHistory.length} entries
+                {effectiveHistory.length} entries
               </Badge>
             )}
           </div>
         </CardHeader>
         <CardContent>
-          {!attendanceHistory || attendanceHistory.length === 0 ? (
+          {!effectiveHistory || effectiveHistory.length === 0 ? (
             <EmptyState
               icon={Clock}
               title="No attendance entries"
@@ -161,7 +202,7 @@ export function AttendanceContent() {
             />
           ) : (
             <div className="space-y-3">
-              {attendanceHistory.map((entry) => (
+              {effectiveHistory.map((entry) => (
                 <div
                   key={entry._id}
                   className="p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"

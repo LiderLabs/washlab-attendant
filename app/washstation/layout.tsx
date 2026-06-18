@@ -6,6 +6,17 @@ import { useQuery } from 'convex/react';
 import { api } from "@jordan6699/washlab-backend/api";
 import { InactiveBranchScreen } from '@/components/washstation/InactiveBranchScreen';
 import { Loader2 } from 'lucide-react';
+import { useOfflineSync } from '@/hooks/useOfflineSync';
+
+const CACHE_KEY = 'station_session_cache';
+
+function readCachedSession() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
 
 export default function WashStationLayout({
   children,
@@ -16,11 +27,15 @@ export default function WashStationLayout({
   const pathname = usePathname();
   const [stationToken, setStationToken] = useState<string | null>(null);
   const [shouldRedirect, setShouldRedirect] = useState(false);
-  
-  // Check if current path is clock-in page
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof window !== 'undefined' ? navigator.onLine : true
+  );
+
   const isClockInPage = pathname === '/washstation/clock-in';
 
-  // Check for station session on mount
+  // Mount outbox sync — watches navigator.onLine and replays queued mutations on reconnect
+  useOfflineSync();
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -28,17 +43,29 @@ export default function WashStationLayout({
     const branchId = localStorage.getItem('station_branch_id');
 
     if (!token || !branchId) {
-      // No session, redirect to login
-      setShouldRedirect(true);
-      return;
+      // No session at all — but check cache before redirecting
+      const cached = readCachedSession();
+      if (!cached?.valid) {
+        setShouldRedirect(true);
+        return;
+      }
     }
 
     setStationToken(token);
+
+    setIsOnline(navigator.onLine);
+    const handleOnline  = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online',  handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online',  handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
-  // Verify station session and check branch status
-  const sessionData = useQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // Live Convex verification
+  const liveSessionData = useQuery(
     (api.stations as any)?.verifyStationSession ?? null,
     stationToken ? { stationToken } : 'skip'
   ) as {
@@ -49,21 +76,36 @@ export default function WashStationLayout({
     reason?: string;
   } | undefined | null;
 
-  // Get all active attendances (for display, not for blocking)
+  // Write to cache when live data confirms valid
+  useEffect(() => {
+    if (liveSessionData?.valid === true) {
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(liveSessionData)); } catch {}
+    }
+    if (liveSessionData?.valid === false) {
+      try { localStorage.removeItem(CACHE_KEY); } catch {}
+    }
+  }, [liveSessionData]);
+
+  // Resolve effective session: live data takes priority; fall back to cache when offline
+  const cachedSession = readCachedSession();
+  const sessionData =
+    liveSessionData !== undefined
+      ? liveSessionData
+      : (!isOnline && cachedSession)
+        ? cachedSession
+        : undefined;
+
+  // Get all active attendances
   const attendanceData = useQuery(
     api.stations.getActiveStationAttendances,
     stationToken ? { stationToken } : 'skip'
   ) as Array<{
     _id: string;
     clockInAt: number;
-    attendant: {
-      _id: string;
-      name: string;
-      email: string;
-    } | null;
+    attendant: { _id: string; name: string; email: string; } | null;
   }> | undefined;
 
-  // Handle redirect for invalid session or no token
+  // Handle redirects
   useEffect(() => {
     if (shouldRedirect) {
       if (typeof window !== 'undefined') {
@@ -77,28 +119,26 @@ export default function WashStationLayout({
       return;
     }
 
-    // Session invalid or expired - clear and redirect
-    if (sessionData && !sessionData.valid) {
+    // Only redirect on explicit invalid from Convex — not on undefined (pending/offline)
+    if (liveSessionData && !liveSessionData.valid) {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('station_token');
         localStorage.removeItem('station_branch_id');
         localStorage.removeItem('station_device_id');
         localStorage.removeItem('station_session_id');
         localStorage.removeItem('station_branch_name');
+        localStorage.removeItem(CACHE_KEY);
         router.push('/login');
       }
       return;
     }
+  }, [shouldRedirect, liveSessionData, router]);
 
-    // No longer redirecting based on attendance - navigation is always allowed
-    // Attendance checks will happen at action time (e.g., when updating order status)
-  }, [shouldRedirect, sessionData, router]);
-
-  // Show loading while checking session
+  // Still loading: no token yet, OR Convex pending AND online AND no cache
   if (
     shouldRedirect ||
     !stationToken ||
-    sessionData === undefined
+    (sessionData === undefined && (isOnline || !cachedSession))
   ) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center">
@@ -114,7 +154,7 @@ export default function WashStationLayout({
     );
   }
 
-  // Session invalid or expired
+  // Session explicitly invalid
   if (!sessionData || !sessionData.valid) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center">
@@ -126,7 +166,7 @@ export default function WashStationLayout({
     );
   }
 
-  // Branch is inactive - show inactive screen
+  // Branch inactive
   if (sessionData.branchActive === false) {
     return (
       <InactiveBranchScreen
@@ -136,7 +176,5 @@ export default function WashStationLayout({
     );
   }
 
-  // Everything is valid, render children (dashboard pages)
-  // Note: Clock-in check is handled per-page or via a higher-level guard
   return <>{children}</>;
 }

@@ -4,7 +4,13 @@ import { Providers } from "@/providers/providers";
 
 const inter = { variable: "--font-inter" }
 
+
+export const viewport = {
+  themeColor: "#1e40af",
+}
+
 export const metadata: Metadata = {
+  manifest: "/manifest.json",
   title: "Rapid Wash Attendant",
   description: "Rapid Wash Attendant Point of Sale System",
 };

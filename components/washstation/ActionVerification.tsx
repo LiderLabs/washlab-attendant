@@ -15,6 +15,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { useStationSession } from "@/hooks/useStationSession"
+import { cacheRead, cacheWrite, CK } from "@/hooks/useOfflineCache"
 import { toast } from "sonner"
 
 interface ActionVerificationProps {
@@ -31,6 +32,7 @@ interface ActionVerificationProps {
 /**
  * Component for verifying identity before performing critical actions
  * Shows attendant selector and biometric verification
+ * Works offline: uses cached attendances and skips Convex PIN verify
  */
 export function ActionVerification({
   onVerified,
@@ -39,8 +41,24 @@ export function ActionVerification({
   orderId,
   open,
 }: ActionVerificationProps) {
-  const { stationToken } = useStationSession()
+  const { stationToken, sessionData } = useStationSession()
+  const branchId = (sessionData as any)?.branchId as string | undefined
   const verifyPIN = useMutation(api.attendants.verifyAttendantPIN)
+
+  // Reactive offline state — correct from first render, not just after a tick
+  const [isOffline, setIsOffline] = useState(
+    typeof window !== "undefined" ? !navigator.onLine : false
+  )
+  useEffect(() => {
+    const goOnline  = () => setIsOffline(false)
+    const goOffline = () => setIsOffline(true)
+    window.addEventListener("online",  goOnline)
+    window.addEventListener("offline", goOffline)
+    return () => {
+      window.removeEventListener("online",  goOnline)
+      window.removeEventListener("offline", goOffline)
+    }
+  }, [])
 
   // Get active attendances to select from
   const attendances = useQuery(
@@ -57,6 +75,18 @@ export function ActionVerification({
         } | null
       }>
     | undefined
+
+  // Write to cache when online; read from cache when offline
+  useEffect(() => {
+    if (!branchId || isOffline || !attendances) return
+    cacheWrite(CK.attendances(branchId), attendances)
+  }, [attendances, branchId, isOffline])
+
+  const cachedEntry = !isOffline || !branchId
+    ? null
+    : cacheRead<typeof attendances>(CK.attendances(branchId))
+
+  const effectiveAttendances = attendances ?? cachedEntry?.data ?? []
 
   const [selectedAttendantId, setSelectedAttendantId] = useState<
     Id<"attendants"> | ""
@@ -78,7 +108,23 @@ export function ActionVerification({
     setPinError(null)
 
     try {
-      // Verify PIN (includes actionType and orderId for audit trail)
+      if (isOffline) {
+        // Offline: skip Convex, produce a local stub verification ID.
+        // The order action hook will queue the mutation to IndexedDB as normal.
+        const offlineVerificationId =
+          `offline-verify-${Date.now()}` as Id<"biometricVerifications">
+        onVerified(
+          selectedAttendantId as Id<"attendants">,
+          offlineVerificationId
+        )
+        setShowPINInput(false)
+        setSelectedAttendantId("")
+        setPinError(null)
+        toast.info("Verified offline — action will sync when reconnected")
+        return
+      }
+
+      // Online: verify PIN via Convex (includes actionType + orderId for audit trail)
       const pinResult = await verifyPIN({
         attendantId: selectedAttendantId as Id<"attendants">,
         pin,
@@ -87,7 +133,6 @@ export function ActionVerification({
       })
 
       if (pinResult.success && pinResult.verificationId) {
-        // Use verificationId from PIN verification result
         onVerified(
           selectedAttendantId as Id<"attendants">,
           pinResult.verificationId
@@ -109,10 +154,10 @@ export function ActionVerification({
 
   if (!open) return null
 
-  // Get unique attendants from active attendances
+  // Get unique attendants from active attendances (live or cached)
   const availableAttendants =
-    attendances
-      ?.filter((a) => a.attendant !== null)
+    (effectiveAttendances ?? [])
+      .filter((a) => a.attendant !== null)
       .map((a) => a.attendant!)
       .filter(
         (attendant, index, self) =>
@@ -126,7 +171,9 @@ export function ActionVerification({
           <div>
             <h3 className='text-lg font-semibold'>Verify Identity</h3>
             <p className='text-sm text-muted-foreground mt-1'>
-              Please select attendant and verify identity to continue
+              {isOffline
+                ? "Offline — using cached attendants"
+                : "Please select attendant and verify identity to continue"}
             </p>
           </div>
 
@@ -175,12 +222,16 @@ export function ActionVerification({
                       setPinError(null)
                     }}
                     title='Enter PIN'
-                    description={`Enter your 4-digit PIN to ${actionType}`}
+                    description={
+                      isOffline
+                        ? `Enter your PIN to ${actionType} (offline — will sync later)`
+                        : `Enter your 4-digit PIN to ${actionType}`
+                    }
                     error={pinError || undefined}
                   />
                   {isVerifying && (
                     <div className='text-center text-sm text-muted-foreground'>
-                      Verifying PIN...
+                      {isOffline ? "Queuing action..." : "Verifying PIN..."}
                     </div>
                   )}
                 </div>
@@ -188,7 +239,11 @@ export function ActionVerification({
             </div>
           ) : (
             <div className='text-center py-8 text-muted-foreground'>
-              <p>No active attendants found. Please clock in first.</p>
+              <p>
+                {isOffline
+                  ? "No cached attendants found. Open this page while online first so it can be cached."
+                  : "No active attendants found. Please clock in first."}
+              </p>
               <Button variant='outline' onClick={onCancel} className='mt-4'>
                 Cancel
               </Button>

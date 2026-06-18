@@ -1,63 +1,63 @@
 'use client';
-
+import { useEffect, useState } from 'react';
 import { useQuery } from 'convex/react';
-import { api } from "@jordan6699/washlab-backend/api";
+import { api } from '@jordan6699/washlab-backend/api';
+import { cacheWrite, cacheRead } from '@/hooks/useOfflineCache';
 
-export interface StationStats {
-  totalOrders: number;
-  totalRevenue: number;
-  pendingOrders: number;
+const defaultStats = {
+  totalOrders: 0,
+  totalRevenue: 0,
   ordersByStatus: {
-    pending: number;
-    in_progress: number;
-    ready_for_pickup: number;
-    delivered: number;
-    completed: number;
-    cancelled: number;
-  };
-  averageOrderValue: number;
-}
+    pending: 0, in_progress: 0, ready: 0, completed: 0,
+    pending_dropoff: 0, checked_in: 0, sorting: 0,
+    washing: 0, drying: 0, folding: 0, cancelled: 0,
+    ready_for_pickup: 0, delivered: 0,
+  },
+  averageOrderValue: 0,
+  completionRate: 0,
+};
 
-/**
- * Hook to fetch station dashboard statistics.
- *
- * ✅ Fixes:
- * - isLoading is only true while the token exists AND query hasn't resolved yet.
- * - When token is null (session still loading) we return isLoading: true so the
- *   dashboard waits rather than rendering empty zeroes.
- * - stats falls back to a safe zero-filled object so the dashboard never crashes
- *   on undefined optional chains.
- */
 export function useStationStats(
-  stationToken: string | null | undefined,
+  stationToken: string | null,
   startDate?: number,
-  endDate?: number
+  endDate?: number,
 ) {
-  const rawStats = useQuery(
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  useEffect(() => {
+    const onOnline  = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online',  onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online',  onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
+  const cacheKey = stationToken && startDate !== undefined && endDate !== undefined
+    ? 'washlab_cache_v1_stats_' + stationToken + '_' + startDate + '_' + endDate
+    : null;
+
+  const liveStats = useQuery(
     api.stations.getStationStats,
-    stationToken
+    stationToken && startDate !== undefined && endDate !== undefined
       ? { stationToken, startDate, endDate }
-      : 'skip'
-  ) as StationStats | undefined;
+      : 'skip',
+  );
 
-  // ✅ Token not yet available — treat as loading, not as "no data"
-  const isLoading = !stationToken || rawStats === undefined;
+  // Write to cache when live data arrives
+  useEffect(() => {
+    if (liveStats && cacheKey) {
+      cacheWrite(cacheKey, liveStats);
+    }
+  }, [liveStats, cacheKey]);
 
-  // ✅ Safe fallback so consumers never need to null-check ordersByStatus fields
-  const stats: StationStats = rawStats ?? {
-    totalOrders: 0,
-    totalRevenue: 0,
-    pendingOrders: 0,
-    ordersByStatus: {
-      pending: 0,
-      in_progress: 0,
-      ready_for_pickup: 0,
-      delivered: 0,
-      completed: 0,
-      cancelled: 0,
-    },
-    averageOrderValue: 0,
-  };
+  // Always read cache as fallback when Convex hasn't loaded
+  const cachedEntry = cacheKey ? cacheRead<typeof defaultStats>(cacheKey) : null;
+  const effectiveStats = liveStats ?? cachedEntry?.data ?? defaultStats;
+  const isLoading = isOnline && liveStats === undefined && !cachedEntry;
 
-  return { stats, isLoading };
+  return { stats: effectiveStats as typeof defaultStats, isLoading };
 }

@@ -11,7 +11,8 @@ import { LoadingSpinner } from '@/components/washstation/LoadingSpinner';
 export default function ClockInPage() {
   const router = useRouter();
   const { stationToken, sessionData, isSessionValid, isLoading: sessionLoading } = useStationSession();
-  const { attendances, isLoading: attendanceLoading } = useStationAttendance(stationToken);
+  const branchId = (sessionData as any)?.branchId as string | undefined;
+  const { attendances, isLoading: attendanceLoading } = useStationAttendance(stationToken, branchId);
 
   // Don't redirect - allow attendants to clock in/out even if someone is already clocked in
   // Multiple attendants can work simultaneously

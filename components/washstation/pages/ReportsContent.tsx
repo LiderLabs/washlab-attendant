@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Lock, CheckCircle2, Loader2, Plus, X, Save, Wrench, Tag, ChevronRight, Clock } from 'lucide-react';
+import { cacheRead, CK } from '@/hooks/useOfflineCache'
 
 function today() { return new Date().toISOString().split('T')[0]; }
 function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
@@ -34,7 +35,6 @@ function deserializeFaults(raw: string | null | undefined): FaultEntry[] {
   try {
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed)) {
-      // Backfill displayName for older records that were saved without it
       return parsed.map((f: any) => ({
         ...f,
         displayName: f.displayName ?? f.machineName ?? f.machineId ?? '',
@@ -89,10 +89,29 @@ function DailyReportPageInner() {
     (api as any).dailyReports.getByBranch,
     branchId ? { branchId, limit: 14, stationToken: stationToken || undefined } : 'skip'
   );
-  const activeAttendances = useQuery(
+
+  const [isOffline, setIsOffline] = useState(
+    typeof window !== 'undefined' ? !navigator.onLine : false
+  )
+  useEffect(() => {
+    const goOnline  = () => setIsOffline(false)
+    const goOffline = () => setIsOffline(true)
+    window.addEventListener('online',  goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online',  goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [])
+
+  const activeAttendancesLive = useQuery(
     api.stations.getActiveStationAttendances,
-    stationToken ? { stationToken } : 'skip'
-  ) as Array<{ _id: any; attendant: { _id: any; name: string } | null }> | undefined;
+    isOffline ? 'skip' : stationToken ? { stationToken } : 'skip'
+  ) as Array<{ _id: any; attendant: { _id: any; name: string } | null }> | undefined
+
+  const activeAttendances = isOffline
+    ? (cacheRead<typeof activeAttendancesLive>(CK.attendances(branchId ?? ''))?.data ?? activeAttendancesLive)
+    : activeAttendancesLive;
 
   const saveDraftMutation = useMutation((api as any).dailyReports.saveDraft);
   const submitMutation = useMutation((api as any).dailyReports.submit);
@@ -459,7 +478,6 @@ function DailyReportPageInner() {
                       className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
                       <option value="">Select machine...</option>
                       {(activeMachines as any[]).map((m: any) => (
-                        // Attendant only sees the friendly displayName
                         <option key={m._id} value={m._id}>
                           {m.displayName || m.name}
                         </option>
@@ -498,7 +516,6 @@ function DailyReportPageInner() {
                   <div key={i} className="flex items-start gap-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
                     <Wrench className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      {/* Attendant sees displayName on the fault card */}
                       <p className="text-xs font-semibold text-destructive">
                         {f.displayName || f.machineName || f.machineId || 'Unknown machine'}
                       </p>

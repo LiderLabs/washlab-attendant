@@ -2,6 +2,8 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@jordan6699/washlab-backend/api";
 import { Id } from "@jordan6699/washlab-backend/dataModel";
 import { useStationSession } from "./useStationSession";
+import { useEffect } from "react";
+import { CK, cacheWrite, cacheRead } from "@/hooks/useOfflineCache";
 import { toast } from "sonner";
 
 export type InventoryCategory =
@@ -46,21 +48,36 @@ export function useStationInventory(
     status?: InventoryStatus;
   }
 ) {
-  const inventory = useQuery(
+  const isOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
+
+  const { sessionData } = useStationSession();
+  const branchId = sessionData?.branchId;
+
+  const liveInventory = useQuery(
     api.inventory.getStationInventory,
     stationToken ? { stationToken } : "skip"
   ) as InventoryItem[] | undefined;
 
-  const isLoading = inventory === undefined;
+  // Write to cache when live data arrives
+  useEffect(() => {
+    if (liveInventory && branchId) {
+      cacheWrite(CK.inventory(branchId), liveInventory);
+    }
+  }, [liveInventory, branchId]);
 
-  // Apply client-side filters if needed
+  // Read from cache when offline
+  const cachedEntry = (!isOnline && branchId)
+    ? cacheRead<InventoryItem[]>(CK.inventory(branchId))
+    : null;
+  const cachedInventory = cachedEntry?.data ?? null;
+
+  const inventory = liveInventory ?? cachedInventory ?? undefined;
+  const isLoading = !isOnline ? false : liveInventory === undefined;
+
+  // Apply client-side filters
   const filteredInventory = inventory?.filter((item) => {
-    if (filters?.category && item.category !== filters.category) {
-      return false;
-    }
-    if (filters?.status && item.status !== filters.status) {
-      return false;
-    }
+    if (filters?.category && item.category !== filters.category) return false;
+    if (filters?.status && item.status !== filters.status) return false;
     return true;
   });
 

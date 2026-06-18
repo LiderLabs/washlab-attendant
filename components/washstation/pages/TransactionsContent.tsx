@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -23,6 +23,7 @@ import { useQuery } from 'convex/react';
 import { api } from '@jordan6699/washlab-backend/api';
 import { useStationSession } from '@/hooks/useStationSession';
 import { LoadingSpinner } from '@/components/washstation/LoadingSpinner';
+import { cacheWrite, cacheRead, CK } from '@/hooks/useOfflineCache';
 
 interface Transaction {
   orderId: string;
@@ -40,7 +41,22 @@ interface Transaction {
 }
 
 export function TransactionsContent() {
-  const { stationToken, isSessionValid } = useStationSession();
+  const { stationToken, isSessionValid, sessionData } = useStationSession();
+  const branchId = (sessionData as any)?.branchId as string | undefined;
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  useEffect(() => {
+    const onOnline  = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online',  onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online',  onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+  const isOffline = !isOnline;
   const [filter, setFilter] = useState<'all' | 'cash' | 'card' | 'mobile_money'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'walk_in' | 'online'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,9 +89,27 @@ export function TransactionsContent() {
       : "skip"
   ) as Transaction[] | undefined;
 
-  const transactionsToDisplay = stationTransactions || [];
+  // Cache key includes date range so different days have separate caches
+  const txnCacheKey = branchId
+    ? `${branchId}:${startDate ?? 'all'}:${endDate ?? 'all'}`
+    : null;
+
+  useEffect(() => {
+    if (txnCacheKey && stationTransactions && typeof window !== 'undefined' && navigator.onLine) {
+      cacheWrite(CK.transactions(txnCacheKey), stationTransactions);
+    }
+  }, [stationTransactions, txnCacheKey]);
+
+  const cachedTxns = isOffline && txnCacheKey
+    ? cacheRead<Transaction[]>(CK.transactions(txnCacheKey))
+    : null;
+
+  const transactionsToDisplay = isOffline
+    ? (cachedTxns?.data ?? [])
+    : (stationTransactions || []);
+
   const isLoadingTransactions =
-    stationToken !== null && stationTransactions === undefined;
+    !isOffline && stationToken !== null && stationTransactions === undefined;
 
   if (!isSessionValid) {
     return <LoadingSpinner text="Verifying session..." />;

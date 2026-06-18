@@ -1,4 +1,5 @@
 'use client';
+import { enqueue } from '@/lib/offlineOutbox';
 
 import { useState, Suspense, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -278,7 +279,15 @@ function PaymentContent() {
         return;
       }
 
-      finalizePayment({ verificationId, gatewayTransactionId: null, confirmedPaymentMethod: "cash" });
+      if (navigator.onLine) {
+        finalizePayment({ verificationId, gatewayTransactionId: null, confirmedPaymentMethod: "cash" });
+      } else {
+        // Offline: queue cash payment + finalize for later sync
+        await enqueue('createPayment', { orderId: order!._id, amount: totalDue, paymentMethod: 'cash' });
+        await enqueue('finalizePayment', { orderId: order!._id, verificationId, gatewayTransactionId: null, confirmedPaymentMethod: 'cash' });
+        toast.warning('Cash payment saved offline. Will sync automatically when you reconnect.', { duration: 6000 });
+        router.push(`/washstation/order-complete?orderId=${order!._id}&paymentMethod=cash&amountPaid=${totalDue}&changeDue=0&offline=1`);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to start payment");
       currentPaymentId.current = null;

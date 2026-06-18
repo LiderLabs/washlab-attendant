@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useStationAttendance } from "@/hooks/useStationAttendance"
 import { useStationSession } from "@/hooks/useStationSession"
+import { cacheWrite, cacheRead, CK } from "@/hooks/useOfflineCache"
 import { useStationClockIn } from "@/hooks/useStationClockIn"
 import { useStationClockOut } from "@/hooks/useStationClockOut"
 import { useQuery } from "convex/react"
@@ -34,32 +35,43 @@ import {
   Timer,
   Search,
   Loader2,
-  QrCode,
+  WifiOff,
 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { LoadingSpinner } from "./LoadingSpinner"
-import { BiometricVerificationModal } from "./BiometricVerificationModal"
 import { PINInput } from "./PINInput"
 import { QRClockIn } from "./QRClockIn"
 import { useStationPINClockIn } from "@/hooks/useStationPINClockIn"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useRouter } from "next/navigation"
-import { BiometricData } from "@/types"
 
 export function ClockInOut() {
-  const { stationToken } = useStationSession()
+  const { stationToken, sessionData: stationSessionData } = useStationSession()
+  const earlyBranchId = (stationSessionData as any)?.branchId as string | undefined
   const { clockInWithPIN, clockOutWithPIN, isLoading: pinLoading } = useStationPINClockIn(stationToken)
   const { attendances, isLoading: attendancesLoading } =
-    useStationAttendance(stationToken)
-  const {
-    isLoading: clockInLoading,
-  } = useStationClockIn(stationToken)
-  const {
-    isLoading: clockOutLoading,
-  } = useStationClockOut(stationToken)
+    useStationAttendance(stationToken, earlyBranchId)
+  const { isLoading: clockInLoading } = useStationClockIn(stationToken)
+  const { isLoading: clockOutLoading } = useStationClockOut(stationToken)
+
+  // Reactive online state
+  const [isOnline, setIsOnline] = useState(
+    typeof window !== 'undefined' ? navigator.onLine : true
+  )
+  useEffect(() => {
+    const handleOnline  = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    window.addEventListener('online',  handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online',  handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+  const isOffline = !isOnline
 
   // Get attendants for selection
-  const attendants = useQuery(
+  const liveAttendants = useQuery(
     api.stations.getBranchAttendants,
     stationToken ? { stationToken } : "skip"
   ) as
@@ -73,17 +85,31 @@ export function ClockInOut() {
       }>
     | undefined
 
-  const [selectedAttendantId, setSelectedAttendantId] = useState<
-    Id<"attendants"> | ""
-  >("")
+  // Cache attendants whenever live data arrives
+  useEffect(() => {
+    if (earlyBranchId && liveAttendants) {
+      cacheWrite(CK.attendants(earlyBranchId), liveAttendants)
+    }
+  }, [liveAttendants, earlyBranchId])
+
+  // Always fall back to cache if live data not available
+  const cachedAttendantsEntry = earlyBranchId
+    ? cacheRead<typeof liveAttendants>(CK.attendants(earlyBranchId))
+    : null
+  const effectiveAttendants = liveAttendants ?? cachedAttendantsEntry?.data ?? []
+
+  // Effective attendances — use cached when live not available
+  const cachedAttendancesEntry = earlyBranchId
+    ? cacheRead<typeof attendances>(CK.attendances(earlyBranchId))
+    : null
+  const effectiveAttendances = attendances ?? cachedAttendancesEntry?.data ?? []
+
+  const [selectedAttendantId, setSelectedAttendantId] = useState<Id<"attendants"> | "">("")
   const [searchQuery, setSearchQuery] = useState("")
-  const [showClockInModal, setShowClockInModal] = useState(false)
   const [showPINClockInModal, setShowPINClockInModal] = useState(false)
   const [showPINClockOutModal, setShowPINClockOutModal] = useState(false)
   const [pinError, setPinError] = useState<string | null>(null)
-  const [showClockOutModal, setShowClockOutModal] = useState(false)
-  const [selectedAttendanceId, setSelectedAttendanceId] =
-    useState<Id<"attendanceLogs"> | null>(null)
+  const [selectedAttendanceId, setSelectedAttendanceId] = useState<Id<"attendanceLogs"> | null>(null)
   const [showClockInForm, setShowClockInForm] = useState(false)
   const [showQRMode, setShowQRMode] = useState(false)
   const [showReportWarning, setShowReportWarning] = useState(false)
@@ -100,8 +126,7 @@ export function ClockInOut() {
   )
   const reportSubmitted = todayReport?.status === "submitted" || todayReport?.status === "submitted_with_outstanding"
 
-  // Filter attendants by search
-  const filteredAttendants = attendants?.filter(
+  const filteredAttendants = effectiveAttendants?.filter(
     (att) =>
       att.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       att.email.toLowerCase().includes(searchQuery.toLowerCase())
@@ -128,21 +153,19 @@ export function ClockInOut() {
 
   const handleStartClockOut = async (attendanceId: Id<"attendanceLogs">) => {
     setSelectedAttendanceId(attendanceId)
-    const activeCount = attendances?.length ?? 0
+    const activeCount = effectiveAttendances?.length ?? 0
     const isLastAttendant = activeCount <= 1
-    if (isLastAttendant && !reportSubmitted) {
+    if (isLastAttendant && !reportSubmitted && !isOffline) {
       setPendingClockOutId(attendanceId)
       setShowReportWarning(true)
       return
     }
     setShowPINClockOutModal(true)
-    setShowClockOutModal(true)
   }
 
   const handleProceedClockOut = () => {
     setShowReportWarning(false)
     setShowPINClockOutModal(true)
-    setShowClockOutModal(true)
   }
 
   const handleGoToReport = () => {
@@ -162,7 +185,7 @@ export function ClockInOut() {
     }
   }
 
-  if (attendancesLoading) {
+  if (attendancesLoading && !isOffline && !cachedAttendancesEntry) {
     return (
       <Card>
         <CardContent className='flex items-center justify-center py-12'>
@@ -182,7 +205,7 @@ export function ClockInOut() {
   }
 
   // ── CLOCKED-IN VIEW ──────────────────────────────────────────────────────────
-  if (!showClockInForm && attendances && attendances.length > 0) {
+  if (!showClockInForm && effectiveAttendances && effectiveAttendances.length > 0) {
     return (
       <>
         <Card className='border-green-500'>
@@ -192,11 +215,16 @@ export function ClockInOut() {
                 <CardTitle className='flex items-center gap-2'>
                   <Clock className='w-5 h-5 text-green-500' />
                   Clocked In
+                  {isOffline && (
+                    <Badge variant="outline" className="text-xs flex items-center gap-1">
+                      <WifiOff className="w-3 h-3" /> Offline
+                    </Badge>
+                  )}
                 </CardTitle>
                 <CardDescription className='mt-1'>
-                  {attendances.length === 1
-                    ? `${attendances[0].attendant?.name} is clocked in`
-                    : `${attendances.length} attendants are clocked in`}
+                  {effectiveAttendances.length === 1
+                    ? `${effectiveAttendances[0].attendant?.name} is clocked in`
+                    : `${effectiveAttendances.length} attendants are clocked in`}
                 </CardDescription>
               </div>
               <Badge variant='default' className='bg-green-500'>
@@ -205,7 +233,7 @@ export function ClockInOut() {
             </div>
           </CardHeader>
           <CardContent className='space-y-4'>
-            {attendances.map((attendance) => {
+            {effectiveAttendances.map((attendance) => {
               const timeAgo = formatDistanceToNow(
                 new Date(attendance.clockInAt),
                 { addSuffix: false }
@@ -227,12 +255,12 @@ export function ClockInOut() {
                     </div>
                     <Button
                       onClick={() => handleStartClockOut(attendance._id)}
-                      disabled={clockOutLoading}
+                      disabled={clockOutLoading || pinLoading}
                       variant='destructive'
                       size='sm'
                     >
                       <LogOut className='w-4 h-4 mr-2' />
-                      Clock Out
+                      {isOffline ? 'Clock Out (offline)' : 'Clock Out'}
                     </Button>
                   </div>
                 </div>
@@ -260,13 +288,15 @@ export function ClockInOut() {
         <Dialog open={showPINClockOutModal} onOpenChange={setShowPINClockOutModal}>
           <DialogContent className="sm:max-w-sm">
             <DialogHeader>
-              <DialogTitle>Clock Out</DialogTitle>
+              <DialogTitle>Clock Out{isOffline ? ' (Offline)' : ''}</DialogTitle>
             </DialogHeader>
             <PINInput
               onComplete={handlePINClockOutComplete}
               onCancel={() => { setShowPINClockOutModal(false); setPinError(null) }}
               title="Enter your PIN"
-              description="Enter your 4-digit PIN to clock out"
+              description={isOffline
+                ? "Enter your PIN — clock-out will sync when back online"
+                : "Enter your 4-digit PIN to clock out"}
               error={pinError || undefined}
             />
           </DialogContent>
@@ -291,7 +321,7 @@ export function ClockInOut() {
     )
   }
 
-  // ── CLOCK-IN FORM ─────────────────────────────────────────────────────────────
+  // ── CLOCK-IN FORM ────────────────────────────────────────────────────────────
   return (
     <>
       <Card>
@@ -301,12 +331,19 @@ export function ClockInOut() {
               <CardTitle className='flex items-center gap-2'>
                 <LogIn className='w-5 h-5' />
                 Clock In
+                {isOffline && (
+                  <Badge variant="outline" className="text-xs flex items-center gap-1">
+                    <WifiOff className="w-3 h-3" /> Offline
+                  </Badge>
+                )}
               </CardTitle>
               <CardDescription>
-                Please select an attendant and verify identity to clock in
+                {isOffline
+                  ? "Offline — clock-in will sync when connection returns"
+                  : "Please select an attendant and verify identity to clock in"}
               </CardDescription>
             </div>
-            {attendances && attendances.length > 0 && (
+            {effectiveAttendances && effectiveAttendances.length > 0 && (
               <Button
                 onClick={() => setShowClockInForm(false)}
                 variant='ghost'
@@ -318,7 +355,7 @@ export function ClockInOut() {
           </div>
         </CardHeader>
         <CardContent className='space-y-4'>
-          {attendants && attendants.length > 0 ? (
+          {effectiveAttendants && effectiveAttendants.length > 0 ? (
             <>
               <div className='space-y-2'>
                 <Label>Select Attendant</Label>
@@ -333,9 +370,7 @@ export function ClockInOut() {
                 </div>
                 <Select
                   value={selectedAttendantId}
-                  onValueChange={(v) =>
-                    setSelectedAttendantId(v as Id<"attendants">)
-                  }
+                  onValueChange={(v) => setSelectedAttendantId(v as Id<"attendants">)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder='Select attendant' />
@@ -365,26 +400,29 @@ export function ClockInOut() {
 
               <Button
                 onClick={handleStartClockIn}
-                disabled={!selectedAttendantId || clockInLoading}
+                disabled={!selectedAttendantId || clockInLoading || pinLoading}
                 className='w-full'
                 size='lg'
               >
-                {clockInLoading ? (
+                {clockInLoading || pinLoading ? (
                   <>
                     <Loader2 className='w-4 h-4 mr-2 animate-spin' />
-                    Starting...
+                    Processing...
                   </>
                 ) : (
                   <>
                     <LogIn className='w-4 h-4 mr-2' />
-                    Clock In
+                    {isOffline ? 'Clock In (offline)' : 'Clock In'}
                   </>
                 )}
               </Button>
             </>
           ) : (
             <div className='text-center py-8 text-muted-foreground'>
-              <p>No attendants available for this branch</p>
+              {isOffline
+                ? <p>No cached attendants — open this page while online first to enable offline clock-in</p>
+                : <p>No attendants available for this branch</p>
+              }
             </div>
           )}
         </CardContent>
@@ -394,13 +432,15 @@ export function ClockInOut() {
       <Dialog open={showPINClockInModal} onOpenChange={setShowPINClockInModal}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Clock In</DialogTitle>
+            <DialogTitle>Clock In{isOffline ? ' (Offline)' : ''}</DialogTitle>
           </DialogHeader>
           <PINInput
             onComplete={handlePINClockInComplete}
             onCancel={() => { setShowPINClockInModal(false); setPinError(null) }}
             title="Enter your PIN"
-            description="Enter your 4-digit PIN to clock in"
+            description={isOffline
+              ? "Enter your PIN — clock-in will sync when back online"
+              : "Enter your 4-digit PIN to clock in"}
             error={pinError || undefined}
           />
         </DialogContent>

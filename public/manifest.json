@@ -1,0 +1,24 @@
+{
+  "name": "Rapid Wash Attendant",
+  "short_name": "Rapid Wash",
+  "description": "Rapid Wash attendant station app",
+  "start_url": "/washstation",
+  "display": "standalone",
+  "background_color": "#1e40af",
+  "theme_color": "#1e40af",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/assets/Rapid.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/Rapid.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

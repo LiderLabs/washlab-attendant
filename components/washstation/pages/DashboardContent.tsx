@@ -25,6 +25,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useEffect, useState } from 'react';
+import { CK, cacheWrite, cacheRead } from '@/hooks/useOfflineCache';
 import { useQuery } from 'convex/react';
 import { api } from '@jordan6699/washlab-backend/api';
 
@@ -116,6 +117,7 @@ export function DashboardContent() {
   const { stationToken, sessionData, isLoading: sessionLoading } = useStationSession();
   const isSessionValid = sessionData?.valid ?? false;
   const branchId = sessionData?.branchId;
+  const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
   const todayStart = startOfToday().getTime();
   const todayEnd = endOfToday().getTime();
@@ -138,10 +140,30 @@ export function DashboardContent() {
     branchId ? { branchId } : 'skip'
   ) ?? [];
 
+  // Cache branchServices when online, read from cache when offline
+  useEffect(() => {
+    if (branchServices?.length && branchId) {
+      cacheWrite(CK.branchServices(branchId), branchServices);
+    }
+  }, [branchServices, branchId]);
+
+  const cachedDashOrders   = branchId ? cacheRead<typeof recentOrders>(CK.dashboardOrders(branchId))   : null;
+  const cachedBranchSvcs   = branchId ? cacheRead<typeof branchServices>(CK.branchServices(branchId)) : null;
+
+  const effectiveBranchSvcs = (branchServices?.length ? branchServices : cachedBranchSvcs?.data) ?? [];
+
   const isLoading = statsLoading || ordersLoading;
   const totalPending = (pendingOrders?.length || 0) + (inProgressOrders?.length || 0);
 
-  const [ordersToShow, setOrdersToShow] = useState(recentOrders?.slice(0, 6) ?? []);
+  const [ordersToShow, setOrdersToShow] = useState<typeof recentOrders>([]);
+
+  // Prime ordersToShow from cache immediately when offline
+  useEffect(() => {
+    if (!isOnline && !ordersToShow?.length && branchId) {
+      const cached = cacheRead<typeof recentOrders>(CK.dashboardOrders(branchId));
+      if (cached?.data?.length) setOrdersToShow(cached.data);
+    }
+  }, [isOnline, branchId]);
 
   useEffect(() => {
     if (recentOrders?.length) {
@@ -150,8 +172,10 @@ export function DashboardContent() {
         .sort((a, b) => b.createdAt - a.createdAt)
         .slice(0, 6);
       setOrdersToShow(sortedOrders);
+      // Cache for offline use
+      if (branchId) cacheWrite(CK.dashboardOrders(branchId), sortedOrders);
     }
-  }, [recentOrders]);
+  }, [recentOrders, branchId]);
 
   useEffect(() => {
     const now = new Date();
@@ -273,7 +297,7 @@ export function DashboardContent() {
           ) : ordersToShow && ordersToShow.length > 0 ? (
             <OrderList
               orders={ordersToShow}
-              branchServices={branchServices}
+              branchServices={effectiveBranchSvcs}
               onOrderClick={(orderId) => router.push(`/washstation/orders/${orderId}`)}
             />
           ) : (

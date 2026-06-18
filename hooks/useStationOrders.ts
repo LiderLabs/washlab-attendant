@@ -1,6 +1,8 @@
 'use client';
 
 import { usePaginatedQuery, useQuery } from 'convex/react';
+import { useEffect, useState } from 'react';
+import { cacheWrite, cacheRead, CK } from './useOfflineCache';
 import { api } from "@jordan6699/washlab-backend/api";
 import { Id } from "@jordan6699/washlab-backend/dataModel";
 
@@ -32,7 +34,8 @@ export interface StationOrderFilters {
  */
 export function useStationOrders(
   stationToken: string | null,
-  filters?: StationOrderFilters
+  filters?: StationOrderFilters,
+  branchId?: string
 ) {
   const result = usePaginatedQuery(
     api.stations.getStationOrders,
@@ -44,11 +47,41 @@ export function useStationOrders(
     { initialNumItems: 200 }
   );
 
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  useEffect(() => {
+    const onOnline  = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online',  onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online',  onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+  const isOffline = !isOnline;
+
+  // Write cache when fresh data arrives
+  useEffect(() => {
+    if (branchId && result.results && result.results.length > 0) {
+      cacheWrite(CK.orders(branchId), result.results);
+    }
+  }, [result.results, branchId]);
+
+  // Always read cache — use as fallback when Convex hasn't loaded yet
+  const cachedEntry = branchId ? cacheRead<any[]>(CK.orders(branchId)) : null;
+  const effectiveOrders = result.results?.length
+    ? result.results
+    : (cachedEntry?.data ?? []);
+
   return {
-    orders: result.results ?? [],
-    isLoading: result.status === 'LoadingFirstPage' || result.status === 'LoadingMore',
+    orders: effectiveOrders,
+    isLoading: isOnline && result.status === 'LoadingFirstPage' && !cachedEntry,
     loadMore: result.loadMore,
     hasMore: result.status === 'CanLoadMore',
+    isOffline,
+    cachedAt: cachedEntry?.savedAt ?? null,
   };
 }
 

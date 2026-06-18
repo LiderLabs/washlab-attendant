@@ -225,8 +225,9 @@ function CustomerCard({ customer, stationToken }: { customer: any, stationToken:
 }
 
 export default function CustomersPage() {
-  const { stationToken, isSessionValid } = useStationSession();
-  const { customers, searchQuery, setSearchQuery, isLoading } = useStationCustomers(stationToken);
+  const { stationToken, isSessionValid, sessionData } = useStationSession();
+  const branchId = (sessionData as any)?.branchId as string | undefined;
+  const { customers, searchQuery, setSearchQuery, isLoading } = useStationCustomers(stationToken, branchId);
 
   if (!isSessionValid) {
     return (
