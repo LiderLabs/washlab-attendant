@@ -342,6 +342,8 @@ export default function ReconciliationPage() {
         reference: ref,
         stationToken,
         branchId: summary?.branchId ?? undefined,
+        senderMomoNumber: momoNumber || undefined,
+        expectedAmount: sendAmount > 0 ? sendAmount : undefined,
       })
       if (res.recovered) {
         toast.success(`Payment verified! ₵${res.amount?.toFixed(2)} on ${res.date} from ${res.senderMomoNumber}`)
