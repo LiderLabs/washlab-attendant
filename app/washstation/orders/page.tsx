@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import { useQuery } from "convex/react"
@@ -15,14 +15,15 @@ import { Search, Filter, RefreshCw } from "lucide-react"
 import { Card, CardHeader, CardTitle } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 
-const statusOptions: { value: OrderStatus | "all" | "completed"; label: string }[] = [
+const statusOptions: { value: OrderStatus | "all" | "completed" | "unpaid"; label: string }[] = [
   { value: "all", label: "Orders" },
+  { value: "unpaid", label: "Unpaid" },
   { value: "completed", label: "Completed" },
 ]
 
 export default function OrdersPage() {
   const { stationToken, isSessionValid, sessionData } = useStationSession()
-  const [selectedStatus, setSelectedStatus] = useState<OrderStatus | "all" | "completed">("all")
+  const [selectedStatus, setSelectedStatus] = useState<OrderStatus | "all" | "completed" | "unpaid">("all")
   const [searchQuery, setSearchQuery] = useState("")
   const router = useRouter()
 
@@ -31,7 +32,7 @@ export default function OrdersPage() {
   const branchServices = branchServicesRaw ?? []
 
   const { orders: allOrders, isLoading, loadMore, hasMore } = useStationOrders(stationToken, {
-    ...(selectedStatus !== "all" && selectedStatus !== "completed" ? { status: selectedStatus as OrderStatus } : {}),
+    ...(selectedStatus !== "all" && selectedStatus !== "completed" && selectedStatus !== "unpaid" ? { status: selectedStatus as OrderStatus } : {}),
     search: searchQuery || undefined,
   })
 
@@ -40,7 +41,10 @@ export default function OrdersPage() {
       const allProcessingStatuses = ["checked_in","sorting","washing","drying","folding","ready","completed","in_progress","ready_for_pickup","delivered"]
       if (!allProcessingStatuses.includes(order.status) && order.status !== "cancelled") return false
     }
-    if (selectedStatus === "all") {
+    if (selectedStatus === "unpaid") {
+      if (order.status === "cancelled") return false
+      if (order.paymentStatus === "paid") return false
+    } else if (selectedStatus === "all") {
       if (["completed","delivered","cancelled"].includes(order.status)) return false
     } else if (selectedStatus === "completed") {
       if (!["completed","delivered"].includes(order.status)) return false
@@ -81,7 +85,7 @@ export default function OrdersPage() {
 
         <div className="flex gap-2 bg-muted rounded-xl p-1">
           {statusOptions.map((option) => (
-            <button key={option.value} onClick={() => setSelectedStatus(option.value as OrderStatus | "all" | "completed")}
+            <button key={option.value} onClick={() => setSelectedStatus(option.value as OrderStatus | "all" | "completed" | "unpaid")}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${selectedStatus === option.value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
               {option.label}
             </button>
