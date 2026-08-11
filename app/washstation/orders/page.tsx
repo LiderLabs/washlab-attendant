@@ -17,8 +17,8 @@ import { useRouter } from "next/navigation"
 
 const statusOptions: { value: OrderStatus | "all" | "completed" | "unpaid"; label: string }[] = [
   { value: "all", label: "Orders" },
-  { value: "unpaid", label: "Unpaid" },
   { value: "completed", label: "Completed" },
+  { value: "unpaid", label: "Unpaid" },
 ]
 
 export default function OrdersPage() {
