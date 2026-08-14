@@ -115,7 +115,15 @@ export default function ReconciliationPage() {
   const todayDeducted = totalDeductions
 
   const todayOutstanding    = summary?.outstandingCash ?? Math.max(0, todayCash - todaySent - todayDeducted)
-  const allTimeOutstanding  = summary?.allTimeOutstanding ?? todayOutstanding
+  // Using verifiedMinimumUnsent instead of allTimeOutstanding: allTimeOutstanding is
+  // computed from historical date labels (cashReconciliations.date) that have been
+  // proven unreliable -- three different recompute attempts gave three different
+  // wrong numbers (₵3820, ₵795, etc). verifiedMinimumUnsent is a directly-verified
+  // safe floor: cash collected since the last completed send, which cannot possibly
+  // have been paid yet. Confirmed against real payment records for 2026-08-13 (₵645).
+  // Caveat: this can UNDERSTATE true debt if older unresolved backlog exists from
+  // before the last send -- that needs a separate investigation, not covered here.
+  const allTimeOutstanding  = summary?.verifiedMinimumUnsent ?? summary?.allTimeOutstanding ?? todayOutstanding
 
   const historicalDebt    = Math.max(0, allTimeOutstanding - todayOutstanding)
   const hasHistoricalDebt = historicalDebt > 0
