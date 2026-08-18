@@ -77,6 +77,10 @@ export default function ReconciliationPage() {
   const savedRef = useRef<string | null>(null)
   // ── Snapshot of outstanding at the moment Send is tapped ─────────────────
   const outstandingAtSendTime = useRef<number>(0)
+  // ── Snapshot of amount/momo for THIS specific send, so a second overlapping
+  // send can't wipe them out from under a poll that's still confirming ─────
+  const pendingAmountRef = useRef<number>(0)
+  const pendingMomoRef = useRef<string>('')
   // ─────────────────────────────────────────────────────────────────────────
 
   const summary = useQuery(
@@ -142,7 +146,10 @@ export default function ReconciliationPage() {
 
   const allRecentRecons = (() => {
     const all = ((history as any[] | undefined) ?? []).filter((d: any) => d.paystackReference)
-    return all.sort((a: any, b: any) => (b.date > a.date ? 1 : -1))
+    // Sort by when the payment was actually sent (createdAt), not by which
+    // day's debt it got allocated to (date) -- those can differ when a send
+    // clears old backlog, which was making this pick a stale reference.
+    return all.sort((a: any, b: any) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
   })()
 
   // persist momoNumber
@@ -159,6 +166,8 @@ export default function ReconciliationPage() {
       toast.info('Resuming payment verification from before…', { duration: 4000 })
       setPendingReference(savedPendingRef)
       setLastSentAmount(parseFloat(savedAmount))
+      pendingAmountRef.current = parseFloat(savedAmount)
+      pendingMomoRef.current = savedMomo
     }
   }, [])
 
@@ -204,8 +213,8 @@ export default function ReconciliationPage() {
 
     setPolling(true)
     pollingRef.current = setInterval(async () => {
-      const momoToUse   = momoNumber || localStorage.getItem(LS_MOMO_KEY) || ''
-      const amountToUse = sendAmount || parseFloat(localStorage.getItem(LS_PENDING_AMOUNT_KEY) ?? '0')
+      const momoToUse   = pendingMomoRef.current || localStorage.getItem(LS_MOMO_KEY) || ''
+      const amountToUse = pendingAmountRef.current || parseFloat(localStorage.getItem(LS_PENDING_AMOUNT_KEY) ?? '0')
 
       try {
         const res = await verify({
@@ -273,6 +282,8 @@ export default function ReconciliationPage() {
 
     // ── Snapshot the outstanding before payment fires ─────────────────────
     outstandingAtSendTime.current = maxAmountToSend
+    pendingAmountRef.current = sendAmount
+    pendingMomoRef.current = momoNumber
     // ─────────────────────────────────────────────────────────────────────
 
     setFlowStep('loading')
@@ -310,8 +321,8 @@ export default function ReconciliationPage() {
           try {
             await save({
               stationToken,
-              senderMomoNumber: momoNumber,
-              amountSent: sendAmount,
+              senderMomoNumber: pendingMomoRef.current || momoNumber,
+              amountSent: pendingAmountRef.current || sendAmount,
               paystackReference: pendingReference,
               status: 'completed',
             })
@@ -319,8 +330,8 @@ export default function ReconciliationPage() {
             console.warn('Frontend save failed (backend fallback should have caught it):', saveErr)
           }
         }
-        setLastSentAmount(sendAmount)
-        setResult({ amount: sendAmount, momoNumber, reference: pendingReference })
+        setLastSentAmount(pendingAmountRef.current || sendAmount)
+        setResult({ amount: pendingAmountRef.current || sendAmount, momoNumber: pendingMomoRef.current || momoNumber, reference: pendingReference })
         setFlowStep('success')
         toast.success('Payment confirmed!')
       } else if (res.status === 'pay_offline') {
