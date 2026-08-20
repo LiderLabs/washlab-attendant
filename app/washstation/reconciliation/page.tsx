@@ -71,6 +71,7 @@ export default function ReconciliationPage() {
 
   const [isVerifying, setIsVerifying] = useState(false)
   const [showManualRefInput, setShowManualRefInput] = useState(false)
+  const [showManualSend, setShowManualSend] = useState(false)
   const [manualReference, setManualReference] = useState('')
 
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
@@ -695,7 +696,7 @@ export default function ReconciliationPage() {
               </Card>
             )}
 
-            {hasAnyOutstanding && flowStep !== 'success' && (
+            {(hasAnyOutstanding || showManualSend) && flowStep !== 'success' && (
               <Card>
                 <CardHeader className='pb-3'>
                   <CardTitle className='text-base flex items-center gap-2'>
@@ -808,6 +809,9 @@ export default function ReconciliationPage() {
                   <div>
                     <p className='font-semibold text-green-800 dark:text-green-300'>All settled!</p>
                     <p className='text-sm text-green-700 dark:text-green-400'>No outstanding cash to send.</p>
+                    <button type='button' onClick={() => setShowManualSend(true)} className='text-xs text-primary underline mt-1'>
+                      Send cash anyway
+                    </button>
                   </div>
                 </CardContent>
               </Card>
