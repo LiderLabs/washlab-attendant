@@ -278,7 +278,7 @@ export default function ReconciliationPage() {
   const handleSubmit = async () => {
     if (!momoNumber || momoNumber.length < 10) { toast.error('Enter a valid MoMo number'); return }
     if (!summary || sendAmount <= 0) { toast.error('No outstanding cash to send'); return }
-    if (customAmountError) { toast.error(customAmountError); return }
+    // cap removed 2026-08-20: outstanding calc has known bugs, don't block real cash amounts
 
     // ── Snapshot the outstanding before payment fires ─────────────────────
     outstandingAtSendTime.current = maxAmountToSend
