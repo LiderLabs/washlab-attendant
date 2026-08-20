@@ -138,10 +138,11 @@ export default function ReconciliationPage() {
   const sendAmount   = !isNaN(parsedCustom) && parsedCustom > 0
     ? Math.round(parsedCustom * 100) / 100
     : maxAmountToSend
-  const customAmountError =
+  // Sending more than maxAmountToSend is allowed on purpose -- the extra
+  // gets automatically recorded as credit by the backend, not blocked.
+  // Informational only, never disables Send.
+  const sendsMoreThanCalculated =
     !isNaN(parsedCustom) && parsedCustom > 0 && parsedCustom > maxAmountToSend
-      ? `Max you can send is ₵${maxAmountToSend.toFixed(2)}`
-      : null
   // ─────────────────────────────────────────────────────────────────────────
 
   const allRecentRecons = (() => {
@@ -395,8 +396,7 @@ export default function ReconciliationPage() {
   const canSend =
     !!momoNumber &&
     momoNumber.length >= 10 &&
-    sendAmount > 0 &&
-    !customAmountError
+    sendAmount > 0
 
   return (
     <WashStationLayout title='Cash Reconciliation'>
@@ -752,9 +752,8 @@ export default function ReconciliationPage() {
                         placeholder={`e.g. ${maxAmountToSend.toFixed(2)}`}
                         value={customSendAmount}
                         onChange={e => setCustomSendAmount(e.target.value)}
-                        className={`h-10 pr-20 ${customAmountError ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
+                        className='h-10 pr-20'
                         min={0.01}
-                        max={maxAmountToSend}
                         step={0.01}
                       />
                       <button
@@ -765,8 +764,10 @@ export default function ReconciliationPage() {
                         Max
                       </button>
                     </div>
-                    {customAmountError ? (
-                      <p className='text-xs text-red-500 mt-1'>{customAmountError}</p>
+                    {sendsMoreThanCalculated ? (
+                      <p className='text-xs text-blue-500 mt-1'>
+                        This is more than the system currently shows as outstanding -- the extra will be recorded as credit, nothing is blocked.
+                      </p>
                     ) : customSendAmount && !isNaN(parsedCustom) && parsedCustom > 0 && parsedCustom < maxAmountToSend ? (
                       <p className='text-xs text-muted-foreground mt-1'>
                         ₵{(maxAmountToSend - parsedCustom).toFixed(2)} will remain outstanding after this payment.
