@@ -1,4 +1,4 @@
-
+﻿
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -128,7 +128,18 @@ export default function ReconciliationPage() {
   // have been paid yet. Confirmed against real payment records for 2026-08-13 (₵645).
   // Caveat: this can UNDERSTATE true debt if older unresolved backlog exists from
   // before the last send -- that needs a separate investigation, not covered here.
-  const allTimeOutstanding  = summary?.verifiedMinimumUnsent ?? summary?.allTimeOutstanding ?? todayOutstanding
+    // TEMP (Lancaster only, remove at rebuild): verifiedMinimumUnsent misses unpaid days
+  // that fall before the last send, so for this branch use History's per-day total.
+  const LANCASTER_BRANCH_ID = 'mh75qnp5s6z1byvvhfqgh0brcx83ytv5'
+  const historyOutstanding =
+    history === undefined
+      ? undefined
+      : Math.round((history as any[]).reduce((s, d) => s + (d.dayOutstanding ?? 0), 0) * 100) / 100
+
+  const allTimeOutstanding =
+    summary?.branchId === LANCASTER_BRANCH_ID && historyOutstanding !== undefined
+      ? historyOutstanding
+      : (summary?.verifiedMinimumUnsent ?? summary?.allTimeOutstanding ?? todayOutstanding)
 
   const historicalDebt    = Math.max(0, allTimeOutstanding - todayOutstanding)
   const hasHistoricalDebt = historicalDebt > 0
