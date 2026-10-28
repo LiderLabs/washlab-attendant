@@ -133,7 +133,7 @@ export default function ReconciliationPage() {
    // TEMP (Lancaster & Central only, remove at rebuild)
   const TEMP_FIX_BRANCH_IDS = [
     'mh75qnp5s6z1byvvhfqgh0brcx83ytv5', // Lancaster
-    'mh73v9y0x305bs0n9p1y9c1m3x7q1p4w'  // Central University
+    'mh72gb2m2kq0qs2j3jz1wrawes83b393'  // Central University
   ]
   const historyOutstanding =
     history === undefined
