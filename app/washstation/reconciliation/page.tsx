@@ -130,14 +130,18 @@ export default function ReconciliationPage() {
   // before the last send -- that needs a separate investigation, not covered here.
     // TEMP (Lancaster only, remove at rebuild): verifiedMinimumUnsent misses unpaid days
   // that fall before the last send, so for this branch use History's per-day total.
-  const LANCASTER_BRANCH_ID = 'mh75qnp5s6z1byvvhfqgh0brcx83ytv5'
+   // TEMP (Lancaster & Central only, remove at rebuild)
+  const TEMP_FIX_BRANCH_IDS = [
+    'mh75qnp5s6z1byvvhfqgh0brcx83ytv5', // Lancaster
+    'mh73v9y0x305bs0n9p1y9c1m3x7q1p4w'  // Central University
+  ]
   const historyOutstanding =
     history === undefined
       ? undefined
       : Math.round((history as any[]).reduce((s, d) => s + (d.dayOutstanding ?? 0), 0) * 100) / 100
 
   const allTimeOutstanding =
-    summary?.branchId === LANCASTER_BRANCH_ID && historyOutstanding !== undefined
+    summary?.branchId && TEMP_FIX_BRANCH_IDS.includes(summary.branchId) && historyOutstanding !== undefined
       ? historyOutstanding
       : (summary?.verifiedMinimumUnsent ?? summary?.allTimeOutstanding ?? todayOutstanding)
 
