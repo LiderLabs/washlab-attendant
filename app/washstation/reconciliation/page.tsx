@@ -131,9 +131,11 @@ export default function ReconciliationPage() {
     // TEMP (Lancaster only, remove at rebuild): verifiedMinimumUnsent misses unpaid days
   // that fall before the last send, so for this branch use History's per-day total.
    // TEMP (Lancaster & Central only, remove at rebuild)
+    // TEMP (Lancaster, Central & Superannuation only, remove at rebuild)
   const TEMP_FIX_BRANCH_IDS = [
     'mh75qnp5s6z1byvvhfqgh0brcx83ytv5', // Lancaster
-    'mh72gb2m2kq0qs2j3jz1wrawes83b393'  // Central University
+    'mh72gb2m2kq0qs2j3jz1wrawes83b393', // Central University
+    'mh73qx1rv9yf4p9sd77qp6x95983wrpz'  // Superannuation Hall
   ]
   const historyOutstanding =
     history === undefined
